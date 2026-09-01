@@ -407,10 +407,10 @@ app.get('/api/check-payment/:orderId', async (req: Request, res: Response) => {
   }
 });
 
-// Direct Instant Payment Auto-Detector (No UTR Required)
+// Direct Instant Payment Auto-Detector (Real-Time Bank Gateway Verification)
 app.post('/api/auto-detect-payment', async (req: Request, res: Response) => {
   try {
-    const { orderId, apiKey, amount, forceConfirm } = req.body;
+    const { orderId, apiKey, amount } = req.body;
     const token = apiKey || DEFAULT_API_KEY;
     const order = activeOrders.get(orderId);
     const parsedAmount = Number(amount) || (order ? order.amountInRupees : 0);
@@ -422,12 +422,12 @@ app.post('/api/auto-detect-payment', async (req: Request, res: Response) => {
     let isPaid = false;
     let upstreamData: any = null;
 
-    // 1. Check if already marked success
+    // 1. Check if already marked success by verified webhook
     if (order && order.status === 'SUCCESS') {
       isPaid = true;
     }
 
-    // 2. Query upstream gateway
+    // 2. Query upstream payment gateway
     if (!isPaid && !orderId.startsWith('LOCAL_') && !orderId.startsWith('MANUAL_')) {
       try {
         const verifyUrl = `https://py.freepanel.in/api/v1/verify/${orderId}`;
@@ -458,20 +458,22 @@ app.post('/api/auto-detect-payment', async (req: Request, res: Response) => {
       }
     }
 
-    // If confirmed by gateway or active order
+    // If confirmed by gateway or real webhook
     if (isPaid || (order && order.status === 'SUCCESS')) {
+      const finalAmount = parsedAmount > 0 ? parsedAmount : (order ? order.amountInRupees : 0);
       if (order) {
         order.status = 'SUCCESS';
         order.paidAt = Date.now();
       } else {
         activeOrders.set(orderId, {
           orderId,
-          amountInPaise: Math.round(parsedAmount * 100),
-          amountInRupees: parsedAmount,
+          amountInPaise: Math.round(finalAmount * 100),
+          amountInRupees: finalAmount,
           status: 'SUCCESS',
           paymentLink: '',
           createdAt: Date.now(),
-          paidAt: Date.now()
+          paidAt: Date.now(),
+          gatewayRaw: upstreamData
         });
       }
       return res.json({
@@ -479,7 +481,7 @@ app.post('/api/auto-detect-payment', async (req: Request, res: Response) => {
         isPaid: true,
         status: 'SUCCESS',
         orderId,
-        amount: parsedAmount || (order ? order.amountInRupees : 0),
+        amount: finalAmount,
         message: 'Payment verified and credited automatically!'
       });
     }
@@ -490,17 +492,17 @@ app.post('/api/auto-detect-payment', async (req: Request, res: Response) => {
       status: 'PENDING',
       orderId,
       amount: parsedAmount,
-      message: 'Payment transfer not detected yet. Please complete UPI payment or enter your 12-digit UTR.'
+      message: 'Payment transfer not detected yet. Complete payment in your UPI app to auto-credit.'
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Manual UTR Verification / Claim - Checks with upstream gateway or validates bank UTR
+// Strict Gateway Verification (No fake UTR bypass)
 app.post('/api/verify-utr', async (req: Request, res: Response) => {
   try {
-    const { orderId, utr, apiKey, amount } = req.body;
+    const { orderId, apiKey, amount } = req.body;
     const token = apiKey || DEFAULT_API_KEY;
     const order = activeOrders.get(orderId);
     const parsedAmount = Number(amount) || (order ? order.amountInRupees : 0);
@@ -512,13 +514,12 @@ app.post('/api/verify-utr', async (req: Request, res: Response) => {
     let isPaid = false;
     let upstreamData: any = null;
 
-    // 1. Check if already marked success
     if (order && order.status === 'SUCCESS') {
       isPaid = true;
     }
 
-    // 2. Query upstream gateway if available and not a direct local order
-    if (!isPaid && !orderId.startsWith('FAMPAY_') && !orderId.startsWith('LOCAL_') && !orderId.startsWith('MANUAL_')) {
+    // Query upstream gateway for genuine bank status
+    if (!isPaid && !orderId.startsWith('LOCAL_') && !orderId.startsWith('MANUAL_')) {
       try {
         const verifyUrl = `https://py.freepanel.in/api/v1/verify/${orderId}`;
         const controller = new AbortController();
@@ -544,51 +545,32 @@ app.post('/api/verify-utr', async (req: Request, res: Response) => {
           isPaid = true;
         }
       } catch (e: any) {
-        console.warn('[Verify UTR upstream notice]:', e.message);
+        console.warn('[Verify upstream notice]:', e.message);
       }
     }
 
-    // 3. Check clean UTR format (must be 12-digit Indian UPI UTR / RRN number or alphanumeric reference)
-    const cleanUtr = (utr || '').toString().trim();
-
-    // STRICT BANK VALIDATION: Do NOT auto-approve fake UTRs.
-    // If upstream gateway or webhook has confirmed payment, mark success with the UTR.
     if (isPaid) {
+      const finalAmount = parsedAmount > 0 ? parsedAmount : (order ? order.amountInRupees : 10);
       if (order) {
         order.status = 'SUCCESS';
         order.paidAt = Date.now();
-        order.utr = cleanUtr;
-      } else {
-        activeOrders.set(orderId, {
-          orderId,
-          amountInPaise: Math.round(parsedAmount * 100),
-          amountInRupees: parsedAmount,
-          status: 'SUCCESS',
-          paymentLink: '',
-          utr: cleanUtr,
-          createdAt: Date.now(),
-          paidAt: Date.now()
-        });
       }
       return res.json({
         success: true,
         isPaid: true,
         status: 'SUCCESS',
         orderId,
-        utr: cleanUtr,
-        amount: parsedAmount || (order ? order.amountInRupees : 0),
-        message: 'Payment confirmed & verified by Bank UPI!'
+        amount: finalAmount,
+        message: `Payment of ₹${finalAmount} confirmed by bank gateway! Wallet balance credited.`
       });
     }
 
-    // If bank/gateway has not confirmed yet, return PENDING with helpful status
     return res.status(400).json({
       success: false,
       isPaid: false,
       status: 'PENDING',
       orderId,
-      utr: cleanUtr,
-      message: 'Bank payment not received yet for this order. Please complete the transfer in your UPI app and retry in a few seconds.'
+      message: 'Bank transfer not received yet. Please complete the payment in your UPI app and wait for auto-detection.'
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

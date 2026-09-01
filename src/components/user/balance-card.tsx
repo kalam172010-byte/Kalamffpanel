@@ -42,14 +42,11 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
           </div>
           
           <div className="mt-2 flex items-baseline gap-2">
-            <motion.h1
-              key={balance}
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              className="text-4xl font-extrabold text-[#ff0080] text-glow-pink tracking-tight font-sans"
+            <h1
+              className="text-4xl font-extrabold text-[#ff0080] text-glow-pink tracking-tight font-sans transition-all duration-200"
             >
               {formatCurrency(balance, currencySymbol)}
-            </motion.h1>
+            </h1>
           </div>
         </div>
 

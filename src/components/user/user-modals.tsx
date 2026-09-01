@@ -32,7 +32,8 @@ import {
   Lock,
   Scan,
   Grid,
-  MoreHorizontal
+  MoreHorizontal,
+  CheckCircle2
 } from 'lucide-react';
 import { Product, PlanPricing, PurchasedKey, TransactionRecord, StoreSettings, PaymentGatewayConfig } from '../../types';
 import { formatCurrency, getYouTubeEmbedUrl, isYouTubeUrl } from '../../lib/utils';
@@ -406,11 +407,11 @@ export const DepositModal: React.FC<DepositModalProps> = ({
           onClose();
         }, 2200);
       } else {
-        setAutoCheckStatus('Payment pending: Complete UPI payment in your app to auto-credit.');
+        setAutoCheckStatus('Payment pending: Complete UPI payment in your app. Auto-credit is listening live.');
       }
     } catch (e) {
       console.warn(e);
-      setAutoCheckStatus('Bank sync active: Auto-detecting...');
+      setAutoCheckStatus('Bank sync active: Auto-detecting transfer...');
     } finally {
       setIsManualChecking(false);
     }
@@ -798,12 +799,13 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 
                     <div className="pt-0.5">
                       <button
+                        type="button"
                         onClick={handleInstantAutoCheck}
                         disabled={isManualChecking}
-                        className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#00b4d8] text-[#0a0a0f] font-extrabold text-xs shadow-[0_0_15px_rgba(0,229,255,0.35)] flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                        className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00e5ff] via-[#00b4d8] to-[#0077b6] hover:opacity-95 text-[#0a0a0f] font-extrabold text-xs shadow-[0_0_20px_rgba(0,229,255,0.4)] flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
                       >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isManualChecking ? 'animate-spin' : ''}`} />
-                        <span>{isManualChecking ? 'Detecting Bank Transfer...' : 'Auto-Check & Verify Payment'}</span>
+                        <RefreshCw className={`w-4 h-4 ${isManualChecking ? 'animate-spin' : ''}`} />
+                        <span>{isManualChecking ? 'Syncing with Bank Gateway...' : 'I Have Paid • Verify Transfer'}</span>
                       </button>
                     </div>
                   </div>

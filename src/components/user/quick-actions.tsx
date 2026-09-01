@@ -86,20 +86,16 @@ interface QuickActionsGridProps {
 export const QuickActionsGrid: React.FC<QuickActionsGridProps> = ({ onActionClick }) => {
   return (
     <div id="quick-actions-grid" className="grid grid-cols-3 gap-2.5">
-      {ACTION_ITEMS.map((item, index) => {
+      {ACTION_ITEMS.map((item) => {
         const Icon = item.icon;
         return (
-          <motion.button
+          <button
             key={item.id}
+            type="button"
             id={`quick-action-${item.id.toLowerCase()}`}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: index * 0.04 }}
-            whileHover={{ scale: 1.04, y: -2 }}
-            whileTap={{ scale: 0.95 }}
             onClick={() => onActionClick(item.id)}
             className={cn(
-              'relative flex flex-col items-center justify-center p-3 rounded-2xl bg-[#161626] border transition-all duration-200 cursor-pointer aspect-square group shadow-lg overflow-hidden',
+              'relative flex flex-col items-center justify-center p-3 rounded-2xl bg-[#161626] border transition-all duration-200 cursor-pointer aspect-square group shadow-lg overflow-hidden active:scale-95 hover:scale-[1.02] hover:-translate-y-0.5',
               item.borderColor,
               item.glowShadow
             )}
@@ -121,7 +117,7 @@ export const QuickActionsGrid: React.FC<QuickActionsGridProps> = ({ onActionClic
             <span className="text-[11px] font-bold text-gray-200 tracking-wider group-hover:text-white uppercase">
               {item.label}
             </span>
-          </motion.button>
+          </button>
         );
       })}
     </div>

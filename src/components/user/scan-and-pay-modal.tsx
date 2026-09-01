@@ -52,6 +52,7 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
   const [isSuccess, setIsSuccess] = useState(false);
   const [isSavingQr, setIsSavingQr] = useState(false);
   const [activeAppToast, setActiveAppToast] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
 
   const activeUpiId = (storeSettings as any)?.upiManualId || (storeSettings as any)?.upiId || '8056317218@fam';
@@ -177,13 +178,14 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
   const handleInstantAutoCheck = async () => {
     if (isManualChecking || isSuccess) return;
     setIsManualChecking(true);
+    setVerifyError(null);
     setStatusMessage('Checking with bank gateway for payment confirmation...');
 
     try {
       const res = await safeFetchJson<any>('/api/auto-detect-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId }),
+        body: JSON.stringify({ orderId, amount }),
       });
 
       const data = res.data;
@@ -195,7 +197,7 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
           onClose();
         }, 2000);
       } else {
-        setStatusMessage('Waiting for transfer... Please complete payment in your UPI app.');
+        setStatusMessage('Waiting for transfer... Please complete payment in your UPI app. Auto-credit is live.');
       }
     } catch (err) {
       setStatusMessage('Bank connection active. Auto-detecting your transaction...');
@@ -529,13 +531,21 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
                       {statusMessage}
                     </p>
 
+                    {verifyError && (
+                      <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-[11px] text-red-300 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                        <span>{verifyError}</span>
+                      </div>
+                    )}
+
                     <button
+                      type="button"
                       onClick={handleInstantAutoCheck}
                       disabled={isManualChecking}
-                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#6d28d9] via-[#7c3aed] to-[#9333ea] hover:opacity-90 disabled:opacity-50 text-white font-extrabold text-xs shadow-[0_0_20px_rgba(124,58,237,0.4)] flex items-center justify-center gap-2 cursor-pointer transition-all border border-[#a855f7]/40"
+                      className="w-full py-3 rounded-xl bg-gradient-to-r from-[#6d28d9] via-[#7c3aed] to-[#9333ea] hover:opacity-90 disabled:opacity-50 text-white font-extrabold text-xs shadow-[0_0_20px_rgba(124,58,237,0.4)] flex items-center justify-center gap-2 cursor-pointer transition-all border border-[#a855f7]/40"
                     >
                       <RefreshCw className={`w-3.5 h-3.5 text-white ${isManualChecking ? 'animate-spin' : ''}`} />
-                      <span>{isManualChecking ? 'Detecting Payment...' : 'I Have Paid • Check Status'}</span>
+                      <span>{isManualChecking ? 'Detecting Payment Transfer...' : 'I Have Paid • Auto-Check'}</span>
                     </button>
                   </div>
 
