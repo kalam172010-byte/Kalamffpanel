@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and reseller balance data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique user ID" },
+        "name": { "type": "string", "description": "Display name of user" },
+        "username": { "type": "string", "description": "User username" },
+        "email": { "type": "string", "description": "User email address" },
+        "phone": { "type": "string", "description": "Contact number" },
+        "walletBalance": { "type": "number", "description": "User credit balance" },
+        "isReseller": { "type": "boolean", "description": "Whether user is a reseller" },
+        "role": { "type": "string", "description": "Role (USER, RESELLER, ADMIN)", "enum": ["USER", "RESELLER", "ADMIN"] },
+        "status": { "type": "string", "description": "Account status", "enum": ["ACTIVE", "SUSPENDED", "BANNED"] },
+        "joinedDate": { "type": "string", "description": "Date joined" },
+        "totalKeysSold": { "type": "number", "description": "Total count of sold keys" },
+        "totalSpent": { "type": "number", "description": "Total amount spent" },
+        "depositedToday": { "type": "number", "description": "Deposits today" },
+        "notes": { "type": "string", "description": "Admin notes" },
+        "customDiscountPercent": { "type": "number", "description": "Discount percentage" }
+      },
+      "required": ["id", "email"]
+    },
+    "StoreSettings": {
+      "title": "StoreSettings",
+      "description": "Global store settings and banner configuration",
+      "type": "object",
+      "properties": {
+        "shopName": { "type": "string", "description": "Store name" },
+        "shopSubtitle": { "type": "string", "description": "Subtitle" },
+        "bannerNotice": { "type": "string", "description": "Notice banner text" },
+        "supportTelegram": { "type": "string", "description": "Telegram support username/link" },
+        "supportWhatsapp": { "type": "string", "description": "WhatsApp support number" },
+        "supportEmail": { "type": "string", "description": "Email support" },
+        "primaryUpiId": { "type": "string", "description": "Primary UPI ID for payments" },
+        "minDeposit": { "type": "number", "description": "Minimum deposit amount" },
+        "maxDeposit": { "type": "number", "description": "Maximum deposit amount" }
+      }
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Product catalog item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Product ID" },
+        "name": { "type": "string", "description": "Product name" },
+        "category": { "type": "string", "description": "Product category" },
+        "description": { "type": "string", "description": "Product description" },
+        "stock": { "type": "number", "description": "Available stock count" },
+        "isActive": { "type": "boolean", "description": "Active status" },
+        "isMaintenance": { "type": "boolean", "description": "Maintenance mode" }
+      },
+      "required": ["id", "name"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "User transaction history",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Target user ID" },
+        "records": { "type": "array", "description": "List of transactions" }
+      },
+      "required": ["userId"]
+    },
+    "PurchasedKey": {
+      "title": "PurchasedKey",
+      "description": "User purchased digital keys",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Target user ID" },
+        "keys": { "type": "array", "description": "List of keys owned by user" }
+      },
+      "required": ["userId"]
+    },
+    "StoreActivity": {
+      "title": "StoreActivity",
+      "description": "Real-time store deposit, purchase, or topup activity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Activity event ID" },
+        "type": { "type": "string", "description": "Activity type", "enum": ["DEPOSIT", "PURCHASE", "TOPUP", "REFUND"] },
+        "title": { "type": "string", "description": "Activity heading" },
+        "message": { "type": "string", "description": "Details description" },
+        "amount": { "type": "number", "description": "Monetary value" },
+        "userName": { "type": "string", "description": "User name or identifier" },
+        "timestamp": { "type": "number", "description": "Epoch timestamp" }
+      },
+      "required": ["id", "type", "title", "amount"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User account documents"
+    },
+    "/settings/{docId}": {
+      "schema": "StoreSettings",
+      "description": "System and store configuration documents"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Product catalog items"
+    },
+    "/transactions/{userId}": {
+      "schema": "Transaction",
+      "description": "Transactions per user"
+    },
+    "/purchased_keys/{userId}": {
+      "schema": "PurchasedKey",
+      "description": "Purchased digital keys per user"
+    },
+    "/activities/{activityId}": {
+      "schema": "StoreActivity",
+      "description": "Real-time store notifications and activities stream"
+    }
+  }
+}
