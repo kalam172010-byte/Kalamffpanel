@@ -22,7 +22,8 @@ import {
   Settings,
   ShoppingCart,
   Video,
-  Tv
+  Tv,
+  RefreshCw
 } from 'lucide-react';
 import { Product, PlanPricing, StoreSettings } from '../../types';
 import { formatCurrency, getYouTubeEmbedUrl, isYouTubeUrl, getYouTubeThumbnailUrl } from '../../lib/utils';
@@ -34,6 +35,7 @@ interface BuyKeysViewProps {
   onOpenDeposit: () => void;
   storeSettings: StoreSettings;
   hideBalanceBar?: boolean;
+  onRefreshProducts?: () => void;
 }
 
 export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
@@ -43,6 +45,7 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
   onOpenDeposit,
   storeSettings,
   hideBalanceBar = false,
+  onRefreshProducts,
 }) => {
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -301,9 +304,19 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
       {/* 4. RESELLER STORE / PARTNER RATES */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5 text-xs font-black text-cyan-400 tracking-wider">
+          <div className="flex items-center gap-2 text-xs font-black text-cyan-400 tracking-wider">
             <span>&gt;&gt;</span>
             <span className="text-gray-200">RESELLER STORE / PARTNER RATES</span>
+            {onRefreshProducts && (
+              <button
+                type="button"
+                onClick={onRefreshProducts}
+                className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer"
+                title="Refresh products catalog"
+              >
+                <RefreshCw className="w-3 h-3" />
+              </button>
+            )}
           </div>
           <span className="text-[10px] font-bold text-gray-400 font-mono">
             {filteredProducts.length} Items
@@ -317,16 +330,27 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
             <p className="text-xs text-gray-400">
               Try resetting filters or searching with a different term.
             </p>
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedGame('ALL GAMES');
-                setSelectedDevice('ALL Systems');
-              }}
-              className="mt-2 px-4 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white cursor-pointer"
-            >
-              Reset Filters
-            </button>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedGame('ALL GAMES');
+                  setSelectedDevice('ALL Systems');
+                }}
+                className="px-4 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white cursor-pointer"
+              >
+                Reset Filters
+              </button>
+              {onRefreshProducts && (
+                <button
+                  onClick={onRefreshProducts}
+                  className="px-4 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Reload Catalog</span>
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           filteredProducts.map((product) => {

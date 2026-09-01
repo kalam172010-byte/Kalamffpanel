@@ -91,7 +91,7 @@ export const UserSidebar: React.FC<UserSidebarProps> = ({
             animate={{ x: 0 }}
             exit={{ x: -320 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-[#0a0a0f] border-r border-white/10 p-5 flex flex-col justify-between shadow-[0_0_50px_rgba(0,229,255,0.15)]"
+            className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-[#0a0a0f] border-r border-white/10 p-5 flex flex-col justify-between shadow-[0_0_50px_rgba(0,229,255,0.15)] overflow-y-auto"
           >
             <div>
               {/* Header */}

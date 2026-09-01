@@ -464,14 +464,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          transition={{ type: 'spring', duration: 0.3 }}
-          className="w-full max-w-md"
-        >
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 15 }}
+            transition={{ type: 'spring', duration: 0.3 }}
+            className="relative z-50 w-full max-w-md"
+          >
           <GlassCard
             glow="cyan"
             className="p-5 bg-[#12121c]/98 border border-white/15 rounded-2xl shadow-[0_0_50px_rgba(0,229,255,0.25)] relative overflow-hidden"
@@ -897,6 +905,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </GlassCard>
         </motion.div>
       </div>
+      )}
     </AnimatePresence>
   );
 };

@@ -539,31 +539,20 @@ function toFirestoreSafe<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
 }
 
-const MOCK_DEMO_PRODUCT_IDS = new Set([
-  'prod-aim-hack',
-  'prod-bala-v2',
-  'prod-hg-cheats',
-  'prod-telegram-bot',
-  'prod-8bp-aim',
-  'prod-drip-client',
-]);
-
-const MOCK_DEMO_LINK_IDS = new Set(['link-1', 'link-2']);
-
 /**
- * Filter out any legacy hardcoded mock items
+ * Sanitize product objects
  */
 function sanitizeProducts(prods: any[]): Product[] {
   if (!Array.isArray(prods)) return [];
   return prods.filter(
-    (p) => p && typeof p === 'object' && p.id && !MOCK_DEMO_PRODUCT_IDS.has(p.id)
+    (p) => p && typeof p === 'object' && p.id && typeof p.name === 'string' && p.name.trim().length > 0
   );
 }
 
 function sanitizeProductLinks(links: any[]): ProductLink[] {
   if (!Array.isArray(links)) return [];
   return links.filter(
-    (l) => l && typeof l === 'object' && l.id && !MOCK_DEMO_LINK_IDS.has(l.id)
+    (l) => l && typeof l === 'object' && l.id && typeof l.name === 'string'
   );
 }
 
@@ -573,6 +562,8 @@ function sanitizeProductLinks(links: any[]): ProductLink[] {
 export function subscribeToProducts(
   onUpdate: (products: Product[]) => void
 ) {
+  let hasDelivered = false;
+
   // 1. Instantly deliver local products from localStorage if available
   try {
     const local = localStorage.getItem('kalam_products_db');
@@ -582,10 +573,19 @@ export function subscribeToProducts(
         const cleanLocal = sanitizeProducts(parsed);
         if (cleanLocal.length > 0) {
           onUpdate(cleanLocal);
+          hasDelivered = true;
         }
       }
     }
   } catch {}
+
+  // Fallback to INITIAL_PRODUCTS immediately if local storage is blank so UI is never empty
+  if (!hasDelivered && INITIAL_PRODUCTS.length > 0) {
+    onUpdate(INITIAL_PRODUCTS);
+    try {
+      localStorage.setItem('kalam_products_db', JSON.stringify(INITIAL_PRODUCTS));
+    } catch {}
+  }
 
   // 2. Fetch from Server Disk Storage API (/api/products) immediately
   safeFetchJson<{ success: boolean; products: Product[]; initialized?: boolean }>('/api/products')
@@ -664,21 +664,19 @@ export function subscribeToProducts(
           }
         } catch {}
 
-        // Fallback to localStorage or server disk if Firestore was blank
-        try {
-          const local = localStorage.getItem('kalam_products_db');
-          if (local) {
-            const parsed = JSON.parse(local);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const cleanList = sanitizeProducts(parsed);
-              if (cleanList.length > 0) {
-                onUpdate(cleanList);
-                setDoc(prodRef, toFirestoreSafe({ products: cleanList, initialized: true, updatedAt: Date.now() }), { merge: true }).catch(() => {});
-                return;
-              }
-            }
-          }
-        } catch {}
+        // Fallback: seed INITIAL_PRODUCTS to Firestore so database is populated
+        if (INITIAL_PRODUCTS.length > 0) {
+          onUpdate(INITIAL_PRODUCTS);
+          try {
+            localStorage.setItem('kalam_products_db', JSON.stringify(INITIAL_PRODUCTS));
+          } catch {}
+          setDoc(prodRef, toFirestoreSafe({ products: INITIAL_PRODUCTS, initialized: true, updatedAt: Date.now() }), { merge: true }).catch(() => {});
+          safeFetchJson('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ products: INITIAL_PRODUCTS }),
+          }).catch(() => {});
+        }
       },
       (err) => {
         console.warn('[Firestore] Products catalog listener note:', err);

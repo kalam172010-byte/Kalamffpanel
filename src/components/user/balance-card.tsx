@@ -24,11 +24,12 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
   };
 
   return (
-    <GlassCard
+    <div
       id="user-balance-card"
-      glow="pink"
-      className="p-5 border-[#ff0080]/30 bg-gradient-to-br from-[#161622] via-[#1a1329] to-[#161622]"
+      className="p-5 rounded-2xl border border-[#ff0080]/40 bg-gradient-to-br from-[#181226] via-[#161626] to-[#12121f] shadow-[0_0_25px_rgba(255,0,128,0.15)] relative overflow-hidden"
     >
+      {/* Top subtle highlight */}
+      <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-[#ff0080]/30 to-transparent pointer-events-none" />
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-1.5">
@@ -85,7 +86,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
           )}
         </div>
       </div>
-    </GlassCard>
+    </div>
   );
 };
 

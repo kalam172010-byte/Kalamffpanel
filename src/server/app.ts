@@ -119,6 +119,10 @@ const webhookLogs: Array<{ id: string; timestamp: string; payload: any; status: 
 
 // Initialize products from disk storage
 let globalProductsCache: any[] = loadProductsFromDisk();
+if (globalProductsCache.length === 0 && Array.isArray(INITIAL_PRODUCTS) && INITIAL_PRODUCTS.length > 0) {
+  globalProductsCache = INITIAL_PRODUCTS;
+  saveProductsToDisk(INITIAL_PRODUCTS);
+}
 let isProductsInitialized = globalProductsCache.length > 0;
 
 // Health Check
@@ -137,6 +141,10 @@ app.get('/api/products', (req: Request, res: Response) => {
     const fromDisk = loadProductsFromDisk();
     if (fromDisk.length > 0) {
       globalProductsCache = fromDisk;
+      isProductsInitialized = true;
+    } else if (Array.isArray(INITIAL_PRODUCTS) && INITIAL_PRODUCTS.length > 0) {
+      globalProductsCache = INITIAL_PRODUCTS;
+      saveProductsToDisk(INITIAL_PRODUCTS);
       isProductsInitialized = true;
     }
   }

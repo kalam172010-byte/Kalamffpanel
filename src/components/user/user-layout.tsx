@@ -77,7 +77,7 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
         {/* Top Navigation Bar */}
         <header
           id="user-top-navbar"
-          className="sticky top-0 z-30 bg-[#0a0a0f]/90 backdrop-blur-xl border-b border-white/10 px-4 py-3 flex items-center justify-between gap-2"
+          className="sticky top-0 z-30 bg-[#0c0c14] border-b border-white/10 px-4 py-3 flex items-center justify-between gap-2 shadow-md"
         >
           {/* Left: Hamburger Icon */}
           <motion.button

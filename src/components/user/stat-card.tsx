@@ -55,54 +55,54 @@ export const StatsRow: React.FC<StatsRowProps> = ({
   return (
     <div className="grid grid-cols-2 gap-3" id="sales-stats-row">
       {/* Today Sales */}
-      <GlassCard glow="cyan" className="p-3.5 bg-[#161622]/90 border-white/10 flex flex-col justify-between">
+      <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#141424] to-[#16162a] border border-cyan-500/30 shadow-[0_0_20px_rgba(0,229,255,0.12)] flex flex-col justify-between">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">
+          <span className="text-[10px] font-extrabold text-cyan-400 tracking-wider uppercase">
             TODAY SALES
           </span>
-          <ShoppingBag className="w-3.5 h-3.5 text-gray-500" />
+          <ShoppingBag className="w-3.5 h-3.5 text-cyan-400/70" />
         </div>
 
         <div className="my-2">
-          <span className="text-3xl font-extrabold text-white tracking-tight">
+          <span className="text-3xl font-black text-white tracking-tight font-sans">
             {todaySalesTotal}
           </span>
         </div>
 
-        <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs font-semibold">
-          <span className="text-[#00e5ff] flex items-center gap-1">
+        <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-semibold">
+          <span className="text-cyan-400 flex items-center gap-1">
             <span className="text-[10px] text-gray-400 font-normal">U:</span> {todaySalesU}
           </span>
-          <span className="text-[#8b5cf6] flex items-center gap-1">
+          <span className="text-purple-400 flex items-center gap-1">
             <span className="text-[10px] text-gray-400 font-normal">Me:</span> {todaySalesMe}
           </span>
         </div>
-      </GlassCard>
+      </div>
 
       {/* Monthly Sales */}
-      <GlassCard glow="purple" className="p-3.5 bg-[#161622]/90 border-white/10 flex flex-col justify-between">
+      <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#141424] to-[#1c142e] border border-purple-500/30 shadow-[0_0_20px_rgba(139,92,246,0.12)] flex flex-col justify-between">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">
+          <span className="text-[10px] font-extrabold text-purple-400 tracking-wider uppercase">
             MONTHLY SALES
           </span>
-          <Calendar className="w-3.5 h-3.5 text-gray-500" />
+          <Calendar className="w-3.5 h-3.5 text-purple-400/70" />
         </div>
 
         <div className="my-2">
-          <span className="text-3xl font-extrabold text-white tracking-tight">
+          <span className="text-3xl font-black text-white tracking-tight font-sans">
             {monthlySalesTotal}
           </span>
         </div>
 
-        <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs font-semibold">
-          <span className="text-[#00e5ff] flex items-center gap-1">
+        <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-semibold">
+          <span className="text-cyan-400 flex items-center gap-1">
             <span className="text-[10px] text-gray-400 font-normal">U:</span> {monthlySalesU}
           </span>
-          <span className="text-[#8b5cf6] flex items-center gap-1">
+          <span className="text-purple-400 flex items-center gap-1">
             <span className="text-[10px] text-gray-400 font-normal">Me:</span> {monthlySalesMe}
           </span>
         </div>
-      </GlassCard>
+      </div>
     </div>
   );
 };

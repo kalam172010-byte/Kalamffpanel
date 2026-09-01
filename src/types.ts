@@ -129,6 +129,7 @@ export interface StoreSettings {
   announcementText?: string;
   announcementEnabled?: boolean;
   maintenanceMode?: boolean;
+  dailySpinEnabled?: boolean;
 }
 
 export interface ResellerUser {
@@ -165,6 +166,32 @@ export interface PurchasedKey {
   expiryDate: string;
   status: 'ACTIVE' | 'USED' | 'EXPIRED';
   price: number;
+  invoiceNumber?: string;
+  orderId?: string;
+  deviceType?: string;
+  game?: string;
+}
+
+export interface PurchaseInvoice {
+  invoiceNumber: string;
+  orderId: string;
+  date: string;
+  buyerName: string;
+  buyerUsername?: string;
+  buyerEmail?: string;
+  productName: string;
+  category?: string;
+  game?: string;
+  deviceType?: string;
+  planDuration: string;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  paymentMethod: string;
+  keys: string[];
+  status: 'PAID' | 'DELIVERED';
+  shopName: string;
+  supportContact?: string;
 }
 
 export interface TransactionRecord {

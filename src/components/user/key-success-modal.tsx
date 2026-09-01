@@ -9,20 +9,25 @@ import {
   X,
   Sparkles,
   ShieldCheck,
-  ArrowRight
+  ArrowRight,
+  FileText
 } from 'lucide-react';
-import { PurchasedKey } from '../../types';
+import { PurchasedKey, PurchaseInvoice } from '../../types';
 
 interface KeySuccessModalProps {
   purchasedKey: PurchasedKey | null;
   onClose: () => void;
   onGoToMyKeys: () => void;
+  onViewInvoice?: (invoice: PurchaseInvoice) => void;
+  invoice?: PurchaseInvoice | null;
 }
 
 export const KeySuccessModal: React.FC<KeySuccessModalProps> = ({
   purchasedKey,
   onClose,
   onGoToMyKeys,
+  onViewInvoice,
+  invoice,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -116,6 +121,19 @@ export const KeySuccessModal: React.FC<KeySuccessModalProps> = ({
 
           {/* Action CTAs */}
           <div className="space-y-2 pt-1">
+            {invoice && onViewInvoice && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onViewInvoice(invoice);
+                }}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-black text-xs shadow-[0_0_20px_rgba(0,229,255,0.4)] flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wider"
+              >
+                <FileText className="w-4 h-4" />
+                <span>View Official Invoice &amp; Receipt</span>
+              </button>
+            )}
+
             <button
               onClick={() => {
                 onClose();

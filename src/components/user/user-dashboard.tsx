@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'motion/react';
 import { BalanceCard } from './balance-card';
-import { SafetyBannerCard, StatsRow } from './stat-card';
+import { StatsRow } from './stat-card';
 import { QuickActionsGrid, QuickActionKey } from './quick-actions';
 import { UserStats, TopSeller, StoreSettings, Product, PlanPricing } from '../../types';
-import { ShoppingCart, Zap, Key, ArrowRight, Sparkles, ShieldCheck } from 'lucide-react';
+import { Key, ArrowRight, ShieldCheck, RefreshCw, Zap, ShoppingCart } from 'lucide-react';
 import { StoreLogo } from '../shared/store-logo';
 
 interface UserDashboardProps {
@@ -15,6 +15,7 @@ interface UserDashboardProps {
   onQuickAction: (action: QuickActionKey) => void;
   onOpenDeposit: () => void;
   onPurchaseKey?: (product: Product, plan: PlanPricing, quantity: number) => void;
+  onRefreshProducts?: () => void;
 }
 
 export const UserDashboard: React.FC<UserDashboardProps> = ({
@@ -23,9 +24,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   products = [],
   onQuickAction,
   onOpenDeposit,
+  onRefreshProducts,
 }) => {
-  const [language, setLanguage] = useState<'EN' | 'HI'>('EN');
-
   const activeProducts = products.filter((p) => p.status !== 'DISABLED');
   const currency = storeSettings?.currencySymbol || '₹';
 
@@ -80,14 +80,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         currencySymbol={currency}
       />
 
-      {/* 2. SAFETY BANNER (Language switch EN/HI) */}
-      <SafetyBannerCard
-        language={language}
-        onLanguageChange={setLanguage}
-        currencySymbol={currency}
-      />
-
-      {/* 3. STATS ROW (Today Sales, Monthly Sales) */}
+      {/* 2. STATS ROW (Today Sales, Monthly Sales) */}
       <StatsRow
         todaySalesTotal={userStats.todaySalesU + userStats.todaySalesMe}
         todaySalesU={userStats.todaySalesU}
@@ -111,9 +104,19 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       {/* 5. LIVE STORE PRODUCTS PREVIEW */}
       <div className="space-y-2.5 pt-1">
         <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5 text-xs font-black text-[#ff0080] tracking-wider">
+          <div className="flex items-center gap-2 text-xs font-black text-[#ff0080] tracking-wider">
             <span>&gt;&gt;</span>
             <span className="text-gray-200 uppercase">STORE PRODUCTS ({activeProducts.length})</span>
+            {onRefreshProducts && (
+              <button
+                type="button"
+                onClick={onRefreshProducts}
+                className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer"
+                title="Refresh products catalog"
+              >
+                <RefreshCw className="w-3 h-3" />
+              </button>
+            )}
           </div>
           <button
             onClick={() => onQuickAction('BUY_KEYS')}
@@ -194,6 +197,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
             })}
           </div>
         )}
+      </div>
     </motion.div>
   );
 };

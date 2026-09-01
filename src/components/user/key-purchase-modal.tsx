@@ -16,9 +16,10 @@ import {
   Sparkles,
   RefreshCw,
   Clock,
-  Radio
+  Radio,
+  FileText
 } from 'lucide-react';
-import { Product, PlanPricing, PurchasedKey } from '../../types';
+import { Product, PlanPricing, PurchasedKey, PurchaseInvoice } from '../../types';
 import { formatCurrency } from '../../lib/utils';
 
 export type PurchaseStage = 'CONNECTING' | 'REQUESTING_KEY' | 'FINALIZING' | 'SUCCESS' | 'ERROR';
@@ -35,6 +36,7 @@ export interface KeyPurchaseModalData {
   error?: string;
   deliveredKeys?: string[];
   purchasedKeyRecord?: PurchasedKey;
+  invoice?: PurchaseInvoice;
 }
 
 interface KeyPurchaseModalProps {
@@ -43,6 +45,7 @@ interface KeyPurchaseModalProps {
   purchaseData: KeyPurchaseModalData | null;
   onRetry?: () => void;
   onGoToMyKeys?: () => void;
+  onViewInvoice?: (invoice: PurchaseInvoice) => void;
 }
 
 export const KeyPurchaseModal: React.FC<KeyPurchaseModalProps> = ({
@@ -51,6 +54,7 @@ export const KeyPurchaseModal: React.FC<KeyPurchaseModalProps> = ({
   purchaseData,
   onRetry,
   onGoToMyKeys,
+  onViewInvoice,
 }) => {
   const [copiedKeyIndex, setCopiedKeyIndex] = useState<number | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
@@ -69,6 +73,7 @@ export const KeyPurchaseModal: React.FC<KeyPurchaseModalProps> = ({
     error,
     deliveredKeys = [],
     purchasedKeyRecord,
+    invoice,
   } = purchaseData;
 
   const handleCopySingle = (keyStr: string, idx: number) => {
@@ -416,23 +421,42 @@ export const KeyPurchaseModal: React.FC<KeyPurchaseModalProps> = ({
               </div>
 
               {/* Action Buttons */}
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button
-                  onClick={onClose}
-                  className="py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs cursor-pointer transition-colors text-center"
-                >
-                  Close Window
-                </button>
-                <button
-                  onClick={() => {
-                    onClose();
-                    if (onGoToMyKeys) onGoToMyKeys();
-                  }}
-                  className="py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-black text-xs shadow-[0_0_20px_rgba(16,185,129,0.4)] flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                >
-                  <Key className="w-3.5 h-3.5" />
-                  <span>View in My Keys</span>
-                </button>
+              <div className="space-y-2 pt-1">
+                {/* Generate / View Official Invoice Button */}
+                {invoice && onViewInvoice && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      onClose();
+                      onViewInvoice(invoice);
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-black text-xs shadow-[0_0_20px_rgba(0,229,255,0.4)] flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wider"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>View Official Invoice &amp; Receipt</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </motion.button>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={onClose}
+                    className="py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs cursor-pointer transition-colors text-center"
+                  >
+                    Close Window
+                  </button>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      if (onGoToMyKeys) onGoToMyKeys();
+                    }}
+                    className="py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-black text-xs shadow-[0_0_20px_rgba(16,185,129,0.4)] flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    <span>View in My Keys</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}

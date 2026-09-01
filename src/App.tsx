@@ -29,6 +29,7 @@ import {
   PlanPricing,
   AuthUser,
   StoreActivityNotification,
+  PurchaseInvoice,
 } from './types';
 import { playNotificationSound, getSoundMuted, setSoundMuted } from './lib/sound';
 
@@ -46,6 +47,7 @@ import {
 } from './components/user/user-modals';
 import { BuyKeysView } from './components/user/buy-keys-view';
 import { KeySuccessModal } from './components/user/key-success-modal';
+import { KeyInvoiceModal } from './components/user/key-invoice-modal';
 import {
   MyKeysView,
   HistoryView,
@@ -116,8 +118,8 @@ export default function App() {
   const [userTab, setUserTab] = useState<UserNavTab>('dashboard');
   const [adminTab, setAdminTab] = useState<AdminNavTab>('dashboard');
 
-  // Guest preview mode when not logged in
-  const [guestPreview, setGuestPreview] = useState(false);
+  // Guest preview mode enabled by default so users directly see storefront
+  const [guestPreview, setGuestPreview] = useState(true);
 
   // Authentication State (Starts null so Login Gate is shown first)
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
@@ -165,25 +167,13 @@ export default function App() {
       const saved = localStorage.getItem('kalam_products_db');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const clean = parsed.filter(
-            (p) =>
-              p &&
-              p.id &&
-              ![
-                'prod-aim-hack',
-                'prod-bala-v2',
-                'prod-hg-cheats',
-                'prod-telegram-bot',
-                'prod-8bp-aim',
-                'prod-drip-client',
-              ].includes(p.id)
-          );
-          return clean;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const clean = parsed.filter((p) => p && p.id && typeof p.name === 'string' && p.name.trim().length > 0);
+          if (clean.length > 0) return clean;
         }
       }
     } catch {}
-    return [];
+    return INITIAL_PRODUCTS;
   });
 
   const [productLinks, setProductLinks] = useState<ProductLink[]>(() => {
@@ -579,6 +569,7 @@ export default function App() {
   } | null>(null);
   const [isPurchasingKey, setIsPurchasingKey] = useState(false);
   const [keyPurchaseModalData, setKeyPurchaseModalData] = useState<KeyPurchaseModalData | null>(null);
+  const [activeInvoice, setActiveInvoice] = useState<PurchaseInvoice | null>(null);
 
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -616,6 +607,22 @@ export default function App() {
       }
     } catch {
       showToast('Could not refresh users from cloud.');
+    }
+  };
+
+  const handleRefreshProducts = async () => {
+    try {
+      showToast('Refreshing products catalog...');
+      const res = await safeFetchJson<{ success: boolean; products: Product[] }>('/api/products');
+      if (res.data?.success && Array.isArray(res.data.products)) {
+        setProducts(res.data.products);
+        try {
+          localStorage.setItem('kalam_products_db', JSON.stringify(res.data.products));
+        } catch {}
+        showToast(`Catalog refreshed (${res.data.products.length} products)`);
+      }
+    } catch {
+      showToast('Failed to refresh products');
     }
   };
 
@@ -1056,15 +1063,24 @@ export default function App() {
       }
 
       // 2. Add real keys to user keys list & Firestore
+      const invoiceNum = `INV-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`;
+      const randomTxSuffix = Math.floor(1000 + Math.random() * 9000);
+      const orderRef = `ORD-${product.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase()}-${randomTxSuffix}`;
+      const purchaseTimestamp = new Date().toLocaleString();
+
       const createdPurchasedKeys: PurchasedKey[] = deliveredKeyCodes.map((kCode, idx) => ({
         id: `key-${Date.now()}-${idx}`,
         productName: `${product.name} (${product.category})`,
         planName: `${plan.duration} License`,
         keyCode: kCode,
-        purchaseDate: new Date().toLocaleString(),
+        purchaseDate: purchaseTimestamp,
         expiryDate: 'Calculated upon activation',
         status: 'ACTIVE',
         price: unitPrice,
+        invoiceNumber: invoiceNum,
+        orderId: orderRef,
+        deviceType: product.deviceType,
+        game: product.game,
       }));
 
       const nextKeys = [...createdPurchasedKeys, ...userKeys];
@@ -1095,16 +1111,15 @@ export default function App() {
       saveProductsToFirestore(updatedProducts).catch(console.warn);
 
       // 4. Record Transaction & persist to Firestore
-      const randomTxSuffix = Math.floor(1000 + Math.random() * 9000);
       const newTx: TransactionRecord = {
         id: `TXN-${Date.now().toString().slice(-6)}`,
         type: 'KEY_PURCHASE',
         amount: totalCost,
         status: 'COMPLETED',
-        date: new Date().toLocaleString(),
+        date: purchaseTimestamp,
         method: 'Wallet Balance',
-        utrOrReference: `ORD-${product.name.slice(0, 3).toUpperCase()}-${randomTxSuffix}`,
-        description: `Delivered ${quantity} key(s) from ${data.source || 'API'}`,
+        utrOrReference: orderRef,
+        description: `Delivered ${quantity} key(s) from ${data.source || 'API'} [${invoiceNum}]`,
       };
 
       const nextTxns = [newTx, ...transactions];
@@ -1112,6 +1127,29 @@ export default function App() {
       if (currentUser?.id) {
         saveTransactionsToFirestore(currentUser.id, nextTxns).catch(console.warn);
       }
+
+      // 5. Build official purchase invoice
+      const generatedInvoice: PurchaseInvoice = {
+        invoiceNumber: invoiceNum,
+        orderId: orderRef,
+        date: purchaseTimestamp,
+        buyerName: currentUser?.name || currentUser?.username || 'Customer',
+        buyerUsername: currentUser?.username || 'customer',
+        buyerEmail: currentUser?.email || '',
+        productName: product.name,
+        category: product.category,
+        game: product.game,
+        deviceType: product.deviceType,
+        planDuration: `${plan.duration} License`,
+        quantity,
+        unitPrice,
+        totalAmount: totalCost,
+        paymentMethod: 'Wallet Balance',
+        keys: deliveredKeyCodes,
+        status: 'DELIVERED',
+        shopName: storeSettings.shopName || 'KALAM MODS OFFICIAL',
+        supportContact: storeSettings.supportUsername || '@Kalam_Mods_Official',
+      };
 
       // Publish real-time activity event for Admin notification
       publishStoreActivity({
@@ -1126,7 +1164,7 @@ export default function App() {
         quantity,
       }).catch(() => {});
 
-      showToast(`Key Delivered from ${data.source === 'INVENTORY_STOCK' ? 'ID Stock Pool' : 'Upstream API'}!`);
+      showToast(`Key Delivered & Invoice #${invoiceNum} Generated!`);
 
       // Set Progress Bar to 100% SUCCESS and show delivered keys inside the Key Purchase Modal
       setKeyPurchaseModalData((prev) =>
@@ -1134,11 +1172,12 @@ export default function App() {
           ? {
               ...prev,
               stage: 'SUCCESS',
-              label: 'Key Delivered!',
-              subLabel: `${deliveredKeyCodes.length} license key(s) successfully generated and saved to your account.`,
+              label: 'Key Delivered & Invoice Ready!',
+              subLabel: `${deliveredKeyCodes.length} license key(s) generated. Official Invoice #${invoiceNum} generated.`,
               progressPercent: 100,
               deliveredKeys: deliveredKeyCodes,
               purchasedKeyRecord: createdPurchasedKeys[0],
+              invoice: generatedInvoice,
             }
           : null
       );
@@ -1701,7 +1740,7 @@ export default function App() {
                   <h2 className="text-base font-extrabold text-white">Deposit Wallet Cash</h2>
                   <div className="p-4 rounded-2xl bg-[#161622] border border-[#00e5ff]/30 text-center space-y-3">
                     <p className="text-xs text-gray-300">
-                      Open the deposit terminal to generate UPI QR code or verify your UTR reference number.
+                      Open the deposit terminal to generate instant UPI QR code with automated payment verification.
                     </p>
                     <button
                       onClick={() => requireAuth(() => setIsDepositOpen(true), 'Deposit Terminal')}
@@ -1729,10 +1768,21 @@ export default function App() {
                 <MyKeysView
                   keys={userKeys}
                   onOpenBuyKeys={() => requireAuth(() => setIsBuyKeysOpen(true), 'Key Store')}
+                  onViewInvoice={(inv) => setActiveInvoice(inv)}
+                  currentUser={currentUser}
+                  storeSettings={storeSettings}
                 />
               )}
 
-              {userTab === 'history' && <HistoryView transactions={transactions} />}
+              {userTab === 'history' && (
+                <HistoryView
+                  transactions={transactions}
+                  onViewInvoice={(inv) => setActiveInvoice(inv)}
+                  userKeys={userKeys}
+                  currentUser={currentUser}
+                  storeSettings={storeSettings}
+                />
+              )}
 
               {userTab === 'referral' && (
                 <ReferralView
@@ -1889,7 +1939,7 @@ export default function App() {
               />
             )}
 
-            {adminTab === 'sold_keys' && <AdminSoldKeysView />}
+            {adminTab === 'sold_keys' && <AdminSoldKeysView soldKeys={userKeys} />}
 
             {adminTab === 'resellers' && (
               <AdminResellersView
@@ -1975,6 +2025,19 @@ export default function App() {
           setKeyPurchaseModalData(null);
           setUserTab('my_keys');
         }}
+        onViewInvoice={(inv) => setActiveInvoice(inv)}
+      />
+
+      {/* 3.6. Official Purchase Invoice Modal */}
+      <KeyInvoiceModal
+        isOpen={Boolean(activeInvoice)}
+        onClose={() => setActiveInvoice(null)}
+        invoice={activeInvoice}
+        storeSettings={storeSettings}
+        onGoToMyKeys={() => {
+          setActiveInvoice(null);
+          setUserTab('my_keys');
+        }}
       />
 
       {/* 4. Add/Edit Product Modal */}
@@ -2005,6 +2068,8 @@ export default function App() {
           setLatestPurchasedKey(null);
           setUserTab('my_keys');
         }}
+        onViewInvoice={(inv) => setActiveInvoice(inv)}
+        invoice={activeInvoice}
       />
 
       {/* 7. Out of Stock Notice Modal */}

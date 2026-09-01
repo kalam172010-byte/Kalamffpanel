@@ -26,20 +26,56 @@ import {
   QrCode,
   Send,
   Zap,
-  DollarSign
+  DollarSign,
+  FileText
 } from 'lucide-react';
 import { GlassCard } from '../shared/glass-card';
-import { PurchasedKey, TransactionRecord, StoreSettings, AuthUser, ResellerUser } from '../../types';
+import { PurchasedKey, TransactionRecord, StoreSettings, AuthUser, ResellerUser, PurchaseInvoice } from '../../types';
 import { formatCurrency } from '../../lib/utils';
 
 /* ==================== MY KEYS VIEW ==================== */
 interface MyKeysViewProps {
   keys: PurchasedKey[];
   onOpenBuyKeys: () => void;
+  onViewInvoice?: (invoice: PurchaseInvoice) => void;
+  currentUser?: AuthUser | null;
+  storeSettings?: StoreSettings;
 }
 
-export const MyKeysView: React.FC<MyKeysViewProps> = ({ keys, onOpenBuyKeys }) => {
+export const MyKeysView: React.FC<MyKeysViewProps> = ({
+  keys,
+  onOpenBuyKeys,
+  onViewInvoice,
+  currentUser,
+  storeSettings,
+}) => {
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
+
+  const handleGenerateInvoiceFromKey = (k: PurchasedKey) => {
+    if (!onViewInvoice) return;
+    const inv: PurchaseInvoice = {
+      invoiceNumber: k.invoiceNumber || `INV-${k.id.replace(/\D/g, '').slice(-6) || Math.floor(100000 + Math.random() * 900000)}`,
+      orderId: k.orderId || `ORD-${k.id.replace(/\D/g, '').slice(-4) || '9241'}`,
+      date: k.purchaseDate,
+      buyerName: currentUser?.name || currentUser?.username || 'Customer',
+      buyerUsername: currentUser?.username || 'customer',
+      buyerEmail: currentUser?.email || '',
+      productName: k.productName,
+      category: 'Game License',
+      game: k.game,
+      deviceType: k.deviceType,
+      planDuration: k.planName,
+      quantity: 1,
+      unitPrice: k.price,
+      totalAmount: k.price,
+      paymentMethod: 'Wallet Balance',
+      keys: [k.keyCode],
+      status: 'DELIVERED',
+      shopName: storeSettings?.shopName || 'KALAM MODS OFFICIAL',
+      supportContact: storeSettings?.supportUsername || '@Kalam_Mods_Official',
+    };
+    onViewInvoice(inv);
+  };
 
   const handleCopyKey = (key: PurchasedKey) => {
     navigator.clipboard.writeText(key.keyCode);
@@ -121,7 +157,19 @@ export const MyKeysView: React.FC<MyKeysViewProps> = ({ keys, onOpenBuyKeys }) =
                   <Clock className="w-3 h-3 text-gray-500" />
                   Purchased: {k.purchaseDate}
                 </span>
-                <span className="text-gray-300 font-semibold">₹{k.price}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-300 font-semibold font-mono">₹{k.price}</span>
+                  {onViewInvoice && (
+                    <button
+                      onClick={() => handleGenerateInvoiceFromKey(k)}
+                      className="px-2 py-0.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/30 text-cyan-300 font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all"
+                      title="View & Download Invoice"
+                    >
+                      <FileText className="w-3 h-3" />
+                      <span>Invoice</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </GlassCard>
           ))}
@@ -134,9 +182,52 @@ export const MyKeysView: React.FC<MyKeysViewProps> = ({ keys, onOpenBuyKeys }) =
 /* ==================== HISTORY VIEW ==================== */
 interface HistoryViewProps {
   transactions: TransactionRecord[];
+  onViewInvoice?: (invoice: PurchaseInvoice) => void;
+  userKeys?: PurchasedKey[];
+  currentUser?: AuthUser | null;
+  storeSettings?: StoreSettings;
 }
 
-export const HistoryView: React.FC<HistoryViewProps> = ({ transactions }) => {
+export const HistoryView: React.FC<HistoryViewProps> = ({
+  transactions,
+  onViewInvoice,
+  userKeys = [],
+  currentUser,
+  storeSettings,
+}) => {
+  const handleOpenTxInvoice = (tx: TransactionRecord) => {
+    if (!onViewInvoice) return;
+    // Match any associated key
+    const matchingKey = userKeys.find((k) =>
+      (tx.utrOrReference && k.orderId && tx.utrOrReference.includes(k.orderId)) ||
+      (tx.description && k.keyCode && tx.description.includes(k.keyCode)) ||
+      (tx.date === k.purchaseDate)
+    );
+
+    const inv: PurchaseInvoice = {
+      invoiceNumber: matchingKey?.invoiceNumber || `INV-${tx.id.replace(/\D/g, '').slice(-6) || '883921'}`,
+      orderId: tx.utrOrReference || matchingKey?.orderId || `ORD-KEY-${tx.id.slice(-4)}`,
+      date: tx.date,
+      buyerName: currentUser?.name || currentUser?.username || 'Customer',
+      buyerUsername: currentUser?.username || 'customer',
+      buyerEmail: currentUser?.email || '',
+      productName: matchingKey?.productName || 'VIP Game License Key',
+      category: 'Digital License',
+      game: matchingKey?.game,
+      deviceType: matchingKey?.deviceType,
+      planDuration: matchingKey?.planName || 'Key Delivery',
+      quantity: 1,
+      unitPrice: tx.amount,
+      totalAmount: tx.amount,
+      paymentMethod: tx.method || 'Wallet Balance',
+      keys: matchingKey ? [matchingKey.keyCode] : ['(Stored in My Keys section)'],
+      status: 'DELIVERED',
+      shopName: storeSettings?.shopName || 'KALAM MODS OFFICIAL',
+      supportContact: storeSettings?.supportUsername || '@Kalam_Mods_Official',
+    };
+    onViewInvoice(inv);
+  };
+
   return (
     <div className="space-y-4" id="history-view">
       <div>
@@ -165,9 +256,9 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ transactions }) => {
               glow="none"
               className="p-3.5 bg-[#161622]/90 border-white/10 flex items-center justify-between gap-3"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs ${
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
                     tx.type === 'DEPOSIT'
                       ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                       : 'bg-[#ff0080]/15 text-[#ff0080] border border-[#ff0080]/30'
@@ -175,14 +266,26 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ transactions }) => {
                 >
                   {tx.type === 'DEPOSIT' ? '+' : '-'}
                 </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white">
-                    {tx.type === 'DEPOSIT' ? 'Wallet Deposit (UPI)' : 'Digital Key Purchase'}
-                  </h4>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-xs font-bold text-white truncate">
+                      {tx.type === 'DEPOSIT' ? 'Wallet Deposit (UPI)' : 'Digital Key Purchase'}
+                    </h4>
+                    {tx.type === 'KEY_PURCHASE' && onViewInvoice && (
+                      <button
+                        onClick={() => handleOpenTxInvoice(tx)}
+                        className="px-2 py-0.5 rounded-md bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-400/30 text-cyan-300 font-bold text-[9px] flex items-center gap-1 cursor-pointer transition-all"
+                        title="View Official Purchase Invoice"
+                      >
+                        <FileText className="w-2.5 h-2.5" />
+                        <span>Invoice</span>
+                      </button>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-0.5">
                     <span>{tx.date}</span>
                     <span>•</span>
-                    <span className="font-mono text-gray-300">{tx.utrOrReference}</span>
+                    <span className="font-mono text-gray-300 truncate">{tx.utrOrReference}</span>
                   </div>
                 </div>
               </div>
@@ -596,7 +699,7 @@ export const SupportTicketsView: React.FC<SupportTicketsViewProps> = ({ storeSet
                 required
                 value={ticketSubject}
                 onChange={(e) => setTicketSubject(e.target.value)}
-                placeholder="e.g. Deposit UTR Pending or Key Not Working"
+                placeholder="e.g. Deposit Balance Pending or Key Activation Question"
                 className="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#00e5ff] text-white"
               />
             </div>

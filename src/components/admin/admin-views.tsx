@@ -870,7 +870,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   );
   const [manualInstructions, setManualInstructions] = useState(
     storeSettings?.manualPaymentInstructions ||
-      '1. Scan QR code or copy UPI ID.\n2. Pay exact amount from PhonePe, GPay, or Paytm.\n3. Copy 12-digit UTR and submit for instant wallet credit.'
+      '1. Scan QR code or tap your preferred UPI app.\n2. Pay exact amount from PhonePe, GPay, or Paytm.\n3. Payment is automatically detected and credited instantly.'
   );
   const [savedDirectSuccess, setSavedDirectSuccess] = useState(false);
 
@@ -1108,7 +1108,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
               <QrCode className="w-3.5 h-3.5 text-cyan-400" />
             </div>
             <p className="text-[10px] text-gray-400 leading-tight">
-              Direct UPI ID + custom QR code image with manual 12-digit UTR input.
+              Direct UPI ID + custom QR code with automated payment detection.
             </p>
           </button>
 
@@ -1606,7 +1606,7 @@ export const AdminStoreSettingsView: React.FC<AdminStoreSettingsViewProps> = ({
   const [upiMerchantName, setUpiMerchantName] = useState(settings.upiMerchantName || settings.merchantUpi || 'KALAM FF PANEL PAYMENTS');
   const [customQrUrl, setCustomQrUrl] = useState(settings.customQrUrl || '');
   const [manualPaymentInstructions, setManualPaymentInstructions] = useState(
-    settings.manualPaymentInstructions || '1. Scan QR code or copy UPI ID.\n2. Pay exact amount from PhonePe, GPay, or Paytm.\n3. Copy 12-digit UTR and submit for instant wallet credit.'
+    settings.manualPaymentInstructions || '1. Scan QR code or tap your preferred UPI app.\n2. Pay exact amount from PhonePe, GPay, or Paytm.\n3. Payment is automatically detected and credited instantly.'
   );
 
   // Admin Master Security & Credentials
