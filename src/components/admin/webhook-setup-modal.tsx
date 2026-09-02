@@ -34,7 +34,7 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
   merchantUpi = '8056317218@fam',
 }) => {
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'freepanel' | 'paytm' | 'custom' | 'test'>('freepanel');
+  const [activeTab, setActiveTab] = useState<'zapupi' | 'freepanel' | 'paytm' | 'custom' | 'test'>('zapupi');
   const [isTesting, setIsTesting] = useState(false);
   const [testResponse, setTestResponse] = useState<any>(null);
   const [currentOrigin, setCurrentOrigin] = useState('');
@@ -208,7 +208,19 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <button
+                  onClick={() => setActiveTab('zapupi')}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    activeTab === 'zapupi'
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-[0_0_12px_rgba(6,182,212,0.4)] border border-cyan-400/50'
+                      : 'bg-white/5 hover:bg-white/10 text-gray-400 border border-white/5'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>ZapUPI (pay.zapupi.com)</span>
+                </button>
+
                 <button
                   onClick={() => setActiveTab('freepanel')}
                   className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -225,12 +237,12 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                   onClick={() => setActiveTab('paytm')}
                   className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     activeTab === 'paytm'
-                      ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-[0_0_12px_rgba(6,182,212,0.4)] border border-cyan-400/50'
+                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-[0_0_12px_rgba(99,102,241,0.4)] border border-indigo-400/50'
                       : 'bg-white/5 hover:bg-white/10 text-gray-400 border border-white/5'
                   }`}
                 >
                   <Server className="w-3.5 h-3.5" />
-                  <span>Paytm Gateway</span>
+                  <span>Paytm</span>
                 </button>
 
                 <button
@@ -242,7 +254,7 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                   }`}
                 >
                   <Activity className="w-3.5 h-3.5" />
-                  <span>Custom UPI Gateway</span>
+                  <span>Custom UPI</span>
                 </button>
 
                 <button
@@ -258,6 +270,86 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Tab 0: ZapUPI Instructions */}
+            {activeTab === 'zapupi' && (
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-500/30 space-y-4 text-xs"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-cyan-300 font-bold">
+                    <span className="w-5 h-5 rounded-full bg-cyan-500/30 flex items-center justify-center text-cyan-300 text-[10px]">
+                      1
+                    </span>
+                    <span>How to configure in ZapUPI Dashboard (pay.zapupi.com)</span>
+                  </div>
+                  <a
+                    href="https://pay.zapupi.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 underline"
+                  >
+                    <span>Open ZapUPI Portal</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="space-y-3 text-gray-300">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
+                      1
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white">Log in to ZapUPI Account</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Visit <a href="https://pay.zapupi.com" target="_blank" rel="noreferrer" className="text-cyan-400 underline">pay.zapupi.com</a> and sign in to your merchant dashboard.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
+                      2
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white">Copy your zap_key</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Find your <code className="text-cyan-300">zap_key</code> (e.g. <code>zap9616e75062c85cc1995818322ae0d1d5</code>) under API Settings and save it in Admin Panel &gt; Payment &amp; Gateway Management.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
+                      3
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white">Configure Webhook URL in ZapUPI</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Set your Webhook URL in your ZapUPI dashboard to:
+                      </p>
+                      <div className="mt-1.5 p-2 rounded bg-black/60 font-mono text-[10.5px] text-emerald-400 border border-emerald-500/20 select-all">
+                        {webhookUrl}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
+                      4
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white">Automatic Callback Processing</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        ZapUPI sends real-time POST notifications with <code className="text-pink-300">order_id</code>, <code className="text-pink-300">amount</code>, and <code className="text-pink-300">status: "Success"</code>. The backend verifies and credits user wallets automatically!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
 
             {/* Tab 1: FreePanel Instructions */}
             {activeTab === 'freepanel' && (

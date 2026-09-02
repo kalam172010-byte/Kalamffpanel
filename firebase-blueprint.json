@@ -36,7 +36,8 @@
         "supportEmail": { "type": "string", "description": "Email support" },
         "primaryUpiId": { "type": "string", "description": "Primary UPI ID for payments" },
         "minDeposit": { "type": "number", "description": "Minimum deposit amount" },
-        "maxDeposit": { "type": "number", "description": "Maximum deposit amount" }
+        "maxDeposit": { "type": "number", "description": "Maximum deposit amount" },
+        "enableUtrInput": { "type": "boolean", "description": "Enable or disable manual UTR number input submission in deposit and payment modals" }
       }
     },
     "Product": {

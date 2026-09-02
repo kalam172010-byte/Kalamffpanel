@@ -130,6 +130,7 @@ export interface StoreSettings {
   announcementEnabled?: boolean;
   maintenanceMode?: boolean;
   dailySpinEnabled?: boolean;
+  enableUtrInput?: boolean;
 }
 
 export interface ResellerUser {

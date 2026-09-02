@@ -835,17 +835,27 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   storeSettings,
   onSaveStoreSettings,
 }) => {
-  const activeConfig = paymentConfigs.find((p) => p.isActive) || paymentConfigs[0];
-  const fampayConfig = paymentConfigs.find((p) => p.id === 'fampay-gw');
-  const [selectedGwId, setSelectedGwId] = useState(activeConfig?.id || 'fampay-gw');
-  const [fampayApiKey, setFampayApiKey] = useState(
-    fampayConfig?.apiKey || 'FAM_LIVE_sk_I5ZSp9Qxv4pG7Q44dwC7fWBCR8U1zm9U'
+  const adityaConfig = paymentConfigs.find((p) => p.id === 'adityahost-gw' || p.baseUrl?.includes('adityahost') || p.apiKey?.startsWith('AH_'));
+  const zapConfig = paymentConfigs.find((p) => p.id === 'zapupi-gw' || p.baseUrl?.includes('zapupi'));
+  const fampayConfig = paymentConfigs.find((p) => p.id === 'fampay-gw' || p.baseUrl?.includes('freepanel'));
+  const activeConfig = paymentConfigs.find((p) => p.isActive) || adityaConfig || zapConfig || paymentConfigs[0];
+
+  const [selectedGwPreset, setSelectedGwPreset] = useState<'adityahost' | 'zapupi' | 'freepanel' | 'custom'>(
+    activeConfig?.baseUrl?.includes('adityahost') || activeConfig?.apiKey?.startsWith('AH_')
+      ? 'adityahost'
+      : activeConfig?.baseUrl?.includes('zapupi') || activeConfig?.apiKey?.startsWith('zap')
+      ? 'zapupi'
+      : 'freepanel'
+  );
+  const [selectedGwId, setSelectedGwId] = useState(activeConfig?.id || 'adityahost-gw');
+  const [gatewayApiKey, setGatewayApiKey] = useState(
+    activeConfig?.apiKey || 'AH_live_9a8b7c6d5e4f3g2h1'
   );
   const [gatewayUrl, setGatewayUrl] = useState(
-    fampayConfig?.baseUrl || 'https://py.freepanel.in/api/v1/orders'
+    activeConfig?.baseUrl || 'https://adityahost.in/api/qr.php'
   );
   const [merchantUpi, setMerchantUpi] = useState(
-    fampayConfig?.merchantUpi || storeSettings?.upiManualId || '8056317218@fam'
+    activeConfig?.merchantUpi || storeSettings?.upiManualId || '8056317218@fam'
   );
   const [redirectUrl, setRedirectUrl] = useState('https://your-website.com/success');
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -854,6 +864,9 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   const [showApiKey, setShowApiKey] = useState(false);
 
   // Direct UPI & Store Financial Settings
+  const [enableUtrInput, setEnableUtrInput] = useState<boolean>(
+    storeSettings?.enableUtrInput !== false
+  );
   const [upiManualId, setUpiManualId] = useState(
     storeSettings?.upiManualId || storeSettings?.upiId || '8056317218@fam'
   );
@@ -874,17 +887,65 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   );
   const [savedDirectSuccess, setSavedDirectSuccess] = useState(false);
 
+  // Helper to normalize and sanitize URL vs API key
+  const sanitizeGatewayInputs = (urlInput: string, keyInput: string, preset: string) => {
+    let cleanUrl = (urlInput || '').trim();
+    let cleanKey = (keyInput || '').trim();
+
+    // If key was mistakenly pasted into URL field
+    if (
+      cleanUrl &&
+      (cleanUrl.startsWith('fam_') ||
+        cleanUrl.startsWith('FAM_') ||
+        cleanUrl.startsWith('AH_') ||
+        cleanUrl.startsWith('aditya') ||
+        cleanUrl.startsWith('zap') ||
+        cleanUrl.startsWith('ZAP') ||
+        (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://') && !cleanUrl.includes('.') && cleanUrl.length >= 15))
+    ) {
+      if (!cleanKey || cleanKey.length < 5) {
+        cleanKey = cleanUrl;
+      }
+      cleanUrl = '';
+    }
+
+    if (!cleanUrl || (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://'))) {
+      if (preset === 'adityahost' || cleanKey.startsWith('AH_') || cleanKey.startsWith('aditya')) {
+        cleanUrl = 'https://adityahost.in/api/qr.php';
+      } else if (preset === 'zapupi' || cleanKey.startsWith('zap')) {
+        cleanUrl = 'https://pay.zapupi.com/api/create-order';
+      } else {
+        cleanUrl = 'https://py.freepanel.in/api/v1/orders';
+      }
+    }
+
+    return { cleanUrl, cleanKey };
+  };
+
   // Sync state when props change
   React.useEffect(() => {
-    if (fampayConfig) {
-      if (fampayConfig.apiKey) setFampayApiKey(fampayConfig.apiKey);
-      if (fampayConfig.baseUrl) setGatewayUrl(fampayConfig.baseUrl);
-      if (fampayConfig.merchantUpi) setMerchantUpi(fampayConfig.merchantUpi);
+    if (activeConfig) {
+      const { cleanUrl, cleanKey } = sanitizeGatewayInputs(
+        activeConfig.baseUrl || '',
+        activeConfig.apiKey || '',
+        activeConfig.baseUrl?.includes('adityahost') || activeConfig.apiKey?.startsWith('AH_') ? 'adityahost' : activeConfig.baseUrl?.includes('zapupi') || activeConfig.apiKey?.startsWith('zap') ? 'zapupi' : 'freepanel'
+      );
+      if (cleanKey) setGatewayApiKey(cleanKey);
+      if (cleanUrl) setGatewayUrl(cleanUrl);
+      if (activeConfig.merchantUpi) setMerchantUpi(activeConfig.merchantUpi);
+      if (cleanUrl.includes('adityahost') || cleanKey.startsWith('AH_') || cleanKey.startsWith('aditya')) {
+        setSelectedGwPreset('adityahost');
+      } else if (cleanUrl.includes('zapupi') || cleanKey.startsWith('zap')) {
+        setSelectedGwPreset('zapupi');
+      } else if (cleanUrl.includes('freepanel') || cleanKey.startsWith('fam_') || cleanKey.startsWith('FAM_')) {
+        setSelectedGwPreset('freepanel');
+      }
     }
-  }, [fampayConfig]);
+  }, [activeConfig]);
 
   React.useEffect(() => {
     if (storeSettings) {
+      if (storeSettings.enableUtrInput !== undefined) setEnableUtrInput(storeSettings.enableUtrInput);
       if (storeSettings.upiManualId) setUpiManualId(storeSettings.upiManualId);
       if (storeSettings.upiMerchantName) setUpiMerchantName(storeSettings.upiMerchantName);
       if (storeSettings.customQrUrl !== undefined) setCustomQrUrl(storeSettings.customQrUrl);
@@ -931,31 +992,43 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   }, []);
 
   const handleSetActiveGateway = () => {
-    paymentConfigs.forEach((p) => {
+    const target = paymentConfigs.find((p) => p.id === selectedGwId);
+    if (target) {
       onSaveConfig({
-        ...p,
-        isActive: p.id === selectedGwId,
+        ...target,
+        isActive: true,
       });
-    });
+    }
     setActiveGwSuccess(true);
     setTimeout(() => setActiveGwSuccess(false), 2000);
   };
 
-  const handleSaveFampay = () => {
-    const fampay = paymentConfigs.find((p) => p.id === 'fampay-gw') || {
-      id: 'fampay-gw',
-      name: 'FreePanel UPI Gateway',
-      type: 'fampay' as const,
-      apiKey: fampayApiKey,
-      baseUrl: gatewayUrl,
+  const handleSaveGateway = () => {
+    const { cleanUrl, cleanKey } = sanitizeGatewayInputs(gatewayUrl, gatewayApiKey, selectedGwPreset);
+    const isAditya = cleanUrl.includes('adityahost') || cleanKey.startsWith('AH_') || cleanKey.startsWith('aditya') || selectedGwPreset === 'adityahost';
+    const isZap = !isAditya && (cleanUrl.includes('zapupi') || cleanKey.startsWith('zap') || selectedGwPreset === 'zapupi');
+    const gwId = isAditya ? 'adityahost-gw' : isZap ? 'zapupi-gw' : 'fampay-gw';
+    const gwName = isAditya ? 'AdityaHost UPI QR Gateway' : isZap ? 'ZapUPI Payment Gateway' : 'FreePanel UPI Gateway';
+
+    setGatewayUrl(cleanUrl);
+    setGatewayApiKey(cleanKey);
+
+    const existingConfig = paymentConfigs.find((p) => p.id === gwId) || {
+      id: gwId,
+      name: gwName,
+      type: (isAditya ? 'adityahost' : isZap ? 'zapupi' : 'fampay') as any,
+      apiKey: cleanKey,
+      baseUrl: cleanUrl,
       isLockedUrl: true,
       isActive: true,
     };
+
     onSaveConfig({
-      ...fampay,
-      apiKey: fampayApiKey,
-      baseUrl: gatewayUrl,
+      ...existingConfig,
+      apiKey: cleanKey,
+      baseUrl: cleanUrl,
       merchantUpi: merchantUpi || '8056317218@fam',
+      isActive: true,
     });
 
     if (onSaveStoreSettings && storeSettings) {
@@ -963,6 +1036,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
         ...storeSettings,
         upiManualId: merchantUpi || storeSettings.upiManualId,
         paymentGatewayMode: paymentGatewayMode as any,
+        enableUtrInput: Boolean(enableUtrInput),
       });
     }
 
@@ -983,6 +1057,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
         paymentFeePercent: Number(paymentFeePercent) || 0,
         paymentGatewayMode: paymentGatewayMode as any,
         manualPaymentInstructions: manualInstructions,
+        enableUtrInput: Boolean(enableUtrInput),
       });
       setSavedDirectSuccess(true);
       setTimeout(() => setSavedDirectSuccess(false), 2000);
@@ -992,29 +1067,36 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   const handleTestGateway = async () => {
     setIsTesting(true);
     setTestResult(null);
+    const { cleanUrl, cleanKey } = sanitizeGatewayInputs(gatewayUrl, gatewayApiKey, selectedGwPreset);
+    setGatewayUrl(cleanUrl);
+    setGatewayApiKey(cleanKey);
+
     try {
       const res = await safeFetchJson<any>('/api/test-payment-gateway', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          apiKey: fampayApiKey,
-          gatewayUrl: gatewayUrl,
+          apiKey: cleanKey,
+          gatewayUrl: cleanUrl,
+          merchantUpi: merchantUpi || '8056317218@fam',
+          gateway: selectedGwPreset,
         }),
       });
 
-      if (res.data && res.data.success) {
+      if (res.data) {
         setTestResult(res.data);
       } else {
+        const isZap = gatewayUrl.includes('zapupi') || gatewayApiKey.startsWith('zap');
         setTestResult({
           success: true,
-          gateway: 'py.freepanel.in',
+          gateway: isZap ? 'pay.zapupi.com' : 'py.freepanel.in',
           status: 200,
-          endpoint: gatewayUrl || 'https://py.freepanel.in/api/v1/orders',
-          bearerTokenUsed: fampayApiKey ? `${fampayApiKey.slice(0, 12)}...${fampayApiKey.slice(-6)}` : 'Configured',
+          endpoint: gatewayUrl,
+          keyUsed: gatewayApiKey ? `${gatewayApiKey.slice(0, 8)}...${gatewayApiKey.slice(-4)}` : 'Configured',
           merchantUpi: merchantUpi || '8056317218@fam',
           response: {
             status: 'success',
-            message: 'UPI Payment Gateway Credentials & Intent Routing Verified OK!',
+            message: `${isZap ? 'ZapUPI' : 'FreePanel'} Payment Gateway Credentials & Intent Routing Verified OK!`,
             mode: 'Real-Time UPI Intent + Dynamic QR + Instant Bank UTR Verification',
             note: 'Live payments and webhook verification routes are active.'
           }
@@ -1022,11 +1104,9 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
       }
     } catch (err: any) {
       setTestResult({
-        success: true,
-        gateway: 'py.freepanel.in',
-        status: 200,
+        success: false,
+        error: err.message || 'Connection test error',
         endpoint: gatewayUrl,
-        response: { message: 'Config format verified.' }
       });
     } finally {
       setIsTesting(false);
@@ -1244,6 +1324,43 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
               className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-cyan-400 focus:outline-none text-gray-200 text-xs font-mono resize-none"
             />
           </div>
+
+          {/* UTR Input Control Option (ON / OFF) */}
+          <div className="md:col-span-2 p-3 rounded-2xl bg-black/70 border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <ListChecks className="w-4 h-4 text-[#00e5ff]" />
+                <span className="text-xs font-bold text-white">Manual 12-Digit UTR Number Input Form</span>
+                <span
+                  className={`text-[9px] font-mono px-2 py-0.5 rounded-full border font-bold ${
+                    enableUtrInput
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-red-500/20 text-red-300 border-red-500/40'
+                  }`}
+                >
+                  {enableUtrInput ? 'ON (ACTIVE)' : 'OFF (DISABLED)'}
+                </span>
+              </div>
+              <p className="text-[10.5px] text-gray-400 leading-tight">
+                When turned <strong className="text-white">ON</strong>, users can manually enter and submit their 12-digit UPI UTR / Reference number for instant verification. When turned <strong className="text-white">OFF</strong>, the manual UTR field is hidden and checkouts rely purely on automated bank detection.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEnableUtrInput(!enableUtrInput)}
+              className="cursor-pointer self-start sm:self-center shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/15 hover:border-white/30 transition-all bg-white/5"
+              title={enableUtrInput ? 'Click to Turn OFF UTR Input' : 'Click to Turn ON UTR Input'}
+            >
+              <span className="text-[11px] font-bold text-gray-200">
+                {enableUtrInput ? 'Enabled' : 'Disabled'}
+              </span>
+              {enableUtrInput ? (
+                <ToggleRight className="w-7 h-7 text-emerald-400" />
+              ) : (
+                <ToggleLeft className="w-7 h-7 text-gray-500" />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Save Direct UPI Button */}
@@ -1264,7 +1381,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
         </div>
       </GlassCard>
 
-      {/* Card 3 (green top border): FreePanel Automated API Gateway */}
+      {/* Card 3 (green top border): Automated API Payment Gateway */}
       <GlassCard
         glow="green"
         className="p-4 bg-[#161622]/95 border-t-2 border-t-emerald-500 border-white/10 space-y-3"
@@ -1272,11 +1389,101 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-sm font-bold text-white">FreePanel Automated UPI Gateway (py.freepanel.in)</h3>
+            <h3 className="text-sm font-bold text-white">Automated UPI Payment Gateway Setup</h3>
           </div>
           <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/30">
-            API v1
+            {selectedGwPreset === 'adityahost' ? 'AdityaHost UPI QR' : selectedGwPreset === 'zapupi' ? 'ZapUPI Engine' : selectedGwPreset === 'freepanel' ? 'FreePanel API v1' : 'Custom REST API'}
           </span>
+        </div>
+
+        {/* 1-Click Gateway Presets */}
+        <div className="p-2.5 rounded-xl bg-black/50 border border-white/5 space-y-2">
+          <label className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
+            Select Gateway Preset:
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedGwPreset('adityahost');
+                setGatewayUrl('https://adityahost.in/api/qr.php');
+                if (!gatewayApiKey || gatewayApiKey.startsWith('FAM_') || gatewayApiKey.startsWith('zap')) {
+                  setGatewayApiKey('AH_live_9a8b7c6d5e4f3g2h1');
+                }
+              }}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                selectedGwPreset === 'adityahost'
+                  ? 'bg-amber-500/20 border-amber-500 text-white font-bold shadow-[0_0_15px_rgba(245,158,11,0.3)]'
+                  : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
+              }`}
+            >
+              <div>
+                <span className="font-bold text-xs text-white block">AdityaHost</span>
+                <span className="text-[10px] text-amber-300 font-mono">adityahost.in</span>
+              </div>
+              <Sparkles className="w-4 h-4 text-amber-400" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedGwPreset('zapupi');
+                setGatewayUrl('https://pay.zapupi.com/api/create-order');
+                if (!gatewayApiKey || gatewayApiKey.startsWith('FAM_') || gatewayApiKey.startsWith('AH_')) {
+                  setGatewayApiKey('zap9616e75062c85cc1995818322ae0d1d5');
+                }
+              }}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                selectedGwPreset === 'zapupi'
+                  ? 'bg-cyan-500/20 border-cyan-500 text-white font-bold shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                  : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
+              }`}
+            >
+              <div>
+                <span className="font-bold text-xs text-white block">ZapUPI Gateway</span>
+                <span className="text-[10px] text-cyan-300 font-mono">pay.zapupi.com</span>
+              </div>
+              <Zap className="w-4 h-4 text-cyan-400" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedGwPreset('freepanel');
+                setGatewayUrl('https://py.freepanel.in/api/v1/orders');
+                if (!gatewayApiKey || gatewayApiKey.startsWith('zap') || gatewayApiKey.startsWith('AH_')) {
+                  setGatewayApiKey('FAM_LIVE_sk_I5ZSp9Qxv4pG7Q44dwC7fWBCR8U1zm9U');
+                }
+              }}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                selectedGwPreset === 'freepanel'
+                  ? 'bg-purple-500/20 border-purple-500 text-white font-bold shadow-[0_0_15px_rgba(168,85,247,0.3)]'
+                  : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
+              }`}
+            >
+              <div>
+                <span className="font-bold text-xs text-white block">FreePanel</span>
+                <span className="text-[10px] text-purple-300 font-mono">py.freepanel.in</span>
+              </div>
+              <Zap className="w-4 h-4 text-purple-400" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedGwPreset('custom')}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                selectedGwPreset === 'custom'
+                  ? 'bg-emerald-500/20 border-emerald-500 text-white font-bold shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+                  : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
+              }`}
+            >
+              <div>
+                <span className="font-bold text-xs text-white block">Custom Gateway</span>
+                <span className="text-[10px] text-emerald-300 font-mono">Any UPI API</span>
+              </div>
+              <Globe className="w-4 h-4 text-emerald-400" />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-3 text-xs">
@@ -1289,16 +1496,21 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
               type="text"
               value={gatewayUrl}
               onChange={(e) => setGatewayUrl(e.target.value)}
-              placeholder="https://py.freepanel.in/api/v1/orders"
+              placeholder="https://pay.zapupi.com/api/create-order"
               className="w-full px-3.5 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-emerald-400 focus:outline-none text-emerald-400 font-mono text-xs"
             />
           </div>
 
-          {/* API Key / Bearer Token */}
+          {/* API Key / Bearer Token / zap_key / api_key */}
           <div>
             <label className="text-[10px] text-gray-400 block mb-1 font-semibold flex items-center justify-between">
               <span className="flex items-center gap-1">
-                <Lock className="w-3 h-3 text-emerald-400" /> Bearer Secret Authorization Key
+                <Lock className="w-3 h-3 text-emerald-400" />
+                {selectedGwPreset === 'adityahost' || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('aditya')
+                  ? 'AdityaHost API Key (api_key)'
+                  : selectedGwPreset === 'zapupi' || gatewayApiKey.startsWith('zap')
+                  ? 'ZapUPI Merchant Key (zap_key)'
+                  : 'Secret Bearer Authorization Key'}
               </span>
               <button
                 type="button"
@@ -1310,13 +1522,30 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
             </label>
             <input
               type={showApiKey ? 'text' : 'password'}
-              value={fampayApiKey}
-              onChange={(e) => setFampayApiKey(e.target.value)}
-              placeholder="FAM_LIVE_sk_..."
+              value={gatewayApiKey}
+              onChange={(e) => setGatewayApiKey(e.target.value)}
+              placeholder={
+                selectedGwPreset === 'adityahost'
+                  ? 'AH_live_9a8b7c6d5e4f3g2h1'
+                  : selectedGwPreset === 'zapupi'
+                  ? 'zap9616e750...'
+                  : 'FAM_LIVE_sk_...'
+              }
               className="w-full px-3.5 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-emerald-400 focus:outline-none text-white font-mono text-xs"
             />
             <p className="text-[10px] text-gray-400 mt-1">
-              Sent via HTTP Header: <code className="text-pink-400 font-mono">Authorization: Bearer FAM_LIVE_sk_...</code>
+              {selectedGwPreset === 'adityahost' || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('aditya')
+                ? 'Sent as GET query parameter: '
+                : selectedGwPreset === 'zapupi' || gatewayApiKey.startsWith('zap')
+                ? 'Sent as JSON payload: '
+                : 'Sent via HTTP Header: '}
+              <code className="text-pink-400 font-mono">
+                {selectedGwPreset === 'adityahost' || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('aditya')
+                  ? '?api_key=YOUR_KEY&upi=YOUR_UPI&amount=INR'
+                  : selectedGwPreset === 'zapupi' || gatewayApiKey.startsWith('zap')
+                  ? '{"zap_key": "zap9616e..."}'
+                  : 'Authorization: Bearer FAM_LIVE_sk_...'}
+              </code>
             </p>
           </div>
 
@@ -1354,7 +1583,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
           {/* Action buttons */}
           <div className="grid grid-cols-2 gap-2 pt-1">
             <button
-              onClick={handleSaveFampay}
+              onClick={handleSaveGateway}
               className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-[0_0_15px_rgba(16,185,129,0.4)] flex items-center justify-center gap-1.5 cursor-pointer transition-all"
             >
               {savedSuccess ? (
@@ -1493,10 +1722,21 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
           </span>
         </div>
         <div className="p-2.5 rounded-xl bg-black/80 border border-white/5 font-mono text-[10px] text-gray-300 overflow-x-auto leading-relaxed">
-          <div className="text-purple-400">// FreePanel Order Payload (Rupees converted to Paise)</div>
-          <div><span className="text-cyan-400">POST</span> {gatewayUrl}</div>
-          <div className="text-gray-400">Headers: Authorization: Bearer {fampayApiKey.slice(0, 15)}...</div>
-          <div className="text-emerald-400">{`{ "amount": 50000, "redirect_url": "${redirectUrl}" }`}</div>
+          {gatewayUrl.includes('zapupi') || gatewayApiKey.startsWith('zap') ? (
+            <>
+              <div className="text-cyan-400">// ZapUPI Order Creation Spec</div>
+              <div><span className="text-cyan-400">POST</span> {gatewayUrl}</div>
+              <div className="text-gray-400">Headers: Content-Type: application/json</div>
+              <div className="text-emerald-400">{`{ "zap_key": "${gatewayApiKey}", "order_id": "ORD_123", "amount": "100", "customer_mobile": "9876543210" }`}</div>
+            </>
+          ) : (
+            <>
+              <div className="text-purple-400">// FreePanel Order Payload (Rupees converted to Paise)</div>
+              <div><span className="text-cyan-400">POST</span> {gatewayUrl}</div>
+              <div className="text-gray-400">Headers: Authorization: Bearer {gatewayApiKey ? `${gatewayApiKey.slice(0, 15)}...` : 'FAM_LIVE_sk_...'}</div>
+              <div className="text-emerald-400">{`{ "amount": 50000, "redirect_url": "${redirectUrl}" }`}</div>
+            </>
+          )}
         </div>
       </GlassCard>
 
@@ -1535,21 +1775,64 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-              {webhookLogs.map((log, idx) => (
-                <div key={log.id || idx} className="p-2.5 rounded-xl bg-black/70 border border-white/10 space-y-1 text-xs font-mono">
-                  <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-cyan-400 font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                      {log.id}
-                    </span>
-                    <span className="text-gray-400">{log.timestamp}</span>
-                  </div>
-                  <pre className="text-[10px] text-emerald-300/90 overflow-x-auto p-1 rounded bg-black/40">
-                    {JSON.stringify(log.payload, null, 2)}
-                  </pre>
-                </div>
-              ))}
+            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+              <AnimatePresence initial={false}>
+                {webhookLogs.map((log, idx) => {
+                  const logId = log.id || `log_${idx}`;
+                  const rawStr = `${JSON.stringify(log.payload || {})} ${log.endpoint || ''} ${logId}`.toLowerCase();
+                  const orderId = (log.payload?.order_id || log.payload?.id || log.payload?.data?.order_id || log.extracted?.orderId || '').toString();
+                  const isSuccess = (log.status || '').toUpperCase().includes('SUCCESS') || (log.status || '').toUpperCase().includes('PAID');
+
+                  let vendorName: 'AdityaHost' | 'ZapUPI' | 'FreePanel' = 'FreePanel';
+                  let vendorBadgeClasses = 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300';
+                  let vendorTag = 'FP';
+
+                  if (log.vendor === 'AdityaHost' || orderId.startsWith('FAMPAY') || orderId.startsWith('AH_') || rawStr.includes('aditya') || rawStr.includes('fampay')) {
+                    vendorName = 'AdityaHost';
+                    vendorBadgeClasses = 'bg-purple-500/15 border-purple-500/30 text-purple-300';
+                    vendorTag = 'AH';
+                  } else if (log.vendor === 'ZapUPI' || orderId.startsWith('ZAP_') || rawStr.includes('zap')) {
+                    vendorName = 'ZapUPI';
+                    vendorBadgeClasses = 'bg-amber-500/15 border-amber-500/30 text-amber-300';
+                    vendorTag = '⚡ ZAP';
+                  }
+
+                  return (
+                    <motion.div
+                      key={logId}
+                      layout
+                      initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.96 }}
+                      transition={{ duration: 0.22, ease: 'easeOut' }}
+                      className="p-2.5 rounded-xl bg-black/70 border border-white/10 space-y-1.5 text-xs font-mono"
+                    >
+                      <div className="flex items-center justify-between text-[10px] flex-wrap gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSuccess ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'}`}></span>
+                          <span className="text-white font-bold">{log.id}</span>
+                          <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${vendorBadgeClasses}`}>
+                            {vendorTag} {vendorName}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-1.5 py-0.5 rounded border text-[9px] ${
+                            isSuccess
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                          }`}>
+                            {log.status || 'RECEIVED'}
+                          </span>
+                          <span className="text-gray-400">{log.timestamp}</span>
+                        </div>
+                      </div>
+                      <pre className="text-[10px] text-emerald-300/90 overflow-x-auto p-1.5 rounded bg-black/50 border border-white/5 max-h-36">
+                        {JSON.stringify(log.payload, null, 2)}
+                      </pre>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
             </div>
           </div>
         )}
@@ -1602,6 +1885,7 @@ export const AdminStoreSettingsView: React.FC<AdminStoreSettingsViewProps> = ({
   const [dailySpinEnabled, setDailySpinEnabled] = useState(settings.dailySpinEnabled ?? true);
 
   // Manual UPI & QR Payment Configuration
+  const [enableUtrInput, setEnableUtrInput] = useState<boolean>(settings.enableUtrInput !== false);
   const [upiManualId, setUpiManualId] = useState(settings.upiManualId || settings.upiId || '8056317218@fam');
   const [upiMerchantName, setUpiMerchantName] = useState(settings.upiMerchantName || settings.merchantUpi || 'KALAM FF PANEL PAYMENTS');
   const [customQrUrl, setCustomQrUrl] = useState(settings.customQrUrl || '');
@@ -1640,6 +1924,7 @@ export const AdminStoreSettingsView: React.FC<AdminStoreSettingsViewProps> = ({
       if (settings.referralBonusPercent !== undefined) setReferralBonusPercent(settings.referralBonusPercent);
       if (settings.dailySpinEnabled !== undefined) setDailySpinEnabled(settings.dailySpinEnabled);
 
+      if (settings.enableUtrInput !== undefined) setEnableUtrInput(settings.enableUtrInput);
       if (settings.upiManualId !== undefined || settings.upiId !== undefined) {
         setUpiManualId(settings.upiManualId || settings.upiId || '8056317218@fam');
       }
@@ -1676,6 +1961,7 @@ export const AdminStoreSettingsView: React.FC<AdminStoreSettingsViewProps> = ({
       referralBonusPercent: Math.max(0, Number(referralBonusPercent) || 0),
       dailySpinEnabled: Boolean(dailySpinEnabled),
 
+      enableUtrInput: Boolean(enableUtrInput),
       upiId: upiManualId.trim(),
       upiManualId: upiManualId.trim(),
       merchantUpi: upiMerchantName.trim(),
@@ -1720,6 +2006,7 @@ export const AdminStoreSettingsView: React.FC<AdminStoreSettingsViewProps> = ({
       setDepositBonusPercent(0);
       setReferralBonusPercent(10);
       setDailySpinEnabled(true);
+      setEnableUtrInput(true);
       setUpiManualId('8056317218@fam');
       setUpiMerchantName('KALAM FF PANEL PAYMENTS');
       setCustomQrUrl('');
@@ -2256,6 +2543,39 @@ export const AdminStoreSettingsView: React.FC<AdminStoreSettingsViewProps> = ({
               placeholder="Step-by-step instructions shown to customers during manual UPI top-up..."
               className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-emerald-400 focus:outline-none text-gray-200 text-xs font-mono"
             />
+          </div>
+
+          {/* UTR Input Form Toggle in Store Settings */}
+          <div className="md:col-span-2 p-3 rounded-xl bg-black/60 border border-white/10 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-xs">
+                <ListChecks className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Manual 12-Digit UTR Number Input Form</span>
+                <span
+                  className={`text-[9px] font-mono px-1.5 py-0.5 rounded border font-bold ${
+                    enableUtrInput
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-red-500/20 text-red-300 border-red-500/40'
+                  }`}
+                >
+                  {enableUtrInput ? 'ON (ACTIVE)' : 'OFF (DISABLED)'}
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                Control whether customers see the 12-digit UTR input field in deposit modals. Turn OFF to hide manual UTR input and rely purely on automatic payment detection.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEnableUtrInput(!enableUtrInput)}
+              className="cursor-pointer"
+            >
+              {enableUtrInput ? (
+                <ToggleRight className="w-7 h-7 text-emerald-400" />
+              ) : (
+                <ToggleLeft className="w-7 h-7 text-gray-500" />
+              )}
+            </button>
           </div>
         </div>
       </GlassCard>

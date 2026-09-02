@@ -18,7 +18,8 @@ import {
   MoreHorizontal,
   RefreshCw,
   Sparkles,
-  Zap
+  Zap,
+  Clock
 } from 'lucide-react';
 import { StoreSettings } from '../../types';
 import { formatCurrency } from '../../lib/utils';
@@ -47,12 +48,19 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
   const [copiedTxn, setCopiedTxn] = useState(false);
   const [isAutoChecking, setIsAutoChecking] = useState(true);
   const [isManualChecking, setIsManualChecking] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string>('Listening for bank UPI transfer...');
+  const [pollingTick, setPollingTick] = useState<number>(0);
+  const [statusMessage, setStatusMessage] = useState<string>('Waiting for payment... Complete the transfer in your UPI app');
   const [orderId] = useState<string>(() => customOrderId || `TXN${Math.floor(100000 + Math.random() * 900000)}K`);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isSavingQr, setIsSavingQr] = useState(false);
+  const [utrNumber, setUtrNumber] = useState<string>('');
+  const [isUtrVerifying, setIsUtrVerifying] = useState<boolean>(false);
   const [activeAppToast, setActiveAppToast] = useState<string | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [paymentFailedState, setPaymentFailedState] = useState<{
+    status: 'FAILED' | 'EXPIRED';
+    message: string;
+  } | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
 
   const activeUpiId = (storeSettings as any)?.upiManualId || (storeSettings as any)?.upiId || '8056317218@fam';
@@ -64,7 +72,8 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
     if (!isOpen) {
       setSecondsRemaining(300);
       setIsSuccess(false);
-      setStatusMessage('Listening for bank UPI transfer...');
+      setPaymentFailedState(null);
+      setStatusMessage('Waiting for payment... Complete the transfer in your UPI app');
       return;
     }
 
@@ -81,13 +90,26 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
     return () => clearInterval(timer);
   }, [isOpen]);
 
+  // Handle countdown timeout expiry
+  useEffect(() => {
+    if (isOpen && secondsRemaining === 0 && !isSuccess && !paymentFailedState) {
+      setPaymentFailedState({
+        status: 'EXPIRED',
+        message: 'Payment session expired (5:00 min). This QR code is no longer active.'
+      });
+      setIsAutoChecking(false);
+      setVerifyError('Session timed out. Please generate a new order.');
+    }
+  }, [isOpen, secondsRemaining, isSuccess, paymentFailedState]);
+
   // Real-time automatic payment verification polling (Every 2.5s)
   useEffect(() => {
-    if (!isOpen || isSuccess) return;
+    if (!isOpen || isSuccess || paymentFailedState) return;
 
     let isMounted = true;
     const interval = setInterval(async () => {
       try {
+        setPollingTick((prev) => prev + 1);
         const res = await fetch(`/api/check-payment/${orderId}`);
         const data = await res.json();
         if (!isMounted) return;
@@ -95,6 +117,7 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
         if (data?.isPaid === true && data?.status === 'SUCCESS') {
           setIsSuccess(true);
           setIsAutoChecking(false);
+          setPaymentFailedState(null);
           setStatusMessage('Payment detected and verified! Crediting wallet...');
           onPaymentSuccess(amount);
           setTimeout(() => {
@@ -102,6 +125,30 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
               onClose();
             }
           }, 2000);
+        } else if (
+          data?.status === 'FAILED' ||
+          data?.status === 'EXPIRED' ||
+          data?.status === 'CANCELLED' ||
+          data?.status === 'REJECTED' ||
+          data?.status === 'TIMEOUT' ||
+          (data?.success === false && data?.status && data.status !== 'PENDING')
+        ) {
+          const isExp = data.status === 'EXPIRED' || data.status === 'TIMEOUT';
+          const errorMsg =
+            data.message ||
+            (isExp
+              ? 'Order has expired. Please initiate a new deposit.'
+              : 'Payment failed or was cancelled by the bank.');
+
+          setPaymentFailedState({
+            status: isExp ? 'EXPIRED' : 'FAILED',
+            message: errorMsg,
+          });
+          setIsAutoChecking(false);
+          setVerifyError(errorMsg);
+          clearInterval(interval);
+        } else if (data?.message) {
+          setStatusMessage(data.message || 'Waiting for payment... Auto-syncing with bank');
         }
       } catch (e) {
         // silent fail on poll
@@ -112,7 +159,7 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
       isMounted = false;
       clearInterval(interval);
     };
-  }, [isOpen, orderId, amount, isSuccess, onPaymentSuccess, onClose]);
+  }, [isOpen, orderId, amount, isSuccess, onPaymentSuccess, onClose, paymentFailedState]);
 
   const formatTimer = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -174,33 +221,91 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
     }
   };
 
-  // Instant Check / Auto-Detect trigger button (No UTR required)
-  const handleInstantAutoCheck = async () => {
-    if (isManualChecking || isSuccess) return;
-    setIsManualChecking(true);
+  // Manual UTR Verification
+  const handleVerifyUtr = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanUtr = utrNumber.trim().replace(/\D/g, '');
+    if (!cleanUtr) {
+      setVerifyError('Please enter the 12-digit UTR / Reference number from your UPI app.');
+      return;
+    }
+    if (cleanUtr.length < 10 || cleanUtr.length > 22) {
+      setVerifyError('Please enter a valid numeric 12-digit UPI UTR number.');
+      return;
+    }
+
+    setIsUtrVerifying(true);
     setVerifyError(null);
-    setStatusMessage('Checking with bank gateway for payment confirmation...');
+    setStatusMessage('Verifying UTR with payment gateway...');
 
     try {
-      const res = await safeFetchJson<any>('/api/auto-detect-payment', {
+      const res = await safeFetchJson<any>('/api/verify-utr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, amount }),
+        body: JSON.stringify({
+          orderId,
+          amount,
+          utr: cleanUtr,
+        }),
       });
 
       const data = res.data;
       if (data?.isPaid === true && data?.status === 'SUCCESS') {
         setIsSuccess(true);
-        setStatusMessage('Payment confirmed by bank! Crediting ₹' + amount + '...');
+        setStatusMessage('Payment verified successfully! Crediting ₹' + amount + '...');
         onPaymentSuccess(amount);
         setTimeout(() => {
           onClose();
         }, 2000);
       } else {
-        setStatusMessage('Waiting for transfer... Please complete payment in your UPI app. Auto-credit is live.');
+        setVerifyError(
+          data?.message ||
+          data?.error ||
+          'Payment not detected on bank records for this UTR yet. Please complete UPI payment first.'
+        );
+        setStatusMessage('UTR verification returned pending.');
+      }
+    } catch (err: any) {
+      setVerifyError('Connection failed. Please check your internet and try again.');
+    } finally {
+      setIsUtrVerifying(false);
+    }
+  };
+
+  // Instant Check / Auto-Detect trigger button
+  const handleInstantAutoCheck = async () => {
+    if (isManualChecking || isSuccess) return;
+    setIsManualChecking(true);
+    setVerifyError(null);
+    setStatusMessage('Checking bank gateway for payment confirmation...');
+
+    try {
+      const cleanUtr = utrNumber.trim().replace(/\D/g, '');
+      const res = await safeFetchJson<any>('/api/auto-detect-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          amount,
+          utr: cleanUtr || undefined,
+        }),
+      });
+
+      const data = res.data;
+      if (data?.isPaid === true && data?.status === 'SUCCESS') {
+        setIsSuccess(true);
+        setStatusMessage('Payment verified successfully! Crediting ₹' + amount + '...');
+        onPaymentSuccess(amount);
+        setTimeout(() => {
+          onClose();
+        }, 2000);
+      } else {
+        setStatusMessage('Waiting for transfer... Please complete payment in your UPI app.');
+        setVerifyError(data?.message || 'Payment transfer not detected yet. Please complete the transfer in your UPI app.');
       }
     } catch (err) {
-      setStatusMessage('Bank connection active. Auto-detecting your transaction...');
+      setStatusMessage('Bank connection error. Please try again.');
+      setVerifyError('Could not connect to payment gateway. Please try again in a few seconds.');
     } finally {
       setIsManualChecking(false);
     }
@@ -513,41 +618,146 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
                     </div>
                   </div>
 
-                  {/* AUTO-DETECTION REAL-TIME STATUS & MANUAL SYNC BUTTON */}
-                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#130d29] to-[#1c113b] border border-[#8b5cf6]/30 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                        <span className="text-[11.5px] font-bold text-emerald-400">
-                          Auto-Detect Active
+                  {/* AUTO-DETECTION REAL-TIME STATUS OR PAYMENT FAILED/EXPIRED STATE */}
+                  {paymentFailedState ? (
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#2b0c16] via-[#200812] to-[#15040a] border border-rose-500/50 space-y-2.5 relative overflow-hidden shadow-[0_0_25px_rgba(244,63,94,0.15)]">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-5 h-5 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center">
+                            <AlertCircle className="w-3 h-3 text-rose-400" />
+                          </div>
+                          <span className="text-xs font-black tracking-wide text-rose-300 uppercase">
+                            {paymentFailedState.status === 'EXPIRED' ? 'Order Expired' : 'Payment Failed'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-300 font-bold">
+                          {paymentFailedState.status}
                         </span>
                       </div>
-                      <span className="text-[10px] text-gray-400 font-mono">
-                        {formatTimer(secondsRemaining)}
-                      </span>
-                    </div>
 
-                    <p className="text-[11px] text-gray-300 font-medium">
-                      {statusMessage}
-                    </p>
-
-                    {verifyError && (
-                      <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-[11px] text-red-300 flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                        <span>{verifyError}</span>
+                      <div className="p-2.5 rounded-xl bg-black/50 border border-rose-500/20 space-y-1">
+                        <p className="text-xs text-rose-200 font-semibold leading-snug">
+                          {paymentFailedState.message}
+                        </p>
+                        <p className="text-[10px] text-gray-400 leading-tight">
+                          {paymentFailedState.status === 'EXPIRED'
+                            ? 'The UPI payment session for this order has timed out. Please close and re-open to generate a new QR.'
+                            : 'The payment was declined or could not be completed by your bank.'}
+                        </p>
                       </div>
-                    )}
 
-                    <button
-                      type="button"
-                      onClick={handleInstantAutoCheck}
-                      disabled={isManualChecking}
-                      className="w-full py-3 rounded-xl bg-gradient-to-r from-[#6d28d9] via-[#7c3aed] to-[#9333ea] hover:opacity-90 disabled:opacity-50 text-white font-extrabold text-xs shadow-[0_0_20px_rgba(124,58,237,0.4)] flex items-center justify-center gap-2 cursor-pointer transition-all border border-[#a855f7]/40"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 text-white ${isManualChecking ? 'animate-spin' : ''}`} />
-                      <span>{isManualChecking ? 'Detecting Payment Transfer...' : 'I Have Paid • Auto-Check'}</span>
-                    </button>
-                  </div>
+                      <div className="pt-0.5 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPaymentFailedState(null);
+                            setVerifyError(null);
+                            onClose();
+                          }}
+                          className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:opacity-90 text-white font-extrabold text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Close &amp; Retry</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleInstantAutoCheck}
+                          disabled={isManualChecking}
+                          className="px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-gray-200 text-xs font-medium cursor-pointer transition-all border border-white/10"
+                        >
+                          Re-check
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#130d29] to-[#1c113b] border border-[#8b5cf6]/35 space-y-2.5 relative overflow-hidden">
+                      {/* Live Background Glow Pulse */}
+                      <div className="absolute -top-10 -right-10 w-28 h-28 bg-[#8b5cf6]/15 rounded-full blur-2xl pointer-events-none animate-pulse" />
+
+                      {/* Waiting For Payment Header with Animated Radar Pulse */}
+                      <div className="flex items-center justify-between relative z-10">
+                        <div className="flex items-center gap-2.5">
+                          <div className="relative flex items-center justify-center">
+                            <span className="w-3.5 h-3.5 rounded-full bg-[#00e5ff] animate-ping absolute opacity-75" />
+                            <span className="w-2.5 h-2.5 rounded-full bg-[#00e5ff] relative" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-[#00e5ff] via-cyan-200 to-purple-300">
+                              Waiting for payment...
+                            </span>
+                            <span className="text-[9.5px] text-gray-400 font-mono flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                              Live sync active (poll #{pollingTick})
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/50 border border-white/10 font-mono text-[10px] text-cyan-300">
+                          <Clock className="w-3 h-3 text-cyan-400" />
+                          <span>{formatTimer(secondsRemaining)}</span>
+                        </div>
+                      </div>
+
+                      {/* Dynamic Real-Time Status Notification Card */}
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex items-start gap-2 relative z-10">
+                        <Loader2 className="w-4 h-4 text-[#00e5ff] animate-spin shrink-0 mt-0.5" />
+                        <div className="space-y-0.5 min-w-0">
+                          <p className="text-[11px] text-gray-200 font-medium leading-tight">
+                            {statusMessage}
+                          </p>
+                          <p className="text-[10px] text-gray-400 leading-tight">
+                            Pay ₹{amount} via any UPI app. System checks bank confirmation automatically every 2.5s.
+                          </p>
+                        </div>
+                      </div>
+
+                      {verifyError && (
+                        <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-[11px] text-red-300 flex items-start gap-2 relative z-10">
+                          <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                          <span>{verifyError}</span>
+                        </div>
+                      )}
+
+                      <div className="space-y-2 relative z-10">
+                        <button
+                          type="button"
+                          onClick={handleInstantAutoCheck}
+                          disabled={isManualChecking}
+                          className="w-full py-3 rounded-xl bg-gradient-to-r from-[#6d28d9] via-[#7c3aed] to-[#9333ea] hover:opacity-90 disabled:opacity-50 text-white font-extrabold text-xs shadow-[0_0_20px_rgba(124,58,237,0.4)] flex items-center justify-center gap-2 cursor-pointer transition-all border border-[#a855f7]/40"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 text-white ${isManualChecking ? 'animate-spin' : ''}`} />
+                          <span>{isManualChecking ? 'Detecting Payment Transfer...' : 'I Have Paid • Auto-Check'}</span>
+                        </button>
+
+                        {/* Manual UTR Input Option (Admin Controlled) */}
+                        {storeSettings?.enableUtrInput !== false && (
+                          <form onSubmit={handleVerifyUtr} className="pt-1.5 border-t border-white/10 space-y-2">
+                            <div className="flex items-center justify-between text-[10.5px] text-gray-400">
+                              <span>Paid with UPI? Enter 12-digit UTR:</span>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <input
+                                type="text"
+                                maxLength={22}
+                                placeholder="Enter 12-digit UTR / Ref No"
+                                value={utrNumber}
+                                onChange={(e) => setUtrNumber(e.target.value.replace(/\D/g, ''))}
+                                className="flex-1 px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-[#c084fc] text-xs font-mono text-white placeholder:text-gray-500 outline-none"
+                              />
+                              <button
+                                type="submit"
+                                disabled={isUtrVerifying || !utrNumber.trim()}
+                                className="px-3.5 py-2 rounded-xl bg-[#00e5ff] hover:bg-[#00b4d8] text-[#0a0a0f] disabled:opacity-40 font-bold text-xs flex items-center gap-1 cursor-pointer transition-all shrink-0"
+                              >
+                                {isUtrVerifying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                <span>Submit UTR</span>
+                              </button>
+                            </div>
+                          </form>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* FOOTER ENCRYPTED BADGE */}
                   <div className="pt-1 text-center">

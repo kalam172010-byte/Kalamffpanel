@@ -152,15 +152,17 @@ async function seedInitialUsers(users: ResellerUser[]) {
 export async function saveUserToFirestore(user: ResellerUser | (Partial<ResellerUser> & { id: string })) {
   if (!user || !user.id) return false;
 
+  const safeUser = toFirestoreSafe(user);
+
   // Always update local cache for immediate durability
   try {
     const raw = localStorage.getItem('kalam_users_db');
     const list: ResellerUser[] = raw ? JSON.parse(raw) : [];
     const index = list.findIndex((u) => u.id === user.id);
     if (index >= 0) {
-      list[index] = { ...list[index], ...user } as ResellerUser;
+      list[index] = { ...list[index], ...safeUser } as ResellerUser;
     } else {
-      list.unshift(user as ResellerUser);
+      list.unshift(safeUser as ResellerUser);
     }
     localStorage.setItem('kalam_users_db', JSON.stringify(list));
   } catch {}
@@ -168,7 +170,7 @@ export async function saveUserToFirestore(user: ResellerUser | (Partial<Reseller
   try {
     const userRef = doc(db, 'users', user.id);
     await setDoc(userRef, {
-      ...user,
+      ...safeUser,
       updatedAt: Date.now(),
     }, { merge: true });
     return true;
@@ -246,10 +248,11 @@ export function subscribeToUserTransactions(
  */
 export async function saveTransactionsToFirestore(userId: string, txns: TransactionRecord[]) {
   try {
+    const safeTxns = toFirestoreSafe(txns);
     const txnDocRef = doc(db, 'transactions', userId);
-    await setDoc(txnDocRef, { records: txns, updatedAt: Date.now() }, { merge: true });
+    await setDoc(txnDocRef, { records: safeTxns, updatedAt: Date.now() }, { merge: true });
     try {
-      localStorage.setItem(`kalam_txns_${userId}`, JSON.stringify(txns));
+      localStorage.setItem(`kalam_txns_${userId}`, JSON.stringify(safeTxns));
     } catch {}
     return true;
   } catch (e) {
@@ -303,10 +306,11 @@ export function subscribeToUserPurchasedKeys(
  */
 export async function savePurchasedKeysToFirestore(userId: string, keys: PurchasedKey[]) {
   try {
+    const safeKeys = toFirestoreSafe(keys);
     const keyDocRef = doc(db, 'purchased_keys', userId);
-    await setDoc(keyDocRef, { keys, updatedAt: Date.now() }, { merge: true });
+    await setDoc(keyDocRef, { keys: safeKeys, updatedAt: Date.now() }, { merge: true });
     try {
-      localStorage.setItem(`kalam_keys_${userId}`, JSON.stringify(keys));
+      localStorage.setItem(`kalam_keys_${userId}`, JSON.stringify(safeKeys));
     } catch {}
     return true;
   } catch (e) {
@@ -438,11 +442,18 @@ export function subscribeToStoreSettings(
  */
 export async function saveStoreSettingsToFirestore(settings: StoreSettings) {
   try {
+    const safeData = toFirestoreSafe(settings);
     const settingsRef = doc(db, 'settings', 'store_settings');
-    await setDoc(settingsRef, settings, { merge: true });
+    await setDoc(settingsRef, safeData, { merge: true });
     try {
-      localStorage.setItem('kalam_store_settings_db', JSON.stringify(settings));
+      localStorage.setItem('kalam_store_settings_db', JSON.stringify(safeData));
     } catch {}
+    // Also sync to backend
+    safeFetchJson('/api/settings/store', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: safeData }),
+    }).catch(() => {});
     return true;
   } catch (e) {
     console.warn('[Firestore] saveStoreSettingsToFirestore error:', e);
@@ -465,7 +476,7 @@ export function subscribeToApiConfigs(
           onUpdate(snap.data().configs);
         } else {
           onUpdate(INITIAL_API_CONFIGS);
-          setDoc(apiRef, { configs: INITIAL_API_CONFIGS }, { merge: true }).catch(() => {});
+          setDoc(apiRef, toFirestoreSafe({ configs: INITIAL_API_CONFIGS }), { merge: true }).catch(() => {});
         }
       },
       (err) => {
@@ -482,8 +493,18 @@ export function subscribeToApiConfigs(
  */
 export async function saveApiConfigsToFirestore(configs: ApiConfig[]) {
   try {
+    const safeData = toFirestoreSafe(configs);
     const apiRef = doc(db, 'settings', 'api_configs');
-    await setDoc(apiRef, { configs, updatedAt: Date.now() }, { merge: true });
+    await setDoc(apiRef, { configs: safeData, updatedAt: Date.now() }, { merge: true });
+    try {
+      localStorage.setItem('kalam_api_configs_db', JSON.stringify(safeData));
+    } catch {}
+    // Also sync to backend
+    safeFetchJson('/api/settings/api-configs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ configs: safeData }),
+    }).catch(() => {});
     return true;
   } catch (e) {
     console.warn('[Firestore] saveApiConfigsToFirestore error:', e);
@@ -506,7 +527,7 @@ export function subscribeToPaymentConfigs(
           onUpdate(snap.data().configs);
         } else {
           onUpdate(INITIAL_PAYMENT_CONFIGS);
-          setDoc(payRef, { configs: INITIAL_PAYMENT_CONFIGS }, { merge: true }).catch(() => {});
+          setDoc(payRef, toFirestoreSafe({ configs: INITIAL_PAYMENT_CONFIGS }), { merge: true }).catch(() => {});
         }
       },
       (err) => {
@@ -523,8 +544,18 @@ export function subscribeToPaymentConfigs(
  */
 export async function savePaymentConfigsToFirestore(configs: PaymentGatewayConfig[]) {
   try {
+    const safeData = toFirestoreSafe(configs);
     const payRef = doc(db, 'settings', 'payment_configs');
-    await setDoc(payRef, { configs, updatedAt: Date.now() }, { merge: true });
+    await setDoc(payRef, { configs: safeData, updatedAt: Date.now() }, { merge: true });
+    try {
+      localStorage.setItem('kalam_payment_configs_db', JSON.stringify(safeData));
+    } catch {}
+    // Also sync to backend
+    safeFetchJson('/api/settings/payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ configs: safeData }),
+    }).catch(() => {});
     return true;
   } catch (e) {
     console.warn('[Firestore] savePaymentConfigsToFirestore error:', e);
@@ -787,13 +818,14 @@ export function subscribeToProductLinks(
  */
 export async function saveProductLinksToFirestore(links: ProductLink[]) {
   const cleanLinks = sanitizeProductLinks(links);
+  const safeLinks = toFirestoreSafe(cleanLinks);
   try {
-    localStorage.setItem('kalam_product_links_db', JSON.stringify(cleanLinks));
+    localStorage.setItem('kalam_product_links_db', JSON.stringify(safeLinks));
   } catch {}
 
   try {
     const linksRef = doc(db, 'settings', 'product_links');
-    await setDoc(linksRef, { links: cleanLinks, updatedAt: Date.now() }, { merge: true });
+    await setDoc(linksRef, { links: safeLinks, updatedAt: Date.now() }, { merge: true });
     return true;
   } catch (e) {
     console.warn('[Firestore] saveProductLinksToFirestore error:', e);
@@ -828,13 +860,15 @@ export async function publishStoreActivity(activity: Partial<StoreActivityNotifi
     read: false,
   };
 
+  const safeActivity = toFirestoreSafe(fullActivity);
+
   // 1. Broadcast locally via localStorage & CustomEvent for instant cross-tab sync
   try {
     const saved = localStorage.getItem('kalam_recent_activities');
     const existing = saved ? JSON.parse(saved) : [];
-    const updated = [fullActivity, ...existing.filter((a: any) => a.id !== fullActivity.id).slice(0, 49)];
+    const updated = [safeActivity, ...existing.filter((a: any) => a.id !== safeActivity.id).slice(0, 49)];
     localStorage.setItem('kalam_recent_activities', JSON.stringify(updated));
-    window.dispatchEvent(new CustomEvent('kalam_store_activity', { detail: fullActivity }));
+    window.dispatchEvent(new CustomEvent('kalam_store_activity', { detail: safeActivity }));
   } catch {}
 
   // 2. Persist to Firestore live activities doc and activities collection
@@ -843,14 +877,14 @@ export async function publishStoreActivity(activity: Partial<StoreActivityNotifi
     await setDoc(
       liveRef,
       {
-        latestActivity: fullActivity,
+        latestActivity: safeActivity,
         updatedAt: Date.now(),
       },
       { merge: true }
     );
 
-    const actRef = doc(db, 'activities', fullActivity.id);
-    await setDoc(actRef, fullActivity, { merge: true });
+    const actRef = doc(db, 'activities', safeActivity.id);
+    await setDoc(actRef, safeActivity, { merge: true });
     return true;
   } catch (err) {
     console.warn('[Firestore] publishStoreActivity error:', err);

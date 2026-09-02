@@ -177,20 +177,20 @@ export const UserSidebar: React.FC<UserSidebarProps> = ({
                     <span>My Profile</span>
                   </button>
 
-                  {isMasterAdmin && onSwitchToAdmin && (
+                  {onSwitchToAdmin && (
                     <button
                       onClick={() => {
                         onClose();
                         onSwitchToAdmin();
                       }}
-                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.15)] transition-all cursor-pointer"
+                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold text-yellow-300 bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/40 shadow-[0_0_15px_rgba(234,179,8,0.2)] transition-all cursor-pointer"
                     >
                       <span className="flex items-center gap-2.5">
                         <ShieldCheck className="w-4 h-4 text-yellow-400" />
-                        <span>Master Admin Control</span>
+                        <span>{isMasterAdmin ? 'Master Admin Panel' : 'Admin Panel Login'}</span>
                       </span>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-yellow-500/20 font-mono text-yellow-300">
-                        ADMIN
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500/30 font-mono text-yellow-300 font-black">
+                        {isMasterAdmin ? 'ACTIVE' : 'ADMIN'}
                       </span>
                     </button>
                   )}

@@ -55,9 +55,31 @@ export const INITIAL_API_CONFIGS: ApiConfig[] = [
 
 export const INITIAL_PAYMENT_CONFIGS: PaymentGatewayConfig[] = [
   {
+    id: "adityahost-gw",
+    name: "AdityaHost UPI Gateway (adityahost.in)",
+    isActive: true,
+    apiKey: "AH_LIVE_sk_89218a091c4920b78",
+    apiKey2: "",
+    baseUrl: "https://adityahost.in/api/qr.php",
+    isLockedUrl: false,
+    upiId: "kalamffpanel@fampay",
+    merchantName: "KALAM FF PANEL"
+  },
+  {
+    id: "zapupi-gw",
+    name: "ZapUPI Gateway (pay.zapupi.com)",
+    isActive: false,
+    apiKey: "zap9616e75062c85cc1995818322ae0d1d5",
+    apiKey2: "",
+    baseUrl: "https://pay.zapupi.com/api/create-order",
+    isLockedUrl: false,
+    upiId: "kalamffpanel@fampay",
+    merchantName: "KALAM FF PANEL"
+  },
+  {
     id: "fampay-gw",
     name: "FreePanel UPI Gateway (py.freepanel.in)",
-    isActive: true,
+    isActive: false,
     apiKey: "FAM_LIVE_sk_I5ZSp9Qxv4pG7Q44dwC7fWBCR8U1zm9U",
     apiKey2: "",
     baseUrl: "https://py.freepanel.in/api/v1/orders",
@@ -89,6 +111,7 @@ export const INITIAL_STORE_SETTINGS: StoreSettings = {
   depositBonusPercent: 0,
   referralBonusPercent: 10,
   currencySymbol: "₹",
+  enableUtrInput: true,
   adminEmail: "kalam172010@gmail.com",
   adminPassword: "kalam@172010"
 };

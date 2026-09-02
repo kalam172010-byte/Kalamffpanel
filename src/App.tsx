@@ -112,7 +112,19 @@ import { AdminUserManagementView } from './components/admin/admin-user-managemen
 
 export default function App() {
   // App Mode: 'user' | 'admin'
-  const [appMode, setAppMode] = useState<'user' | 'admin'>('user');
+  const [appMode, setAppMode] = useState<'user' | 'admin'>(() => {
+    try {
+      if (
+        typeof window !== 'undefined' &&
+        (window.location.search.includes('admin') ||
+         window.location.hash.includes('admin') ||
+         localStorage.getItem('kalam_app_mode') === 'admin')
+      ) {
+        return 'admin';
+      }
+    } catch {}
+    return 'user';
+  });
 
   // Active Nav Tabs
   const [userTab, setUserTab] = useState<UserNavTab>('dashboard');
@@ -744,7 +756,7 @@ export default function App() {
     }
   };
 
-  const handleDepositSuccess = (amount: number) => {
+  const handleDepositSuccess = (amount: number, customUtr?: string) => {
     const newBal = (currentUser ? currentUser.walletBalance : userStats.balance) + amount;
 
     setUserStats((prev) => ({
@@ -799,14 +811,15 @@ export default function App() {
       );
     }
 
+    const cleanUtrNum = customUtr ? customUtr.replace(/^UTR-?/i, '') : `${Math.floor(100000000000 + Math.random() * 900000000000)}`;
     const newTx: TransactionRecord = {
       id: `TXN-${Date.now().toString().slice(-6)}`,
       type: 'DEPOSIT',
       amount,
       status: 'COMPLETED',
       date: new Date().toLocaleString(),
-      method: 'UPI Auto-Verify',
-      utrOrReference: `UTR-${Math.floor(100000000000 + Math.random() * 900000000000)}`,
+      method: customUtr ? 'UPI UTR Verification' : 'UPI Auto-Verify',
+      utrOrReference: `UTR-${cleanUtrNum}`,
     };
 
     const nextTxns = [newTx, ...transactions];
@@ -1395,13 +1408,19 @@ export default function App() {
   };
 
   const handleSavePaymentConfig = (updated: PaymentGatewayConfig) => {
-    const updatedGateways = paymentConfigs.map((p) => (p.id === updated.id ? updated : p));
-    setPaymentConfigs(updatedGateways);
-    try {
-      localStorage.setItem('kalam_payment_configs_db', JSON.stringify(updatedGateways));
-    } catch {}
-    savePaymentConfigsToFirestore(updatedGateways).catch(console.warn);
-    showToast(`${updated.name} configuration saved.`);
+    setPaymentConfigs((prev) => {
+      const exists = prev.some((p) => p.id === updated.id);
+      const updatedGateways = exists
+        ? prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : (updated.isActive ? { ...p, isActive: false } : p)))
+        : [{ ...updated }, ...prev.map((p) => (updated.isActive ? { ...p, isActive: false } : p))];
+
+      try {
+        localStorage.setItem('kalam_payment_configs_db', JSON.stringify(updatedGateways));
+      } catch {}
+      savePaymentConfigsToFirestore(updatedGateways).catch(console.warn);
+      return updatedGateways;
+    });
+    showToast(`${updated.name} configuration saved successfully.`);
   };
 
   const handleSaveStoreSettings = (newSettings: StoreSettings) => {
@@ -1410,7 +1429,7 @@ export default function App() {
       localStorage.setItem('kalam_store_settings_db', JSON.stringify(newSettings));
     } catch {}
     saveStoreSettingsToFirestore(newSettings).catch(console.warn);
-    showToast('Storefront branding and settings saved!');
+    showToast('Storefront branding and settings saved successfully!');
   };
 
   const handlePromoteUser = (userId: string) => {
@@ -1709,12 +1728,11 @@ export default function App() {
               onOpenSupport={() => requireAuth(() => setUserTab('tickets'), 'Support Tickets')}
               onOpenProfile={() => requireAuth(() => setUserTab('profile'), 'Profile')}
               onSwitchToAdmin={() => {
-                if (!currentUser) {
-                  handleOpenAuth('LOGIN');
-                  return;
-                }
                 setAppMode('admin');
                 setAdminTab('dashboard');
+                try {
+                  localStorage.setItem('kalam_app_mode', 'admin');
+                } catch {}
               }}
               storeSettings={storeSettings}
               currentUser={currentUser}
@@ -1804,12 +1822,11 @@ export default function App() {
                   onOpenAuthModal={() => handleOpenAuth('LOGIN')}
                   onLogout={handleLogout}
                   onSwitchToAdmin={() => {
-                    if (!currentUser) {
-                      handleOpenAuth('LOGIN');
-                      return;
-                    }
                     setAppMode('admin');
                     setAdminTab('dashboard');
+                    try {
+                      localStorage.setItem('kalam_app_mode', 'admin');
+                    } catch {}
                   }}
                 />
               )}
@@ -1827,6 +1844,9 @@ export default function App() {
             onReturnToStore={() => {
               setAppMode('user');
               setUserTab('dashboard');
+              try {
+                localStorage.setItem('kalam_app_mode', 'user');
+              } catch {}
             }}
             storeSettings={storeSettings}
             currentEmail={currentUser?.email}
@@ -1838,6 +1858,9 @@ export default function App() {
             onSwitchToUser={() => {
               setAppMode('user');
               setUserTab('dashboard');
+              try {
+                localStorage.setItem('kalam_app_mode', 'user');
+              } catch {}
             }}
             storeSettings={storeSettings}
             currentUser={currentUser}

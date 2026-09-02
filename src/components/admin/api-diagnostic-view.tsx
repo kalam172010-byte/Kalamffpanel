@@ -40,9 +40,95 @@ interface DiagnosticLog {
 interface WebhookLogEntry {
   id: string;
   timestamp: string;
+  timestampIso?: string;
+  ip?: string;
+  endpoint?: string;
+  vendor?: 'AdityaHost' | 'ZapUPI' | 'FreePanel' | string;
   payload: any;
+  extracted?: any;
   status: string;
 }
+
+// Vendor badge helper: AdityaHost, ZapUPI, or FreePanel
+const getVendorBadgeInfo = (log: WebhookLogEntry): {
+  name: 'AdityaHost' | 'ZapUPI' | 'FreePanel';
+  color: string;
+  bg: string;
+  border: string;
+  text: string;
+  iconText: string;
+} => {
+  const directVendor = log.vendor || log.extracted?.vendor;
+  if (directVendor === 'AdityaHost') {
+    return {
+      name: 'AdityaHost',
+      color: '#c084fc',
+      bg: 'bg-purple-500/20',
+      border: 'border-purple-500/40',
+      text: 'text-purple-300',
+      iconText: 'AH',
+    };
+  }
+  if (directVendor === 'ZapUPI') {
+    return {
+      name: 'ZapUPI',
+      color: '#f59e0b',
+      bg: 'bg-amber-500/20',
+      border: 'border-amber-500/40',
+      text: 'text-amber-300',
+      iconText: '⚡ ZAP',
+    };
+  }
+  if (directVendor === 'FreePanel') {
+    return {
+      name: 'FreePanel',
+      color: '#00e5ff',
+      bg: 'bg-cyan-500/20',
+      border: 'border-cyan-500/40',
+      text: 'text-cyan-300',
+      iconText: 'FP',
+    };
+  }
+
+  // Fallback detection from payload, endpoint, or order ID
+  const rawStr = `${JSON.stringify(log.payload || {})} ${log.endpoint || ''} ${log.id || ''}`.toLowerCase();
+  const orderId = (log.payload?.order_id || log.payload?.id || log.payload?.data?.order_id || log.extracted?.orderId || '').toString();
+
+  if (
+    orderId.startsWith('FAMPAY') ||
+    orderId.startsWith('AH_') ||
+    rawStr.includes('aditya') ||
+    rawStr.includes('fampay') ||
+    rawStr.includes('kalamffpanel@fam')
+  ) {
+    return {
+      name: 'AdityaHost',
+      color: '#c084fc',
+      bg: 'bg-purple-500/20',
+      border: 'border-purple-500/40',
+      text: 'text-purple-300',
+      iconText: 'AH',
+    };
+  }
+  if (orderId.startsWith('ZAP_') || rawStr.includes('zap')) {
+    return {
+      name: 'ZapUPI',
+      color: '#f59e0b',
+      bg: 'bg-amber-500/20',
+      border: 'border-amber-500/40',
+      text: 'text-amber-300',
+      iconText: '⚡ ZAP',
+    };
+  }
+  return {
+    name: 'FreePanel',
+    color: '#00e5ff',
+    bg: 'bg-cyan-500/20',
+    border: 'border-cyan-500/40',
+    text: 'text-cyan-300',
+    iconText: 'FP',
+  };
+};
 
 interface StoredRecentOrder {
   orderId: string;
@@ -549,90 +635,114 @@ echo $response;
                   </button>
                 </div>
               ) : (
-                filteredLogs.map((log) => {
-                  const isExpanded = expandedLogId === log.id;
-                  const isSuccess = (log.status || '').toUpperCase().includes('SUCCESS') || (log.status || '').toUpperCase().includes('PAID');
-                  const orderId = log.payload?.order_id || log.payload?.id || log.payload?.tr || log.payload?.data?.order_id || 'UNKNOWN';
-                  const amount = log.payload?.amount ? (log.payload.amount > 1000 ? `₹${log.payload.amount / 100}` : `₹${log.payload.amount}`) : null;
-                  const utr = log.payload?.utr || log.payload?.rrn || null;
+                <AnimatePresence initial={false}>
+                  {filteredLogs.map((log) => {
+                    const isExpanded = expandedLogId === log.id;
+                    const isSuccess = (log.status || '').toUpperCase().includes('SUCCESS') || (log.status || '').toUpperCase().includes('PAID');
+                    const orderId = log.payload?.order_id || log.payload?.id || log.payload?.tr || log.payload?.data?.order_id || log.extracted?.orderId || 'UNKNOWN';
+                    const amount = log.payload?.amount
+                      ? (log.payload.amount > 1000 ? `₹${log.payload.amount / 100}` : `₹${log.payload.amount}`)
+                      : log.extracted?.amountRupees
+                      ? `₹${log.extracted.amountRupees}`
+                      : null;
+                    const utr = log.payload?.utr || log.payload?.rrn || log.extracted?.utr || null;
+                    const vendorBadge = getVendorBadgeInfo(log);
 
-                  return (
-                    <div
-                      key={log.id}
-                      className={`p-3 rounded-xl border transition-all ${
-                        isSuccess
-                          ? 'bg-[#121f1a]/80 border-emerald-500/30 hover:border-emerald-500/50'
-                          : 'bg-[#1a1622]/80 border-white/10 hover:border-white/20'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${isSuccess ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'}`} />
-                          <span className="font-mono text-xs font-bold text-white truncate">
-                            Order: {orderId}
-                          </span>
-                          {amount && (
-                            <span className="text-[11px] font-bold font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-                              {amount}
+                    return (
+                      <motion.div
+                        key={log.id}
+                        layout
+                        initial={{ opacity: 0, y: -10, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.96 }}
+                        transition={{ duration: 0.25, ease: 'easeOut' }}
+                        className={`p-3 rounded-xl border transition-all ${
+                          isSuccess
+                            ? 'bg-[#121f1a]/80 border-emerald-500/30 hover:border-emerald-500/50'
+                            : 'bg-[#1a1622]/80 border-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${isSuccess ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'}`} />
+                            
+                            {/* Payment Vendor Badge */}
+                            <span
+                              className={`text-[9.5px] font-mono font-extrabold px-2 py-0.5 rounded-md border ${vendorBadge.bg} ${vendorBadge.border} ${vendorBadge.text} flex items-center gap-1 shadow-sm shrink-0`}
+                              title={`Payment Gateway Provider: ${vendorBadge.name}`}
+                            >
+                              <span className="opacity-80">{vendorBadge.iconText}</span>
+                              <span className="font-bold">{vendorBadge.name}</span>
                             </span>
-                          )}
-                          {utr && (
-                            <span className="text-[10px] font-mono text-gray-400 hidden sm:inline">
-                              UTR: {utr}
+
+                            <span className="font-mono text-xs font-bold text-white truncate">
+                              Order: {orderId}
                             </span>
-                          )}
+                            {amount && (
+                              <span className="text-[11px] font-bold font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                                {amount}
+                              </span>
+                            )}
+                            {utr && (
+                              <span className="text-[10px] font-mono text-gray-400 hidden sm:inline">
+                                UTR: {utr}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                              isSuccess
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                            }`}>
+                              {log.status}
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-mono shrink-0">
+                              {log.timestamp}
+                            </span>
+                            <button
+                              onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                              className="p-1 rounded bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white cursor-pointer transition-colors"
+                              title={isExpanded ? 'Hide Payload' : 'View Payload JSON'}
+                            >
+                              {isExpanded ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                            isSuccess
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
-                          }`}>
-                            {log.status}
-                          </span>
-                          <span className="text-[10px] text-gray-500 font-mono shrink-0">
-                            {log.timestamp}
-                          </span>
-                          <button
-                            onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                            className="p-1 rounded bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white cursor-pointer transition-colors"
-                            title={isExpanded ? 'Hide Payload' : 'View Payload JSON'}
-                          >
-                            {isExpanded ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Expanded JSON Body */}
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="mt-2 pt-2 border-t border-white/10 space-y-1.5 overflow-hidden"
-                          >
-                            <div className="flex items-center justify-between text-[10px] text-gray-400">
-                              <span className="font-mono">Raw Webhook JSON Body:</span>
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(JSON.stringify(log.payload, null, 2));
-                                }}
-                                className="hover:text-cyan-300 cursor-pointer flex items-center gap-1 font-mono"
-                              >
-                                <Copy className="w-2.5 h-2.5" /> Copy JSON
-                              </button>
-                            </div>
-                            <pre className="p-2.5 rounded-lg bg-black/90 border border-white/10 font-mono text-[10.5px] text-cyan-200 overflow-x-auto max-h-48 leading-relaxed">
-                              {JSON.stringify(log.payload, null, 2)}
-                            </pre>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })
+                        {/* Expanded JSON Body */}
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="mt-2 pt-2 border-t border-white/10 space-y-1.5 overflow-hidden"
+                            >
+                              <div className="flex items-center justify-between text-[10px] text-gray-400">
+                                <span className="font-mono">
+                                  Raw Webhook JSON Body ({vendorBadge.name}):
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(JSON.stringify(log.payload, null, 2));
+                                  }}
+                                  className="hover:text-cyan-300 cursor-pointer flex items-center gap-1 font-mono"
+                                >
+                                  <Copy className="w-2.5 h-2.5" /> Copy JSON
+                                </button>
+                              </div>
+                              <pre className="p-2.5 rounded-lg bg-black/90 border border-white/10 font-mono text-[10.5px] text-cyan-200 overflow-x-auto max-h-48 leading-relaxed">
+                                {JSON.stringify(log.payload, null, 2)}
+                              </pre>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               )}
             </div>
           </GlassCard>

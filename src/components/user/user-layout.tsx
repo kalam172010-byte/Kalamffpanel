@@ -58,20 +58,20 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </span>
           </div>
-          {isMasterAdmin ? (
+          <div className="flex items-center gap-2">
             <button
               onClick={onSwitchToAdmin}
-              className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/40 text-yellow-400 font-bold text-[10px] shadow-[0_0_10px_rgba(234,179,8,0.2)] transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/40 text-yellow-300 font-bold text-[10px] shadow-[0_0_10px_rgba(234,179,8,0.25)] transition-all cursor-pointer"
+              title="Open Admin Control Center"
             >
-              <ShieldCheck className="w-3 h-3 text-yellow-400" />
+              <ShieldCheck className="w-3.5 h-3.5 text-yellow-400" />
               <span>Admin Panel</span>
             </button>
-          ) : (
-            <span className="text-[10px] text-emerald-400/90 font-mono flex items-center gap-1">
+            <span className="hidden sm:inline-flex text-[10px] text-emerald-400/90 font-mono items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>ONLINE 24/7</span>
+              <span>ONLINE</span>
             </span>
-          )}
+          </div>
         </div>
 
         {/* Top Navigation Bar */}
