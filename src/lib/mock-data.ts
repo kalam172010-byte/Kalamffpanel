@@ -47,13 +47,25 @@ export const INITIAL_API_CONFIGS: ApiConfig[] = [
     name: "API #2 — HK MODZ",
     subtitle: "(resellerpanelhk.shop)",
     type: "hkmodz",
-    xApiToken: "HK_REST_892019481b0a991823f990",
-    status: "CONFIGURED",
-    lastTested: "2 hours ago"
+    apiUrl: "",
+    xApiToken: "",
+    status: "DISCONNECTED",
+    lastTested: "Not configured"
   }
 ];
 
 export const INITIAL_PAYMENT_CONFIGS: PaymentGatewayConfig[] = [
+  {
+    id: "famgateway-gw",
+    name: "FamGateway (famgateway.in)",
+    isActive: false,
+    apiKey: "YOUR_API_KEY",
+    apiKey2: "",
+    baseUrl: "https://famgateway.in/api/create-order.php",
+    isLockedUrl: false,
+    upiId: "kalamffpanel@fampay",
+    merchantName: "KALAM FF PANEL"
+  },
   {
     id: "adityahost-gw",
     name: "AdityaHost UPI Gateway (adityahost.in)",

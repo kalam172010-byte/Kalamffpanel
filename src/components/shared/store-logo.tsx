@@ -1,18 +1,50 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-interface StoreLogoProps {
+export interface StoreLogoProps {
   className?: string;
   logoUrl?: string;
   alt?: string;
   size?: 'sm' | 'md' | 'lg';
+  shape?: 'circle' | 'rounded' | 'square';
+  glowColor?: 'cyan' | 'purple' | 'gold' | 'emerald' | 'pink';
 }
 
 export const StoreLogo: React.FC<StoreLogoProps> = ({
-  className = 'w-8 h-8 rounded-xl',
+  className = 'w-8 h-8',
   logoUrl,
   alt = 'KALAM FF PANEL',
+  size,
+  shape,
+  glowColor,
 }) => {
   const [hasError, setHasError] = useState(false);
+
+  // Reset error when logoUrl changes so newly uploaded/edited logos appear immediately
+  useEffect(() => {
+    setHasError(false);
+  }, [logoUrl]);
+
+  // Size classes if requested
+  const sizeClass = size === 'sm' ? 'w-6 h-6' : size === 'lg' ? 'w-12 h-12' : size === 'md' ? 'w-9 h-9' : '';
+
+  // Shape classes
+  const shapeClass = shape === 'circle' ? 'rounded-full' : shape === 'square' ? 'rounded-lg' : shape === 'rounded' ? 'rounded-2xl' : '';
+
+  // Glow shadow classes
+  const glowClass =
+    glowColor === 'cyan'
+      ? 'shadow-[0_0_12px_rgba(0,229,255,0.4)] border border-[#00e5ff]/50'
+      : glowColor === 'gold'
+      ? 'shadow-[0_0_12px_rgba(234,179,8,0.4)] border border-yellow-500/50'
+      : glowColor === 'emerald'
+      ? 'shadow-[0_0_12px_rgba(16,185,129,0.4)] border border-emerald-500/50'
+      : glowColor === 'pink'
+      ? 'shadow-[0_0_12px_rgba(244,63,94,0.4)] border border-rose-500/50'
+      : glowColor === 'purple'
+      ? 'shadow-[0_0_12px_rgba(168,85,247,0.4)] border border-purple-500/50'
+      : '';
+
+  const combinedClass = `${sizeClass} ${shapeClass} ${glowClass} ${className}`.trim();
 
   // If user provided a custom logo URL and no error occurred yet
   const src = !hasError && logoUrl ? logoUrl : !hasError ? '/logo.svg' : null;
@@ -22,7 +54,7 @@ export const StoreLogo: React.FC<StoreLogoProps> = ({
       <img
         src={src}
         alt={alt}
-        className={`${className} object-cover`}
+        className={`${combinedClass} object-cover shrink-0`}
         onError={() => setHasError(true)}
         referrerPolicy="no-referrer"
       />
@@ -31,7 +63,9 @@ export const StoreLogo: React.FC<StoreLogoProps> = ({
 
   // Pure SVG Fallback Shield if image fails to load
   return (
-    <div className={`${className} bg-gradient-to-tr from-[#0a0a14] via-[#161329] to-[#1a0f2e] border border-[#8b5cf6]/50 p-1 flex items-center justify-center shadow-[0_0_12px_rgba(139,92,246,0.4)]`}>
+    <div
+      className={`${combinedClass} bg-gradient-to-tr from-[#0a0a14] via-[#161329] to-[#1a0f2e] border border-[#8b5cf6]/50 p-1 flex items-center justify-center shrink-0 shadow-[0_0_12px_rgba(139,92,246,0.4)]`}
+    >
       <svg viewBox="0 0 100 100" className="w-full h-full">
         <defs>
           <linearGradient id="fallbackGrad" x1="0%" y1="0%" x2="100%" y2="100%">

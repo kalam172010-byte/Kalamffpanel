@@ -34,10 +34,11 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
   merchantUpi = '8056317218@fam',
 }) => {
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'zapupi' | 'freepanel' | 'paytm' | 'custom' | 'test'>('zapupi');
+  const [activeTab, setActiveTab] = useState<'famgateway' | 'zapupi' | 'freepanel' | 'paytm' | 'custom' | 'test'>('famgateway');
   const [isTesting, setIsTesting] = useState(false);
   const [testResponse, setTestResponse] = useState<any>(null);
   const [currentOrigin, setCurrentOrigin] = useState('');
+  const [selectedFormat, setSelectedFormat] = useState<'fampay' | 'general'>('fampay');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -45,12 +46,18 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
     }
   }, []);
 
-  const webhookUrl = currentOrigin
-    ? `${currentOrigin}/api/webhook/payment`
-    : 'https://your-deployment-domain.com/api/webhook/payment';
+  const fampayWebhookUrl = currentOrigin
+    ? `${currentOrigin}/api/fampay-webhook`
+    : 'https://your-deployment-domain.com/api/fampay-webhook';
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(webhookUrl);
+  const generalWebhookUrl = currentOrigin
+    ? `${currentOrigin}/api/webhook`
+    : 'https://your-deployment-domain.com/api/webhook';
+
+  const webhookUrl = selectedFormat === 'fampay' ? fampayWebhookUrl : generalWebhookUrl;
+
+  const handleCopy = (urlToCopy?: string) => {
+    navigator.clipboard.writeText(urlToCopy || webhookUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -60,18 +67,20 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
     setTestResponse(null);
     try {
       // Send a simulated test webhook ping payload to our server route
-      const res = await safeFetchJson<any>('/api/webhook/payment', {
+      const res = await safeFetchJson<any>('/api/fampay-webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'webhook_test_ping',
+          type: 'payment.received',
+          event: 'payment.received',
           status: 'SUCCESS',
           amount: 1000,
           utr: `TEST_UTR_${Date.now()}`,
           order_id: `PING_${Math.floor(Math.random() * 899999 + 100000)}`,
+          customer_name: 'Test Customer',
           merchant_upi: merchantUpi,
           timestamp: new Date().toISOString(),
-          note: 'Admin panel live webhook verification probe',
+          note: 'Admin panel live FamAPI / FreePanel webhook verification probe',
         }),
       });
 
@@ -152,17 +161,52 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
 
           {/* Modal Body */}
           <div className="p-4 sm:p-6 space-y-5 max-h-[78vh] overflow-y-auto">
+            {/* Notice regarding ais-dev preview vs deployed domain */}
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-amber-300 font-bold text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>FamGateway Webhook is Optional (HTTP 302 Warning)</span>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed">
+                Notice that FamGateway marks the Webhook URL as <strong>(optional)</strong>. You do <strong>not</strong> need to set it for auto-deposit to work! Our app already auto-detects UPI payments <strong>100% automatically in 2 seconds</strong> via FamGateway&apos;s direct verification API.
+              </p>
+              <p className="text-[10.5px] text-amber-200/90 leading-tight">
+                <strong>Why did FamGateway say &quot;Server responded with HTTP 302&quot;?</strong> Google AI Studio preview URLs (<code className="text-white">ais-dev-*.run.app</code>) have private sandbox cookie security that redirects external test pings with HTTP 302. You can leave the Webhook field <strong>completely blank/empty</strong> on FamGateway, and all payments will still confirm instantly.
+              </p>
+            </div>
+
             {/* Dynamic Webhook URL Box */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-300 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <label className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
                   <Link2 className="w-3.5 h-3.5 text-cyan-400" />
                   Your Active Deployment Webhook URL
-                </span>
-                <span className="text-[10px] text-gray-400 font-normal">
-                  Auto-detected from current domain
-                </span>
-              </label>
+                </label>
+                <div className="flex items-center gap-1 bg-white/5 p-0.5 rounded-lg border border-white/10 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFormat('fampay')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                      selectedFormat === 'fampay'
+                        ? 'bg-[#7c3aed] text-white shadow-[0_0_10px_rgba(124,58,237,0.4)]'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    FamAPI / FreePanel Format
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFormat('general')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                      selectedFormat === 'general'
+                        ? 'bg-cyan-500 text-black shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Standard Format
+                  </button>
+                </div>
+              </div>
 
               <div className="p-3 rounded-xl bg-black/70 border border-cyan-500/40 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-inner">
                 <div className="flex items-center gap-2 overflow-hidden">
@@ -175,7 +219,7 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                 </div>
 
                 <button
-                  onClick={handleCopy}
+                  onClick={() => handleCopy()}
                   className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#00e5ff] to-[#8b5cf6] text-black font-extrabold text-xs flex items-center justify-center gap-1.5 hover:opacity-90 transition-all shrink-0 cursor-pointer shadow-[0_0_15px_rgba(0,229,255,0.3)]"
                 >
                   {copied ? (
@@ -195,7 +239,7 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
               <div className="flex items-center gap-2 text-[11px] text-gray-400 px-1">
                 <Sparkles className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
                 <span>
-                  When you deploy to a custom domain (e.g. <code>mygamingshop.com</code>), this URL automatically updates to match your live domain.
+                  Matches the <code className="text-purple-300">/api/fampay-webhook</code> placeholder in your FamAPI dashboard at <strong>py.freepanel.in/webhooks</strong>.
                 </span>
               </div>
             </div>
@@ -208,7 +252,19 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                <button
+                  onClick={() => setActiveTab('famgateway')}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    activeTab === 'famgateway'
+                      ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-[0_0_12px_rgba(59,130,246,0.4)] border border-blue-400/50'
+                      : 'bg-white/5 hover:bg-white/10 text-gray-400 border border-white/5'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>FamGateway (famgateway.in)</span>
+                </button>
+
                 <button
                   onClick={() => setActiveTab('zapupi')}
                   className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -218,7 +274,7 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                   }`}
                 >
                   <Zap className="w-3.5 h-3.5" />
-                  <span>ZapUPI (pay.zapupi.com)</span>
+                  <span>ZapUPI</span>
                 </button>
 
                 <button
@@ -270,6 +326,83 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Tab: FamGateway Instructions */}
+            {activeTab === 'famgateway' && (
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 rounded-xl bg-blue-950/20 border border-blue-500/30 space-y-4 text-xs"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-blue-300 font-bold">
+                    <span className="w-5 h-5 rounded-full bg-blue-500/30 flex items-center justify-center text-blue-300 text-[10px]">
+                      ⚡
+                    </span>
+                    <span>FamGateway Integration Spec (famgateway.in)</span>
+                  </div>
+                  <a
+                    href="https://famgateway.in"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 underline"
+                  >
+                    <span>famgateway.in</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="space-y-3 text-gray-300">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
+                      1
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white">Create Order Endpoint</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Send POST request with your API Key to create UPI checkout orders:
+                      </p>
+                      <div className="mt-1.5 p-2 rounded bg-black/60 font-mono text-[10.5px] text-blue-400 border border-blue-500/20 select-all">
+                        POST https://famgateway.in/api/create-order.php
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
+                      2
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white">cURL Request Example</p>
+                      <pre className="mt-1.5 p-2 rounded bg-black/80 font-mono text-[10px] text-emerald-400 border border-white/5 overflow-x-auto select-all leading-relaxed">
+{`curl -X POST https://famgateway.in/api/create-order.php \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "amount": 500.00,
+    "redirect_url": "${currentOrigin}/success"
+  }'`}
+                      </pre>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
+                      3
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white">Webhook Callback (Instant Push)</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Provide this Webhook URL in your FamGateway dashboard settings:
+                      </p>
+                      <div className="mt-1.5 p-2 rounded bg-black/60 font-mono text-[10.5px] text-emerald-400 border border-emerald-500/20 select-all">
+                        {webhookUrl}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
 
             {/* Tab 0: ZapUPI Instructions */}
             {activeTab === 'zapupi' && (
@@ -363,15 +496,15 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                     <span className="w-5 h-5 rounded-full bg-purple-500/30 flex items-center justify-center text-purple-300 text-[10px]">
                       1
                     </span>
-                    <span>How to configure in FreePanel Dashboard (py.freepanel.in)</span>
+                    <span>How to configure in FreePanel Dashboard (py.freepanel.in/webhooks)</span>
                   </div>
                   <a
-                    href="https://py.freepanel.in"
+                    href="https://py.freepanel.in/webhooks"
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 underline"
                   >
-                    <span>Open FreePanel Portal</span>
+                    <span>Open py.freepanel.in/webhooks</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
@@ -382,9 +515,9 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                       1
                     </div>
                     <div>
-                      <p className="font-semibold text-white">Log in to FreePanel Account</p>
+                      <p className="font-semibold text-white">Log in to FamAPI / FreePanel</p>
                       <p className="text-[11px] text-gray-400 mt-0.5">
-                        Visit <a href="https://py.freepanel.in" target="_blank" rel="noreferrer" className="text-cyan-400 underline">py.freepanel.in</a> and sign in to your merchant dashboard.
+                        Open <a href="https://py.freepanel.in/webhooks" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-mono">py.freepanel.in/webhooks</a> on your phone or PC.
                       </p>
                     </div>
                   </div>
@@ -394,9 +527,9 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                       2
                     </div>
                     <div>
-                      <p className="font-semibold text-white">Navigate to API & Webhook Settings</p>
+                      <p className="font-semibold text-white">Navigate to Webhooks Page</p>
                       <p className="text-[11px] text-gray-400 mt-0.5">
-                        In the left sidebar menu, click on <strong className="text-purple-300">Settings</strong> or <strong className="text-purple-300">API Credentials / Webhook</strong>.
+                        Under the <strong className="text-purple-300">MAIN</strong> section in the sidebar menu, click on <strong className="text-amber-300">Webhooks</strong>.
                       </p>
                     </div>
                   </div>
@@ -406,13 +539,23 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                       3
                     </div>
                     <div>
-                      <p className="font-semibold text-white">Paste this Webhook URL</p>
+                      <p className="font-semibold text-white">Enter Webhook Endpoint URL</p>
                       <p className="text-[11px] text-gray-400 mt-0.5">
-                        Locate the input field labeled <strong className="text-emerald-300">Webhook URL</strong> (or <em>Callback URL</em>) and paste:
+                        In the input field labeled <strong className="text-emerald-300">Webhook Endpoint URL (optional)</strong>, paste:
                       </p>
-                      <div className="mt-1.5 p-2 rounded bg-black/60 font-mono text-[10.5px] text-emerald-400 border border-emerald-500/20 select-all">
-                        {webhookUrl}
+                      <div className="mt-1.5 flex items-center gap-2 p-2 rounded bg-black/60 font-mono text-[11px] text-emerald-400 border border-emerald-500/20">
+                        <span className="truncate select-all">{fampayWebhookUrl}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(fampayWebhookUrl)}
+                          className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 text-[10px] font-sans font-bold shrink-0 cursor-pointer"
+                        >
+                          Copy
+                        </button>
                       </div>
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        (You can also use <code className="text-cyan-300">{generalWebhookUrl}</code>)
+                      </p>
                     </div>
                   </div>
 
@@ -421,9 +564,9 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
                       4
                     </div>
                     <div>
-                      <p className="font-semibold text-white">Save / Update Settings</p>
+                      <p className="font-semibold text-white">Save Webhook URL</p>
                       <p className="text-[11px] text-gray-400 mt-0.5">
-                        Click <strong className="text-cyan-300">Save Changes</strong>. When users make payments via PhonePe, GPay, Paytm, or FamPay QR codes, the gateway instantly calls your webhook and tops up user balances in &lt;1 second!
+                        Click the black <strong className="text-cyan-300">Save Webhook URL</strong> button. FamAPI will now automatically notify your store on every successful UPI payment, crediting user wallets in real-time!
                       </p>
                     </div>
                   </div>
@@ -578,7 +721,7 @@ export const WebhookSetupModal: React.FC<WebhookSetupModalProps> = ({
             </button>
 
             <button
-              onClick={handleCopy}
+              onClick={() => handleCopy()}
               className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#8b5cf6] text-black font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-[0_0_15px_rgba(0,229,255,0.3)] hover:opacity-95 transition-all"
             >
               {copied ? <Check className="w-4 h-4 text-black" /> : <Copy className="w-4 h-4 text-black" />}

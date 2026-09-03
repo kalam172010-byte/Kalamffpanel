@@ -63,6 +63,7 @@ import {
   fetchUsersFromFirestore,
   saveUserToFirestore,
   deleteUserFromFirestore,
+  deduplicateUsers,
   subscribeToStoreSettings,
   saveStoreSettingsToFirestore,
   subscribeToApiConfigs,
@@ -153,10 +154,16 @@ export default function App() {
       const saved = localStorage.getItem('kalam_users_db');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const clean = deduplicateUsers(parsed);
+          try {
+            localStorage.setItem('kalam_users_db', JSON.stringify(clean));
+          } catch {}
+          return clean;
+        }
       }
     } catch {}
-    return INITIAL_RESELLERS;
+    return deduplicateUsers(INITIAL_RESELLERS);
   });
 
   // Sync userStats with logged in user
@@ -207,7 +214,14 @@ export default function App() {
       const saved = localStorage.getItem('kalam_api_configs_db');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((a: any) => {
+            if (a.id === 'api-2' && (a.xApiToken === 'HK_REST_892019481b0a991823f990' || !a.apiUrl)) {
+              return { ...a, xApiToken: '', status: 'DISCONNECTED', apiUrl: '' };
+            }
+            return a;
+          });
+        }
       }
     } catch {}
     return INITIAL_API_CONFIGS;
@@ -338,14 +352,7 @@ export default function App() {
     const unsub = subscribeToUsers((cloudUsers) => {
       if (cloudUsers && cloudUsers.length > 0) {
         setResellers((prev) => {
-          const map = new Map<string, ResellerUser>();
-          // Base mock initial users
-          INITIAL_RESELLERS.forEach((u) => map.set(u.id, u));
-          // Existing local users
-          prev.forEach((u) => map.set(u.id, u));
-          // Authoritative cloud users
-          cloudUsers.forEach((u) => map.set(u.id, u));
-          const merged = Array.from(map.values());
+          const merged = deduplicateUsers([...cloudUsers, ...prev, ...INITIAL_RESELLERS]);
           try {
             localStorage.setItem('kalam_users_db', JSON.stringify(merged));
           } catch {}
@@ -366,12 +373,23 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Update browser tab title dynamically whenever shopName changes
+  // Update browser tab title and favicon dynamically whenever shopName or logo changes
   useEffect(() => {
     if (storeSettings?.shopName) {
       document.title = `${storeSettings.shopName} - Digital Key Store`;
     }
-  }, [storeSettings?.shopName]);
+    if (storeSettings?.logoUrl) {
+      try {
+        let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = 'icon';
+          document.head.appendChild(link);
+        }
+        link.href = storeSettings.logoUrl;
+      } catch {}
+    }
+  }, [storeSettings?.shopName, storeSettings?.logoUrl]);
 
   // 3. Subscribe to Firestore API Configurations in Real-Time
   useEffect(() => {
@@ -547,10 +565,7 @@ export default function App() {
           };
           setCurrentUser(resolvedUser);
           setResellers((prev) => {
-            const exists = prev.some((u) => u.id === synced.id || (u.email && synced.email && u.email.toLowerCase() === synced.email.toLowerCase()));
-            const nextList = exists
-              ? prev.map((u) => u.id === synced.id || (u.email && synced.email && u.email.toLowerCase() === synced.email.toLowerCase()) ? { ...u, ...synced } : u)
-              : [synced, ...prev];
+            const nextList = deduplicateUsers([synced, ...prev]);
             try {
               localStorage.setItem('kalam_users_db', JSON.stringify(nextList));
             } catch {}
@@ -603,11 +618,7 @@ export default function App() {
       const cloudUsers = await fetchUsersFromFirestore();
       if (cloudUsers && cloudUsers.length > 0) {
         setResellers((prev) => {
-          const map = new Map<string, ResellerUser>();
-          INITIAL_RESELLERS.forEach((u) => map.set(u.id, u));
-          prev.forEach((u) => map.set(u.id, u));
-          cloudUsers.forEach((u) => map.set(u.id, u));
-          const merged = Array.from(map.values());
+          const merged = deduplicateUsers([...cloudUsers, ...prev, ...INITIAL_RESELLERS]);
           try {
             localStorage.setItem('kalam_users_db', JSON.stringify(merged));
           } catch {}
@@ -681,10 +692,7 @@ export default function App() {
     };
 
     setResellers((prev) => {
-      const exists = prev.some((u) => u.id === userRecord.id || (u.email && userRecord.email && u.email.toLowerCase() === userRecord.email.toLowerCase()));
-      const nextList = exists
-        ? prev.map((u) => (u.id === userRecord.id || (u.email && userRecord.email && u.email.toLowerCase() === userRecord.email.toLowerCase()) ? { ...u, ...userRecord, walletBalance: resolvedBalance } : u))
-        : [userRecord, ...prev];
+      const nextList = deduplicateUsers([userRecord, ...prev]);
       try {
         localStorage.setItem('kalam_users_db', JSON.stringify(nextList));
       } catch {}
@@ -1463,7 +1471,7 @@ export default function App() {
     };
     saveUserToFirestore(finalUser).catch(console.warn);
     setResellers((prev) => {
-      const updated = [finalUser, ...prev.filter((u) => u.id !== finalUser.id)];
+      const updated = deduplicateUsers([finalUser, ...prev]);
       try {
         localStorage.setItem('kalam_users_db', JSON.stringify(updated));
       } catch {}
@@ -1475,7 +1483,7 @@ export default function App() {
   const handleUpdateUser = (updatedUser: ResellerUser) => {
     saveUserToFirestore(updatedUser).catch(console.warn);
     setResellers((prev) => {
-      const updated = prev.map((u) => (u.id === updatedUser.id ? updatedUser : u));
+      const updated = deduplicateUsers(prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
       try {
         localStorage.setItem('kalam_users_db', JSON.stringify(updated));
       } catch {}
@@ -1962,7 +1970,13 @@ export default function App() {
               />
             )}
 
-            {adminTab === 'sold_keys' && <AdminSoldKeysView soldKeys={userKeys} />}
+            {adminTab === 'sold_keys' && (
+              <AdminSoldKeysView
+                soldKeys={userKeys}
+                storeSettings={storeSettings}
+                onSeedSampleKeys={(sampleKeys) => setUserKeys((prev) => [...sampleKeys, ...prev])}
+              />
+            )}
 
             {adminTab === 'resellers' && (
               <AdminResellersView

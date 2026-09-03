@@ -131,6 +131,19 @@ export interface StoreSettings {
   maintenanceMode?: boolean;
   dailySpinEnabled?: boolean;
   enableUtrInput?: boolean;
+  // Visual Logo & Theme Customization
+  logoShape?: 'rounded' | 'circle' | 'square';
+  logoGlowColor?: 'cyan' | 'purple' | 'gold' | 'emerald' | 'pink';
+  logoSize?: 'sm' | 'md' | 'lg';
+  themeAccent?: 'cyan' | 'purple' | 'gold' | 'emerald' | 'rose' | 'blue';
+  storeNoticeBadge?: string;
+  // User Storefront Section Visibility
+  showHeroCard?: boolean;
+  showTopSellers?: boolean;
+  showQuickActions?: boolean;
+  showDepositGuide?: boolean;
+  showCatalogPreview?: boolean;
+  discordSupportUrl?: string;
 }
 
 export interface ResellerUser {

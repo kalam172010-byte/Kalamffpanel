@@ -36,6 +36,65 @@ import { safeFetchJson } from './safe-api';
 /* ==================== USERS & RESELLERS FIRESTORE SYNC ==================== */
 
 /**
+ * Safely deduplicate users by ID and by lowercase email to prevent duplicate React keys or duplicate rows
+ */
+export function deduplicateUsers(users: ResellerUser[]): ResellerUser[] {
+  if (!Array.isArray(users)) return [];
+  const map = new Map<string, ResellerUser>();
+  const emailToId = new Map<string, string>();
+
+  for (const rawUser of users) {
+    if (!rawUser) continue;
+    const user = { ...rawUser };
+    const cleanId = (user.id || '').trim();
+    const cleanEmail = (user.email || '').trim().toLowerCase();
+
+    if (!cleanId && !cleanEmail) continue;
+
+    // Check if we already have this user registered under this email
+    if (cleanEmail && emailToId.has(cleanEmail)) {
+      const existingId = emailToId.get(cleanEmail)!;
+      const existingUser = map.get(existingId);
+      if (existingUser) {
+        // If current user has a real Firebase UID (not a mock "res-1"), upgrade the id
+        const preferNewId = cleanId && !cleanId.startsWith('res-') && existingId.startsWith('res-');
+        const finalId = preferNewId ? cleanId : existingId;
+        const merged: ResellerUser = {
+          ...existingUser,
+          ...user,
+          id: finalId,
+          walletBalance: typeof user.walletBalance === 'number' ? user.walletBalance : existingUser.walletBalance,
+        };
+        if (preferNewId) {
+          map.delete(existingId);
+          emailToId.set(cleanEmail, finalId);
+        }
+        map.set(finalId, merged);
+        continue;
+      }
+    }
+
+    // Check if we already have this user registered under this ID
+    if (cleanId && map.has(cleanId)) {
+      const existingUser = map.get(cleanId)!;
+      map.set(cleanId, {
+        ...existingUser,
+        ...user,
+      });
+      if (cleanEmail) emailToId.set(cleanEmail, cleanId);
+      continue;
+    }
+
+    const assignedId = cleanId || `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    user.id = assignedId;
+    map.set(assignedId, user);
+    if (cleanEmail) emailToId.set(cleanEmail, assignedId);
+  }
+
+  return Array.from(map.values());
+}
+
+/**
  * Real-time listener for all users / resellers in Firestore
  */
 export function subscribeToUsers(
@@ -69,10 +128,10 @@ export function subscribeToUsers(
               customDiscountPercent: data.customDiscountPercent || 0,
             });
           });
-          onUpdate(userList);
+          onUpdate(deduplicateUsers(userList));
         } else {
           // If Firestore is empty initially, populate with initial default list
-          onUpdate(INITIAL_RESELLERS);
+          onUpdate(deduplicateUsers(INITIAL_RESELLERS));
           // Seed the initial users to Firestore in the background
           seedInitialUsers(INITIAL_RESELLERS);
         }
@@ -118,7 +177,7 @@ export async function fetchUsersFromFirestore(): Promise<ResellerUser[]> {
           customDiscountPercent: data.customDiscountPercent || 0,
         });
       });
-      return userList;
+      return deduplicateUsers(userList);
     }
   } catch (err) {
     console.warn('[Firestore] Error fetching users once:', err);
@@ -164,7 +223,7 @@ export async function saveUserToFirestore(user: ResellerUser | (Partial<Reseller
     } else {
       list.unshift(safeUser as ResellerUser);
     }
-    localStorage.setItem('kalam_users_db', JSON.stringify(list));
+    localStorage.setItem('kalam_users_db', JSON.stringify(deduplicateUsers(list)));
   } catch {}
 
   try {

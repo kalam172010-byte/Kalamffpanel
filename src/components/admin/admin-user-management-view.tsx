@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Users,
@@ -34,6 +34,7 @@ import {
 import { GlassCard } from '../shared/glass-card';
 import { formatCurrency } from '../../lib/utils';
 import { AuthUser, ResellerUser, PurchasedKey, TransactionRecord } from '../../types';
+import { deduplicateUsers } from '../../lib/firestore-service';
 
 interface AdminUserManagementViewProps {
   users: ResellerUser[];
@@ -91,49 +92,54 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
     notes: '',
   });
 
+  // Deduplicate and sanitize users list
+  const safeUsers = useMemo(() => deduplicateUsers(users || []), [users]);
+
   // Filter & Search Logic
-  const filteredUsers = (users || [])
-    .filter((u) => {
-      const matchSearch =
-        (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.phone || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.id || '').toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredUsers = useMemo(() => {
+    return safeUsers
+      .filter((u) => {
+        const matchSearch =
+          (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (u.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (u.phone || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (u.id || '').toLowerCase().includes(searchTerm.toLowerCase());
 
-      if (!matchSearch) return false;
+        if (!matchSearch) return false;
 
-      const isReseller = Boolean(u.isReseller || u.role === 'RESELLER');
-      const isAdmin = u.role === 'ADMIN' || u.email?.toLowerCase() === 'kalam172010@gmail.com';
-      const uStatus = u.status || 'ACTIVE';
+        const isReseller = Boolean(u.isReseller || u.role === 'RESELLER');
+        const isAdmin = u.role === 'ADMIN' || u.email?.toLowerCase() === 'kalam172010@gmail.com';
+        const uStatus = u.status || 'ACTIVE';
 
-      // Role Filter
-      if (roleFilter === 'RESELLER' && !isReseller) return false;
-      if (roleFilter === 'USER' && (isReseller || isAdmin)) return false;
-      if (roleFilter === 'ADMIN' && !isAdmin) return false;
+        // Role Filter
+        if (roleFilter === 'RESELLER' && !isReseller) return false;
+        if (roleFilter === 'USER' && (isReseller || isAdmin)) return false;
+        if (roleFilter === 'ADMIN' && !isAdmin) return false;
 
-      // Status Filter
-      if (statusFilter === 'ACTIVE' && uStatus !== 'ACTIVE') return false;
-      if (statusFilter === 'BLOCKED' && uStatus !== 'BLOCKED' && uStatus !== 'INACTIVE') return false;
-      if (statusFilter === 'WARNING' && uStatus !== 'WARNING') return false;
-      if (statusFilter === 'NON_ZERO' && (u.walletBalance || 0) <= 0) return false;
+        // Status Filter
+        if (statusFilter === 'ACTIVE' && uStatus !== 'ACTIVE') return false;
+        if (statusFilter === 'BLOCKED' && uStatus !== 'BLOCKED' && uStatus !== 'INACTIVE') return false;
+        if (statusFilter === 'WARNING' && uStatus !== 'WARNING') return false;
+        if (statusFilter === 'NON_ZERO' && (u.walletBalance || 0) <= 0) return false;
 
-      return true;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'balance_desc') return (b.walletBalance || 0) - (a.walletBalance || 0);
-      if (sortBy === 'balance_asc') return (a.walletBalance || 0) - (b.walletBalance || 0);
-      if (sortBy === 'keys_desc') return (b.totalKeysSold || 0) - (a.totalKeysSold || 0);
-      if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
-      return 0;
-    });
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'balance_desc') return (b.walletBalance || 0) - (a.walletBalance || 0);
+        if (sortBy === 'balance_asc') return (a.walletBalance || 0) - (b.walletBalance || 0);
+        if (sortBy === 'keys_desc') return (b.totalKeysSold || 0) - (a.totalKeysSold || 0);
+        if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
+        return 0;
+      });
+  }, [safeUsers, searchTerm, roleFilter, statusFilter, sortBy]);
 
   // Summary Metrics
-  const totalUsersCount = (users || []).length;
-  const totalResellersCount = (users || []).filter((u) => u.isReseller || u.role === 'RESELLER').length;
-  const totalVaultBalance = (users || []).reduce((acc, u) => acc + (u.walletBalance || 0), 0);
-  const totalBlockedCount = (users || []).filter((u) => u.status === 'BLOCKED' || u.status === 'INACTIVE').length;
-  const totalKeysDelivered = (users || []).reduce((acc, u) => acc + (u.totalKeysSold || 0), 0);
+  const totalUsersCount = safeUsers.length;
+  const totalResellersCount = safeUsers.filter((u) => u.isReseller || u.role === 'RESELLER').length;
+  const totalVaultBalance = safeUsers.reduce((acc, u) => acc + (u.walletBalance || 0), 0);
+  const totalBlockedCount = safeUsers.filter((u) => u.status === 'BLOCKED' || u.status === 'INACTIVE').length;
+  const totalKeysDelivered = safeUsers.reduce((acc, u) => acc + (u.totalKeysSold || 0), 0);
 
   const quickAmounts = [50, 100, 200, 500, 1000, 2000, 5000];
 
@@ -414,7 +420,7 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
             </div>
           </div>
         ) : (
-          filteredUsers.map((user) => {
+          filteredUsers.map((user, idx) => {
             const isUserAdmin =
               user.role === 'ADMIN' ||
               user.email?.toLowerCase() === 'kalam172010@gmail.com';
@@ -423,7 +429,7 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
 
             return (
               <div
-                key={user.id}
+                key={`${user.id || 'usr'}_${idx}`}
                 className={`p-3.5 rounded-2xl border transition-all duration-200 ${
                   isBlocked
                     ? 'bg-rose-950/20 border-rose-500/30'

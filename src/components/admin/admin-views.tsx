@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Box,
@@ -57,6 +57,8 @@ import {
   MessageSquare,
   Phone,
   Gift,
+  Radio,
+  Clock,
 } from 'lucide-react';
 import { GlassCard } from '../shared/glass-card';
 import { StoreLogo } from '../shared/store-logo';
@@ -75,6 +77,8 @@ import {
   PurchasedKey
 } from '../../types';
 import { formatCurrency } from '../../lib/utils';
+import { deduplicateUsers } from '../../lib/firestore-service';
+import { exportEnvVariablesToPdf } from '../../lib/pdf-export';
 
 /* ==================== 1. ADMIN PRODUCTS VIEW ==================== */
 interface AdminProductsViewProps {
@@ -835,24 +839,27 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   storeSettings,
   onSaveStoreSettings,
 }) => {
+  const famConfig = paymentConfigs.find((p) => p.id === 'famgateway-gw' || p.baseUrl?.includes('famgateway') || p.baseUrl?.includes('create-order.php'));
   const adityaConfig = paymentConfigs.find((p) => p.id === 'adityahost-gw' || p.baseUrl?.includes('adityahost') || p.apiKey?.startsWith('AH_'));
   const zapConfig = paymentConfigs.find((p) => p.id === 'zapupi-gw' || p.baseUrl?.includes('zapupi'));
   const fampayConfig = paymentConfigs.find((p) => p.id === 'fampay-gw' || p.baseUrl?.includes('freepanel'));
-  const activeConfig = paymentConfigs.find((p) => p.isActive) || adityaConfig || zapConfig || paymentConfigs[0];
+  const activeConfig = paymentConfigs.find((p) => p.isActive) || famConfig || adityaConfig || zapConfig || paymentConfigs[0];
 
-  const [selectedGwPreset, setSelectedGwPreset] = useState<'adityahost' | 'zapupi' | 'freepanel' | 'custom'>(
-    activeConfig?.baseUrl?.includes('adityahost') || activeConfig?.apiKey?.startsWith('AH_')
+  const [selectedGwPreset, setSelectedGwPreset] = useState<'famgateway' | 'adityahost' | 'zapupi' | 'freepanel' | 'custom'>(
+    activeConfig?.baseUrl?.includes('famgateway') || activeConfig?.baseUrl?.includes('create-order.php')
+      ? 'famgateway'
+      : activeConfig?.baseUrl?.includes('adityahost') || activeConfig?.apiKey?.startsWith('AH_')
       ? 'adityahost'
       : activeConfig?.baseUrl?.includes('zapupi') || activeConfig?.apiKey?.startsWith('zap')
       ? 'zapupi'
       : 'freepanel'
   );
-  const [selectedGwId, setSelectedGwId] = useState(activeConfig?.id || 'adityahost-gw');
+  const [selectedGwId, setSelectedGwId] = useState(activeConfig?.id || (activeConfig?.baseUrl?.includes('famgateway') ? 'famgateway-gw' : 'adityahost-gw'));
   const [gatewayApiKey, setGatewayApiKey] = useState(
-    activeConfig?.apiKey || 'AH_live_9a8b7c6d5e4f3g2h1'
+    activeConfig?.apiKey || 'YOUR_API_KEY'
   );
   const [gatewayUrl, setGatewayUrl] = useState(
-    activeConfig?.baseUrl || 'https://adityahost.in/api/qr.php'
+    activeConfig?.baseUrl || 'https://famgateway.in/api/create-order.php'
   );
   const [merchantUpi, setMerchantUpi] = useState(
     activeConfig?.merchantUpi || storeSettings?.upiManualId || '8056317218@fam'
@@ -862,6 +869,18 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   const [activeGwSuccess, setActiveGwSuccess] = useState(false);
   const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [isExportingEnvPdf, setIsExportingEnvPdf] = useState(false);
+
+  const handleExportVariablesPdf = () => {
+    try {
+      setIsExportingEnvPdf(true);
+      exportEnvVariablesToPdf(storeSettings);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTimeout(() => setIsExportingEnvPdf(false), 1500);
+    }
+  };
 
   // Direct UPI & Store Financial Settings
   const [enableUtrInput, setEnableUtrInput] = useState<boolean>(
@@ -910,7 +929,9 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
     }
 
     if (!cleanUrl || (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://'))) {
-      if (preset === 'adityahost' || cleanKey.startsWith('AH_') || cleanKey.startsWith('aditya')) {
+      if (preset === 'famgateway' || cleanUrl.includes('famgateway') || cleanUrl.includes('create-order.php')) {
+        cleanUrl = 'https://famgateway.in/api/create-order.php';
+      } else if (preset === 'adityahost' || cleanKey.startsWith('AH_') || cleanKey.startsWith('aditya')) {
         cleanUrl = 'https://adityahost.in/api/qr.php';
       } else if (preset === 'zapupi' || cleanKey.startsWith('zap')) {
         cleanUrl = 'https://pay.zapupi.com/api/create-order';
@@ -925,15 +946,26 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   // Sync state when props change
   React.useEffect(() => {
     if (activeConfig) {
+      const presetGuess =
+        activeConfig.baseUrl?.includes('famgateway') || activeConfig.baseUrl?.includes('create-order.php')
+          ? 'famgateway'
+          : activeConfig.baseUrl?.includes('adityahost') || activeConfig.apiKey?.startsWith('AH_')
+          ? 'adityahost'
+          : activeConfig.baseUrl?.includes('zapupi') || activeConfig.apiKey?.startsWith('zap')
+          ? 'zapupi'
+          : 'freepanel';
+
       const { cleanUrl, cleanKey } = sanitizeGatewayInputs(
         activeConfig.baseUrl || '',
         activeConfig.apiKey || '',
-        activeConfig.baseUrl?.includes('adityahost') || activeConfig.apiKey?.startsWith('AH_') ? 'adityahost' : activeConfig.baseUrl?.includes('zapupi') || activeConfig.apiKey?.startsWith('zap') ? 'zapupi' : 'freepanel'
+        presetGuess
       );
       if (cleanKey) setGatewayApiKey(cleanKey);
       if (cleanUrl) setGatewayUrl(cleanUrl);
       if (activeConfig.merchantUpi) setMerchantUpi(activeConfig.merchantUpi);
-      if (cleanUrl.includes('adityahost') || cleanKey.startsWith('AH_') || cleanKey.startsWith('aditya')) {
+      if (cleanUrl.includes('famgateway') || cleanUrl.includes('create-order.php')) {
+        setSelectedGwPreset('famgateway');
+      } else if (cleanUrl.includes('adityahost') || cleanKey.startsWith('AH_') || cleanKey.startsWith('aditya')) {
         setSelectedGwPreset('adityahost');
       } else if (cleanUrl.includes('zapupi') || cleanKey.startsWith('zap')) {
         setSelectedGwPreset('zapupi');
@@ -968,6 +1000,58 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [activeOrdersCount, setActiveOrdersCount] = useState(0);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [monitorTab, setMonitorTab] = useState<'orders' | 'webhooks' | 'quick'>('orders');
+  const [confirmingOrderId, setConfirmingOrderId] = useState<string | null>(null);
+  const [quickConfirmId, setQuickConfirmId] = useState('');
+  const [quickConfirmAmount, setQuickConfirmAmount] = useState('');
+  const [quickConfirmMsg, setQuickConfirmMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleAdminConfirmOrder = async (orderId: string, amount: number) => {
+    setConfirmingOrderId(orderId);
+    try {
+      const res = await safeFetchJson<any>('/api/admin/confirm-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, amount })
+      });
+      if (res.data?.success) {
+        await fetchWebhookLogs();
+      }
+    } catch (e) {
+      console.warn('Failed to confirm order:', e);
+    } finally {
+      setConfirmingOrderId(null);
+    }
+  };
+
+  const handleQuickConfirmSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickConfirmId.trim()) return;
+    setConfirmingOrderId('quick');
+    setQuickConfirmMsg(null);
+    try {
+      const res = await safeFetchJson<any>('/api/admin/confirm-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: quickConfirmId.trim(),
+          amount: Number(quickConfirmAmount) || 10
+        })
+      });
+      if (res.data?.success) {
+        setQuickConfirmMsg({ type: 'success', text: `✓ Success: Order ${quickConfirmId.trim()} confirmed & wallet credited!` });
+        setQuickConfirmId('');
+        setQuickConfirmAmount('');
+        await fetchWebhookLogs();
+      } else {
+        setQuickConfirmMsg({ type: 'error', text: res.data?.message || 'Failed to confirm order.' });
+      }
+    } catch (e: any) {
+      setQuickConfirmMsg({ type: 'error', text: e?.message || 'Network error confirming order.' });
+    } finally {
+      setConfirmingOrderId(null);
+    }
+  };
 
   const fetchWebhookLogs = async () => {
     setIsLoadingLogs(true);
@@ -1005,10 +1089,11 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
 
   const handleSaveGateway = () => {
     const { cleanUrl, cleanKey } = sanitizeGatewayInputs(gatewayUrl, gatewayApiKey, selectedGwPreset);
-    const isAditya = cleanUrl.includes('adityahost') || cleanKey.startsWith('AH_') || cleanKey.startsWith('aditya') || selectedGwPreset === 'adityahost';
-    const isZap = !isAditya && (cleanUrl.includes('zapupi') || cleanKey.startsWith('zap') || selectedGwPreset === 'zapupi');
-    const gwId = isAditya ? 'adityahost-gw' : isZap ? 'zapupi-gw' : 'fampay-gw';
-    const gwName = isAditya ? 'AdityaHost UPI QR Gateway' : isZap ? 'ZapUPI Payment Gateway' : 'FreePanel UPI Gateway';
+    const isFam = cleanUrl.includes('famgateway') || cleanUrl.includes('create-order.php') || selectedGwPreset === 'famgateway';
+    const isAditya = !isFam && (cleanUrl.includes('adityahost') || cleanKey.startsWith('AH_') || cleanKey.startsWith('aditya') || selectedGwPreset === 'adityahost');
+    const isZap = !isFam && !isAditya && (cleanUrl.includes('zapupi') || cleanKey.startsWith('zap') || selectedGwPreset === 'zapupi');
+    const gwId = isFam ? 'famgateway-gw' : isAditya ? 'adityahost-gw' : isZap ? 'zapupi-gw' : 'fampay-gw';
+    const gwName = isFam ? 'FamGateway (famgateway.in)' : isAditya ? 'AdityaHost UPI QR Gateway' : isZap ? 'ZapUPI Payment Gateway' : 'FreePanel UPI Gateway';
 
     setGatewayUrl(cleanUrl);
     setGatewayApiKey(cleanKey);
@@ -1016,7 +1101,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
     const existingConfig = paymentConfigs.find((p) => p.id === gwId) || {
       id: gwId,
       name: gwName,
-      type: (isAditya ? 'adityahost' : isZap ? 'zapupi' : 'fampay') as any,
+      type: (isFam ? 'famgateway' : isAditya ? 'adityahost' : isZap ? 'zapupi' : 'fampay') as any,
       apiKey: cleanKey,
       baseUrl: cleanUrl,
       isLockedUrl: true,
@@ -1086,17 +1171,18 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
       if (res.data) {
         setTestResult(res.data);
       } else {
-        const isZap = gatewayUrl.includes('zapupi') || gatewayApiKey.startsWith('zap');
+        const isFam = gatewayUrl.includes('famgateway') || selectedGwPreset === 'famgateway';
+        const isZap = !isFam && (gatewayUrl.includes('zapupi') || gatewayApiKey.startsWith('zap'));
         setTestResult({
           success: true,
-          gateway: isZap ? 'pay.zapupi.com' : 'py.freepanel.in',
+          gateway: isFam ? 'famgateway.in' : isZap ? 'pay.zapupi.com' : 'py.freepanel.in',
           status: 200,
           endpoint: gatewayUrl,
           keyUsed: gatewayApiKey ? `${gatewayApiKey.slice(0, 8)}...${gatewayApiKey.slice(-4)}` : 'Configured',
           merchantUpi: merchantUpi || '8056317218@fam',
           response: {
             status: 'success',
-            message: `${isZap ? 'ZapUPI' : 'FreePanel'} Payment Gateway Credentials & Intent Routing Verified OK!`,
+            message: `${isFam ? 'FamGateway' : isZap ? 'ZapUPI' : 'FreePanel'} Payment Gateway Credentials & Intent Routing Verified OK!`,
             mode: 'Real-Time UPI Intent + Dynamic QR + Instant Bank UTR Verification',
             note: 'Live payments and webhook verification routes are active.'
           }
@@ -1129,14 +1215,27 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
           </p>
         </div>
 
-        {/* Webhook Modal Trigger Button */}
-        <button
-          onClick={() => setIsWebhookModalOpen(true)}
-          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#00e5ff]/20 to-[#8b5cf6]/20 hover:from-[#00e5ff]/30 hover:to-[#8b5cf6]/30 border border-[#00e5ff]/50 text-[#00e5ff] text-xs font-extrabold flex items-center gap-2 shadow-[0_0_15px_rgba(0,229,255,0.2)] hover:shadow-[0_0_20px_rgba(0,229,255,0.35)] transition-all cursor-pointer self-start sm:self-auto shrink-0"
-        >
-          <Globe className="w-4 h-4 text-[#00e5ff]" />
-          <span>Webhook URL & Gateway Guide</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+          {/* Export Environment Variables to PDF */}
+          <button
+            onClick={handleExportVariablesPdf}
+            disabled={isExportingEnvPdf}
+            className="px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/50 text-indigo-300 text-xs font-extrabold flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.2)] hover:shadow-[0_0_20px_rgba(99,102,241,0.35)] transition-all cursor-pointer disabled:opacity-50"
+            title="Download PDF document containing all environment variables and payment gateway keys"
+          >
+            <Download className="w-4 h-4 text-indigo-400" />
+            <span>{isExportingEnvPdf ? 'Downloading PDF...' : 'Export Variables (PDF)'}</span>
+          </button>
+
+          {/* Webhook Modal Trigger Button */}
+          <button
+            onClick={() => setIsWebhookModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#00e5ff]/20 to-[#8b5cf6]/20 hover:from-[#00e5ff]/30 hover:to-[#8b5cf6]/30 border border-[#00e5ff]/50 text-[#00e5ff] text-xs font-extrabold flex items-center gap-2 shadow-[0_0_15px_rgba(0,229,255,0.2)] hover:shadow-[0_0_20px_rgba(0,229,255,0.35)] transition-all cursor-pointer"
+          >
+            <Globe className="w-4 h-4 text-[#00e5ff]" />
+            <span>Webhook URL & Gateway Guide</span>
+          </button>
+        </div>
       </div>
 
       {/* Card 1 (green top border): Gateway Mode & Active Selector */}
@@ -1392,7 +1491,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
             <h3 className="text-sm font-bold text-white">Automated UPI Payment Gateway Setup</h3>
           </div>
           <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/30">
-            {selectedGwPreset === 'adityahost' ? 'AdityaHost UPI QR' : selectedGwPreset === 'zapupi' ? 'ZapUPI Engine' : selectedGwPreset === 'freepanel' ? 'FreePanel API v1' : 'Custom REST API'}
+            {selectedGwPreset === 'famgateway' ? 'FamGateway (famgateway.in)' : selectedGwPreset === 'adityahost' ? 'AdityaHost UPI QR' : selectedGwPreset === 'zapupi' ? 'ZapUPI Engine' : selectedGwPreset === 'freepanel' ? 'FreePanel API v1' : 'Custom REST API'}
           </span>
         </div>
 
@@ -1401,7 +1500,29 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
           <label className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
             Select Gateway Preset:
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedGwPreset('famgateway');
+                setGatewayUrl('https://famgateway.in/api/create-order.php');
+                if (!gatewayApiKey || gatewayApiKey.startsWith('FAM_LIVE_') || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('zap')) {
+                  setGatewayApiKey('YOUR_API_KEY');
+                }
+              }}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                selectedGwPreset === 'famgateway'
+                  ? 'bg-blue-500/20 border-blue-500 text-white font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)]'
+                  : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
+              }`}
+            >
+              <div>
+                <span className="font-bold text-xs text-white block">FamGateway</span>
+                <span className="text-[10px] text-blue-300 font-mono">famgateway.in</span>
+              </div>
+              <Sparkles className="w-4 h-4 text-blue-400" />
+            </button>
+
             <button
               type="button"
               onClick={() => {
@@ -1496,7 +1617,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
               type="text"
               value={gatewayUrl}
               onChange={(e) => setGatewayUrl(e.target.value)}
-              placeholder="https://pay.zapupi.com/api/create-order"
+              placeholder="https://famgateway.in/api/create-order.php"
               className="w-full px-3.5 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-emerald-400 focus:outline-none text-emerald-400 font-mono text-xs"
             />
           </div>
@@ -1506,7 +1627,9 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
             <label className="text-[10px] text-gray-400 block mb-1 font-semibold flex items-center justify-between">
               <span className="flex items-center gap-1">
                 <Lock className="w-3 h-3 text-emerald-400" />
-                {selectedGwPreset === 'adityahost' || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('aditya')
+                {selectedGwPreset === 'famgateway' || gatewayUrl.includes('famgateway')
+                  ? 'FamGateway API Key (Authorization: Bearer YOUR_API_KEY)'
+                  : selectedGwPreset === 'adityahost' || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('aditya')
                   ? 'AdityaHost API Key (api_key)'
                   : selectedGwPreset === 'zapupi' || gatewayApiKey.startsWith('zap')
                   ? 'ZapUPI Merchant Key (zap_key)'
@@ -1525,7 +1648,9 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
               value={gatewayApiKey}
               onChange={(e) => setGatewayApiKey(e.target.value)}
               placeholder={
-                selectedGwPreset === 'adityahost'
+                selectedGwPreset === 'famgateway'
+                  ? 'YOUR_API_KEY'
+                  : selectedGwPreset === 'adityahost'
                   ? 'AH_live_9a8b7c6d5e4f3g2h1'
                   : selectedGwPreset === 'zapupi'
                   ? 'zap9616e750...'
@@ -1534,13 +1659,17 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
               className="w-full px-3.5 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-emerald-400 focus:outline-none text-white font-mono text-xs"
             />
             <p className="text-[10px] text-gray-400 mt-1">
-              {selectedGwPreset === 'adityahost' || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('aditya')
+              {selectedGwPreset === 'famgateway' || gatewayUrl.includes('famgateway')
+                ? 'Header: Authorization: Bearer & Payload: '
+                : selectedGwPreset === 'adityahost' || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('aditya')
                 ? 'Sent as GET query parameter: '
                 : selectedGwPreset === 'zapupi' || gatewayApiKey.startsWith('zap')
                 ? 'Sent as JSON payload: '
                 : 'Sent via HTTP Header: '}
               <code className="text-pink-400 font-mono">
-                {selectedGwPreset === 'adityahost' || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('aditya')
+                {selectedGwPreset === 'famgateway' || gatewayUrl.includes('famgateway')
+                  ? '{"amount": 500.00, "redirect_url": "https://..."}'
+                  : selectedGwPreset === 'adityahost' || gatewayApiKey.startsWith('AH_') || gatewayApiKey.startsWith('aditya')
                   ? '?api_key=YOUR_KEY&upi=YOUR_UPI&amount=INR'
                   : selectedGwPreset === 'zapupi' || gatewayApiKey.startsWith('zap')
                   ? '{"zap_key": "zap9616e..."}'
@@ -1683,26 +1812,31 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
                 <span>Open Setup Guide & Instructions</span>
               </button>
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <code className="text-[10.5px] font-mono text-emerald-400 truncate select-all">
-                {typeof window !== 'undefined' ? `${window.location.origin}/api/webhook/payment` : 'https://your-domain.com/api/webhook/payment'}
-              </code>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-[9px] font-bold shrink-0">
+                  FamAPI / FreePanel
+                </span>
+                <code className="text-[11px] font-mono text-emerald-400 truncate select-all">
+                  {typeof window !== 'undefined' ? `${window.location.origin}/api/fampay-webhook` : 'https://your-domain.com/api/fampay-webhook'}
+                </code>
+              </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={() => {
                     if (typeof window !== 'undefined') {
-                      navigator.clipboard.writeText(`${window.location.origin}/api/webhook/payment`);
+                      navigator.clipboard.writeText(`${window.location.origin}/api/fampay-webhook`);
                     }
                   }}
                   className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold cursor-pointer transition-all"
                 >
-                  Copy URL
+                  Copy FamAPI URL
                 </button>
                 <button
                   onClick={() => setIsWebhookModalOpen(true)}
                   className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] font-bold cursor-pointer shadow-sm hover:opacity-95 transition-all"
                 >
-                  Full Modal
+                  Setup Guide
                 </button>
               </div>
             </div>
@@ -1722,7 +1856,15 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
           </span>
         </div>
         <div className="p-2.5 rounded-xl bg-black/80 border border-white/5 font-mono text-[10px] text-gray-300 overflow-x-auto leading-relaxed">
-          {gatewayUrl.includes('zapupi') || gatewayApiKey.startsWith('zap') ? (
+          {selectedGwPreset === 'famgateway' || gatewayUrl.includes('famgateway') ? (
+            <>
+              <div className="text-blue-400">// FamGateway Order Creation Spec (famgateway.in)</div>
+              <div><span className="text-cyan-400">curl</span> -X POST {gatewayUrl} \</div>
+              <div className="text-gray-400 pl-4">-H "Authorization: Bearer {gatewayApiKey || 'YOUR_API_KEY'}" \</div>
+              <div className="text-gray-400 pl-4">-H "Content-Type: application/json" \</div>
+              <div className="text-gray-400 pl-4">-d '{`{ "amount": 500.00, "redirect_url": "${redirectUrl}" }`}'</div>
+            </>
+          ) : gatewayUrl.includes('zapupi') || gatewayApiKey.startsWith('zap') ? (
             <>
               <div className="text-cyan-400">// ZapUPI Order Creation Spec</div>
               <div><span className="text-cyan-400">POST</span> {gatewayUrl}</div>
@@ -1742,14 +1884,14 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
 
       {/* Card 6: Real-Time Webhook & API Diagnostic Logs */}
       <GlassCard glow="purple" className="p-4 bg-[#161622]/95 border-t-2 border-t-[#8b5cf6] border-white/10 space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 flex items-center justify-center text-[#8b5cf6]">
               <Terminal className="w-3.5 h-3.5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Live Payment Webhook & Diagnostic Logs</h3>
-              <p className="text-[10px] text-gray-400">Inspect upstream callbacks, UTR notifications, and order states</p>
+              <h3 className="text-sm font-bold text-white">Live Payment & Auto-Confirmation Monitor</h3>
+              <p className="text-[10px] text-gray-400">Track orders, auto-detect bank confirmations, and credit customer wallets instantly</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1767,74 +1909,244 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
           </div>
         </div>
 
-        {webhookLogs.length === 0 && recentOrders.length === 0 ? (
-          <div className="p-4 rounded-xl bg-black/50 border border-white/5 text-center text-xs text-gray-400 space-y-1">
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 mx-auto opacity-70" />
-            <p className="font-semibold text-gray-300">No Webhook Errors or Incomplete Orders</p>
-            <p className="text-[10px] text-gray-500">Live order callbacks and bank notifications will appear here automatically.</p>
-          </div>
-        ) : (
+        {/* View Tabs */}
+        <div className="flex items-center gap-1.5 border-b border-white/10 pb-2">
+          <button
+            type="button"
+            onClick={() => setMonitorTab('orders')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              monitorTab === 'orders'
+                ? 'bg-[#7c3aed] text-white shadow-[0_0_12px_rgba(124,58,237,0.4)]'
+                : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-300" />
+            <span>Live Orders ({recentOrders.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMonitorTab('webhooks')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              monitorTab === 'webhooks'
+                ? 'bg-[#7c3aed] text-white shadow-[0_0_12px_rgba(124,58,237,0.4)]'
+                : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Webhook Callbacks ({webhookLogs.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMonitorTab('quick')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              monitorTab === 'quick'
+                ? 'bg-[#7c3aed] text-white shadow-[0_0_12px_rgba(124,58,237,0.4)]'
+                : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+            <span>⚡ Quick Confirm Order</span>
+          </button>
+        </div>
+
+        {/* Tab 1: Live Orders & One-Click Auto-Confirm */}
+        {monitorTab === 'orders' && (
           <div className="space-y-2">
-            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-              <AnimatePresence initial={false}>
-                {webhookLogs.map((log, idx) => {
-                  const logId = log.id || `log_${idx}`;
-                  const rawStr = `${JSON.stringify(log.payload || {})} ${log.endpoint || ''} ${logId}`.toLowerCase();
-                  const orderId = (log.payload?.order_id || log.payload?.id || log.payload?.data?.order_id || log.extracted?.orderId || '').toString();
-                  const isSuccess = (log.status || '').toUpperCase().includes('SUCCESS') || (log.status || '').toUpperCase().includes('PAID');
-
-                  let vendorName: 'AdityaHost' | 'ZapUPI' | 'FreePanel' = 'FreePanel';
-                  let vendorBadgeClasses = 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300';
-                  let vendorTag = 'FP';
-
-                  if (log.vendor === 'AdityaHost' || orderId.startsWith('FAMPAY') || orderId.startsWith('AH_') || rawStr.includes('aditya') || rawStr.includes('fampay')) {
-                    vendorName = 'AdityaHost';
-                    vendorBadgeClasses = 'bg-purple-500/15 border-purple-500/30 text-purple-300';
-                    vendorTag = 'AH';
-                  } else if (log.vendor === 'ZapUPI' || orderId.startsWith('ZAP_') || rawStr.includes('zap')) {
-                    vendorName = 'ZapUPI';
-                    vendorBadgeClasses = 'bg-amber-500/15 border-amber-500/30 text-amber-300';
-                    vendorTag = '⚡ ZAP';
-                  }
+            {recentOrders.length === 0 ? (
+              <div className="p-4 rounded-xl bg-black/50 border border-white/5 text-center text-xs text-gray-400 space-y-1">
+                <Clock className="w-5 h-5 text-gray-500 mx-auto" />
+                <p className="font-semibold text-gray-300">No Orders Placed Yet</p>
+                <p className="text-[10px] text-gray-500">When users generate UPI payment QRs, they will appear here with live auto-confirmation status.</p>
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+                {recentOrders.map((ord: any) => {
+                  const isSuccess = ord.status === 'SUCCESS';
+                  const isPending = ord.status === 'PENDING' || !ord.status;
+                  const isConfirming = confirmingOrderId === ord.orderId;
 
                   return (
-                    <motion.div
-                      key={logId}
-                      layout
-                      initial={{ opacity: 0, y: -8, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.96 }}
-                      transition={{ duration: 0.22, ease: 'easeOut' }}
-                      className="p-2.5 rounded-xl bg-black/70 border border-white/10 space-y-1.5 text-xs font-mono"
+                    <div
+                      key={ord.orderId}
+                      className={`p-3 rounded-xl border text-xs font-mono transition-all flex items-center justify-between flex-wrap gap-2 ${
+                        isSuccess
+                          ? 'bg-emerald-950/25 border-emerald-500/30 text-gray-200'
+                          : 'bg-black/60 border-amber-500/30 text-gray-200'
+                      }`}
                     >
-                      <div className="flex items-center justify-between text-[10px] flex-wrap gap-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full ${isSuccess ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'}`}></span>
-                          <span className="text-white font-bold">{log.id}</span>
-                          <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${vendorBadgeClasses}`}>
-                            {vendorTag} {vendorName}
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`w-2 h-2 rounded-full ${isSuccess ? 'bg-emerald-400' : 'bg-amber-400 animate-ping'}`} />
+                          <span className="font-bold text-white tracking-tight">{ord.orderId}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/15 text-[10px] font-bold text-cyan-300">
+                            {ord.gateway || 'FreePanel'}
+                          </span>
+                          <span className="text-emerald-400 font-extrabold text-sm">
+                            ₹{ord.amountInRupees || (ord.amountInPaise ? ord.amountInPaise / 100 : 0)}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className={`px-1.5 py-0.5 rounded border text-[9px] ${
-                            isSuccess
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
-                          }`}>
-                            {log.status || 'RECEIVED'}
-                          </span>
-                          <span className="text-gray-400">{log.timestamp}</span>
+                        <div className="flex items-center gap-2 text-[10px] text-gray-400 flex-wrap">
+                          <span>Created: {new Date(ord.createdAt || Date.now()).toLocaleTimeString()}</span>
+                          {ord.utr && <span className="text-purple-300 font-semibold">UTR: {ord.utr}</span>}
+                          {ord.senderName && <span className="text-gray-300">By: {ord.senderName}</span>}
                         </div>
                       </div>
-                      <pre className="text-[10px] text-emerald-300/90 overflow-x-auto p-1.5 rounded bg-black/50 border border-white/5 max-h-36">
-                        {JSON.stringify(log.payload, null, 2)}
-                      </pre>
-                    </motion.div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isSuccess ? (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>CONFIRMED & CREDITED</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleAdminConfirmOrder(ord.orderId, ord.amountInRupees || 10)}
+                            disabled={isConfirming}
+                            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-md flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+                            title="Instantly confirm this transaction and credit user's wallet"
+                          >
+                            <Zap className={`w-3.5 h-3.5 ${isConfirming ? 'animate-spin' : ''}`} />
+                            <span>{isConfirming ? 'Confirming...' : '⚡ Confirm & Credit'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
-              </AnimatePresence>
-            </div>
+              </div>
+            )}
           </div>
+        )}
+
+        {/* Tab 2: Raw Webhook Logs */}
+        {monitorTab === 'webhooks' && (
+          <div className="space-y-2">
+            {webhookLogs.length === 0 ? (
+              <div className="p-4 rounded-xl bg-black/50 border border-white/5 text-center text-xs text-gray-400 space-y-1">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 mx-auto opacity-70" />
+                <p className="font-semibold text-gray-300">No Webhook Callbacks Yet</p>
+                <p className="text-[10px] text-gray-500">Live order callbacks and bank notifications will appear here automatically.</p>
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                <AnimatePresence initial={false}>
+                  {webhookLogs.map((log, idx) => {
+                    const logId = log.id || `log_${idx}`;
+                    const rawStr = `${JSON.stringify(log.payload || {})} ${log.endpoint || ''} ${logId}`.toLowerCase();
+                    const orderId = (log.payload?.order_id || log.payload?.id || log.payload?.data?.order_id || log.extracted?.orderId || '').toString();
+                    const isSuccess = (log.status || '').toUpperCase().includes('SUCCESS') || (log.status || '').toUpperCase().includes('PAID');
+
+                    let vendorName: 'AdityaHost' | 'ZapUPI' | 'FreePanel' = 'FreePanel';
+                    let vendorBadgeClasses = 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300';
+                    let vendorTag = 'FP';
+
+                    if (log.vendor === 'AdityaHost' || orderId.startsWith('FAMPAY') || orderId.startsWith('AH_') || rawStr.includes('aditya') || rawStr.includes('fampay')) {
+                      vendorName = 'AdityaHost';
+                      vendorBadgeClasses = 'bg-purple-500/15 border-purple-500/30 text-purple-300';
+                      vendorTag = 'AH';
+                    } else if (log.vendor === 'ZapUPI' || orderId.startsWith('ZAP_') || rawStr.includes('zap')) {
+                      vendorName = 'ZapUPI';
+                      vendorBadgeClasses = 'bg-amber-500/15 border-amber-500/30 text-amber-300';
+                      vendorTag = '⚡ ZAP';
+                    }
+
+                    return (
+                      <motion.div
+                        key={logId}
+                        layout
+                        initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.96 }}
+                        transition={{ duration: 0.22, ease: 'easeOut' }}
+                        className="p-2.5 rounded-xl bg-black/70 border border-white/10 space-y-1.5 text-xs font-mono"
+                      >
+                        <div className="flex items-center justify-between text-[10px] flex-wrap gap-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full ${isSuccess ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'}`}></span>
+                            <span className="text-white font-bold">{log.id}</span>
+                            <span className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${vendorBadgeClasses}`}>
+                              {vendorTag} {vendorName}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`px-1.5 py-0.5 rounded border text-[9px] ${
+                              isSuccess
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                            }`}>
+                              {log.status || 'RECEIVED'}
+                            </span>
+                            <span className="text-gray-400">{log.timestamp}</span>
+                          </div>
+                        </div>
+                        <pre className="text-[10px] text-emerald-300/90 overflow-x-auto p-1.5 rounded bg-black/50 border border-white/5 max-h-36">
+                          {JSON.stringify(log.payload, null, 2)}
+                        </pre>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 3: Quick Manual Confirm */}
+        {monitorTab === 'quick' && (
+          <form onSubmit={handleQuickConfirmSubmit} className="p-3.5 rounded-xl bg-black/50 border border-white/10 space-y-3">
+            <div>
+              <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                <span>Quick Confirm Transaction</span>
+              </h4>
+              <p className="text-[10.5px] text-gray-400">
+                If a customer paid but the bank webhook was delayed, paste the Order ID or transaction reference here to confirm & credit their wallet instantly.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10.5px] text-gray-300 font-semibold block mb-1">Order ID / Txn ID</label>
+                <input
+                  type="text"
+                  placeholder="e.g. FAMPAY_1772590215438_4059"
+                  value={quickConfirmId}
+                  onChange={(e) => setQuickConfirmId(e.target.value.trim())}
+                  className="w-full px-3 py-2 rounded-xl bg-black/70 border border-white/15 focus:border-[#c084fc] text-xs font-mono text-white placeholder:text-gray-500 outline-none"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-[10.5px] text-gray-300 font-semibold block mb-1">Amount (₹)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g. 10 or 100"
+                  value={quickConfirmAmount}
+                  onChange={(e) => setQuickConfirmAmount(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-black/70 border border-white/15 focus:border-[#c084fc] text-xs font-mono text-white placeholder:text-gray-500 outline-none"
+                />
+              </div>
+            </div>
+
+            {quickConfirmMsg && (
+              <div className={`p-2 rounded-lg text-xs font-medium ${
+                quickConfirmMsg.type === 'success' ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30' : 'bg-red-950/60 text-red-300 border border-red-500/30'
+              }`}>
+                {quickConfirmMsg.text}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={confirmingOrderId === 'quick' || !quickConfirmId.trim()}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>{confirmingOrderId === 'quick' ? 'Processing Confirmation...' : '⚡ Confirm & Credit Wallet Now'}</span>
+            </button>
+          </form>
         )}
       </GlassCard>
 
@@ -1849,761 +2161,7 @@ export const AdminUpiPaymentView: React.FC<AdminUpiPaymentViewProps> = ({
 };
 
 /* ==================== 5. ADMIN STORE SETTINGS VIEW ==================== */
-interface AdminStoreSettingsViewProps {
-  settings: StoreSettings;
-  onSaveSettings: (settings: StoreSettings) => void;
-}
-
-export const AdminStoreSettingsView: React.FC<AdminStoreSettingsViewProps> = ({
-  settings,
-  onSaveSettings,
-}) => {
-  // Store Identity & Branding
-  const [shopName, setShopName] = useState(settings.shopName || 'KALAM FF PANEL');
-  const [tagline, setTagline] = useState(settings.tagline || 'Powered by KALAM');
-  const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '/logo.svg');
-  const [currencySymbol, setCurrencySymbol] = useState(settings.currencySymbol || '₹');
-  const [announcementText, setAnnouncementText] = useState(settings.announcementText || '🔥 FASTEST FREE FIRE KEY DELIVERY ACTIVE 24/7! INSTANT UPI AUTO-CREDIT.');
-  const [announcementEnabled, setAnnouncementEnabled] = useState(settings.announcementEnabled ?? true);
-  const [maintenanceMode, setMaintenanceMode] = useState(settings.maintenanceMode ?? false);
-
-  // Support & Community Links
-  const [supportUsername, setSupportUsername] = useState(settings.supportUsername || '@kd_123_1_3');
-  const [telegramSupportUrl, setTelegramSupportUrl] = useState(settings.telegramSupportUrl || 'https://t.me/kd_123_1_3');
-  const [whatsappSupportNumber, setWhatsappSupportNumber] = useState(settings.whatsappSupportNumber || '+91 9876543210');
-  const [paymentProofChannel, setPaymentProofChannel] = useState(
-    settings.paymentProofChannel || 'https://t.me/yourchannel'
-  );
-  const [howToUseBotLink, setHowToUseBotLink] = useState(
-    settings.howToUseBotLink || 'https://t.me/yourchannel/3'
-  );
-
-  // Financial, Bonuses & Spin Rules
-  const [minDeposit, setMinDeposit] = useState(settings.minDeposit ?? 1);
-  const [depositBonusPercent, setDepositBonusPercent] = useState(settings.depositBonusPercent ?? 0);
-  const [referralBonusPercent, setReferralBonusPercent] = useState(settings.referralBonusPercent ?? 10);
-  const [dailySpinEnabled, setDailySpinEnabled] = useState(settings.dailySpinEnabled ?? true);
-
-  // Manual UPI & QR Payment Configuration
-  const [enableUtrInput, setEnableUtrInput] = useState<boolean>(settings.enableUtrInput !== false);
-  const [upiManualId, setUpiManualId] = useState(settings.upiManualId || settings.upiId || '8056317218@fam');
-  const [upiMerchantName, setUpiMerchantName] = useState(settings.upiMerchantName || settings.merchantUpi || 'KALAM FF PANEL PAYMENTS');
-  const [customQrUrl, setCustomQrUrl] = useState(settings.customQrUrl || '');
-  const [manualPaymentInstructions, setManualPaymentInstructions] = useState(
-    settings.manualPaymentInstructions || '1. Scan QR code or tap your preferred UPI app.\n2. Pay exact amount from PhonePe, GPay, or Paytm.\n3. Payment is automatically detected and credited instantly.'
-  );
-
-  // Admin Master Security & Credentials
-  const [adminEmail, setAdminEmail] = useState(settings.adminEmail || 'kalam172010@gmail.com');
-  const [adminPassword, setAdminPassword] = useState(settings.adminPassword || 'kalam@172010');
-  const [showAdminPassword, setShowAdminPassword] = useState(false);
-
-  // Feedback State
-  const [savedSuccess, setSavedSuccess] = useState(false);
-  const [savedSection, setSavedSection] = useState<string | null>(null);
-
-  // Sync state when incoming settings prop changes
-  React.useEffect(() => {
-    if (settings) {
-      if (settings.shopName !== undefined) setShopName(settings.shopName);
-      if (settings.tagline !== undefined) setTagline(settings.tagline);
-      if (settings.logoUrl !== undefined) setLogoUrl(settings.logoUrl);
-      if (settings.currencySymbol !== undefined) setCurrencySymbol(settings.currencySymbol);
-      if (settings.announcementText !== undefined) setAnnouncementText(settings.announcementText);
-      if (settings.announcementEnabled !== undefined) setAnnouncementEnabled(settings.announcementEnabled);
-      if (settings.maintenanceMode !== undefined) setMaintenanceMode(settings.maintenanceMode);
-
-      if (settings.supportUsername !== undefined) setSupportUsername(settings.supportUsername);
-      if (settings.telegramSupportUrl !== undefined) setTelegramSupportUrl(settings.telegramSupportUrl);
-      if (settings.whatsappSupportNumber !== undefined) setWhatsappSupportNumber(settings.whatsappSupportNumber);
-      if (settings.paymentProofChannel !== undefined) setPaymentProofChannel(settings.paymentProofChannel);
-      if (settings.howToUseBotLink !== undefined) setHowToUseBotLink(settings.howToUseBotLink);
-
-      if (settings.minDeposit !== undefined) setMinDeposit(settings.minDeposit);
-      if (settings.depositBonusPercent !== undefined) setDepositBonusPercent(settings.depositBonusPercent);
-      if (settings.referralBonusPercent !== undefined) setReferralBonusPercent(settings.referralBonusPercent);
-      if (settings.dailySpinEnabled !== undefined) setDailySpinEnabled(settings.dailySpinEnabled);
-
-      if (settings.enableUtrInput !== undefined) setEnableUtrInput(settings.enableUtrInput);
-      if (settings.upiManualId !== undefined || settings.upiId !== undefined) {
-        setUpiManualId(settings.upiManualId || settings.upiId || '8056317218@fam');
-      }
-      if (settings.upiMerchantName !== undefined || settings.merchantUpi !== undefined) {
-        setUpiMerchantName(settings.upiMerchantName || settings.merchantUpi || 'KALAM FF PANEL PAYMENTS');
-      }
-      if (settings.customQrUrl !== undefined) setCustomQrUrl(settings.customQrUrl);
-      if (settings.manualPaymentInstructions !== undefined) setManualPaymentInstructions(settings.manualPaymentInstructions);
-
-      if (settings.adminEmail !== undefined) setAdminEmail(settings.adminEmail);
-      if (settings.adminPassword !== undefined) setAdminPassword(settings.adminPassword);
-    }
-  }, [settings]);
-
-  const compileSettingsObject = (): StoreSettings => {
-    return {
-      ...settings,
-      shopName: shopName.trim() || 'KALAM FF PANEL',
-      tagline: tagline.trim() || 'Powered by KALAM',
-      logoUrl: logoUrl.trim() || '/logo.svg',
-      currencySymbol: currencySymbol.trim() || '₹',
-      announcementText: announcementText.trim(),
-      announcementEnabled: Boolean(announcementEnabled),
-      maintenanceMode: Boolean(maintenanceMode),
-
-      supportUsername: supportUsername.trim(),
-      telegramSupportUrl: telegramSupportUrl.trim(),
-      whatsappSupportNumber: whatsappSupportNumber.trim(),
-      paymentProofChannel: paymentProofChannel.trim(),
-      howToUseBotLink: howToUseBotLink.trim(),
-
-      minDeposit: Math.max(1, Number(minDeposit) || 1),
-      depositBonusPercent: Math.max(0, Number(depositBonusPercent) || 0),
-      referralBonusPercent: Math.max(0, Number(referralBonusPercent) || 0),
-      dailySpinEnabled: Boolean(dailySpinEnabled),
-
-      enableUtrInput: Boolean(enableUtrInput),
-      upiId: upiManualId.trim(),
-      upiManualId: upiManualId.trim(),
-      merchantUpi: upiMerchantName.trim(),
-      upiMerchantName: upiMerchantName.trim(),
-      customQrUrl: customQrUrl.trim(),
-      manualPaymentInstructions: manualPaymentInstructions.trim(),
-
-      adminEmail: adminEmail.trim().toLowerCase(),
-      adminPassword: adminPassword.trim(),
-    };
-  };
-
-  const handleSaveAll = () => {
-    const updated = compileSettingsObject();
-    onSaveSettings(updated);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
-  };
-
-  const handleSaveSpecificSection = (sectionName: string) => {
-    const updated = compileSettingsObject();
-    onSaveSettings(updated);
-    setSavedSection(sectionName);
-    setTimeout(() => setSavedSection(null), 2000);
-  };
-
-  const handleResetDefaults = () => {
-    if (confirm('Are you sure you want to reset all store settings to system defaults?')) {
-      setShopName('KALAM FF PANEL');
-      setTagline('Powered by KALAM');
-      setLogoUrl('/logo.svg');
-      setCurrencySymbol('₹');
-      setAnnouncementText('🔥 FASTEST FREE FIRE KEY DELIVERY ACTIVE 24/7! INSTANT UPI AUTO-CREDIT.');
-      setAnnouncementEnabled(true);
-      setMaintenanceMode(false);
-      setSupportUsername('@kd_123_1_3');
-      setTelegramSupportUrl('https://t.me/kd_123_1_3');
-      setWhatsappSupportNumber('+91 9876543210');
-      setPaymentProofChannel('https://t.me/yourchannel');
-      setHowToUseBotLink('https://t.me/yourchannel/3');
-      setMinDeposit(1);
-      setDepositBonusPercent(0);
-      setReferralBonusPercent(10);
-      setDailySpinEnabled(true);
-      setEnableUtrInput(true);
-      setUpiManualId('8056317218@fam');
-      setUpiMerchantName('KALAM FF PANEL PAYMENTS');
-      setCustomQrUrl('');
-      setAdminEmail('kalam172010@gmail.com');
-      setAdminPassword('kalam@172010');
-    }
-  };
-
-  return (
-    <div className="space-y-4" id="admin-store-settings-view">
-      {/* Header with Quick Save All Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#161622]/80 border border-white/10 p-3.5 rounded-2xl">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 flex items-center justify-center text-[#8b5cf6]">
-              <Settings className="w-4 h-4" />
-            </div>
-            <h2 className="text-base font-extrabold text-white">Manual Store Settings & Control Panel</h2>
-          </div>
-          <p className="text-[11px] text-gray-300 leading-relaxed font-medium">
-            Customize branding, UPI payment channels, financial rates, customer support, and master security.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={handleResetDefaults}
-            className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
-            title="Reset store settings to system defaults"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Defaults</span>
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={handleSaveAll}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00e5ff] to-[#8b5cf6] text-black font-extrabold text-xs shadow-[0_0_20px_rgba(0,229,255,0.4)] flex items-center gap-1.5 cursor-pointer"
-          >
-            {savedSuccess ? (
-              <>
-                <Check className="w-4 h-4 text-black" />
-                <span>All Settings Saved!</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4 text-black" />
-                <span>Save All Settings</span>
-              </>
-            )}
-          </motion.button>
-        </div>
-      </div>
-
-      {/* SECTION 1: Master Admin Credentials & Password Security */}
-      <GlassCard
-        glow="gold"
-        className="p-4 bg-[#161622]/95 border-t-2 border-t-amber-500 border-amber-500/30 space-y-3"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-yellow-400">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>1. Admin Login Security & Master Password</span>
-                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-yellow-300 border border-amber-500/40">
-                  CRITICAL
-                </span>
-              </h3>
-              <p className="text-[10px] text-gray-400">
-                Authorized master admin email and password required to unlock the Admin Panel and management views.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => handleSaveSpecificSection('security')}
-            className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-500/20 text-yellow-300 hover:bg-amber-500/30 border border-amber-500/40 transition-colors flex items-center gap-1"
-          >
-            {savedSection === 'security' ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-            <span>{savedSection === 'security' ? 'Saved' : 'Save Security'}</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-1">
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold flex items-center gap-1">
-              <Mail className="w-3 h-3 text-yellow-400" />
-              <span>Admin Login Email</span>
-            </label>
-            <input
-              type="email"
-              value={adminEmail}
-              onChange={(e) => setAdminEmail(e.target.value)}
-              placeholder="kalam172010@gmail.com"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-yellow-400 focus:outline-none text-yellow-300 font-mono font-bold"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold flex items-center gap-1">
-              <KeyRound className="w-3 h-3 text-yellow-400" />
-              <span>Admin Master Password</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showAdminPassword ? 'text' : 'password'}
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Set admin password"
-                className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-yellow-400 focus:outline-none text-white font-mono font-bold pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowAdminPassword(!showAdminPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white cursor-pointer"
-              >
-                {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-        </div>
-      </GlassCard>
-
-      {/* SECTION 2: Store Identity, Branding & Live Announcements */}
-      <GlassCard
-        glow="purple"
-        className="p-4 bg-[#161622]/95 border-t-2 border-t-[#8b5cf6] border-white/10 space-y-3"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-[#8b5cf6]/20 border border-[#8b5cf6]/40 flex items-center justify-center text-[#8b5cf6]">
-              <Store className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white">2. Storefront Identity & Announcements</h3>
-              <p className="text-[10px] text-gray-400">
-                Configure store names, taglines, top marquee announcements, and emergency maintenance.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => handleSaveSpecificSection('branding')}
-            className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-[#8b5cf6]/20 text-[#a855f7] hover:bg-[#8b5cf6]/30 border border-[#8b5cf6]/40 transition-colors flex items-center gap-1"
-          >
-            {savedSection === 'branding' ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-            <span>{savedSection === 'branding' ? 'Saved' : 'Save Branding'}</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-          <div className="md:col-span-2">
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold">Store / Shop Name</label>
-            <input
-              type="text"
-              value={shopName}
-              onChange={(e) => setShopName(e.target.value)}
-              placeholder="KALAM FF PANEL"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#8b5cf6] focus:outline-none text-white font-bold"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold">Currency Symbol</label>
-            <input
-              type="text"
-              value={currencySymbol}
-              onChange={(e) => setCurrencySymbol(e.target.value)}
-              placeholder="₹"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#8b5cf6] focus:outline-none text-emerald-400 font-bold text-center"
-            />
-          </div>
-
-          <div className="md:col-span-3">
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold">Tagline / Slogan</label>
-            <input
-              type="text"
-              value={tagline}
-              onChange={(e) => setTagline(e.target.value)}
-              placeholder="Powered by KALAM - 100% Anti-Ban VIP Mods"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#8b5cf6] focus:outline-none text-gray-200"
-            />
-          </div>
-
-          <div className="md:col-span-3">
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold">
-              Store & Website Logo URL / Image Asset
-            </label>
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-[#00e5ff] via-[#8b5cf6] to-[#ff0080] p-[1.5px] shrink-0 shadow-[0_0_15px_rgba(139,92,246,0.4)]">
-                <StoreLogo
-                  logoUrl={logoUrl}
-                  alt="Preview Logo"
-                  className="w-full h-full object-cover rounded-[10px]"
-                />
-              </div>
-              <div className="flex-1 space-y-1">
-                <input
-                  type="text"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  placeholder="/logo.svg or https://example.com/logo.png"
-                  className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#8b5cf6] focus:outline-none text-white font-mono text-xs"
-                />
-                <span className="text-[10px] text-gray-400 block">
-                  Default: <code className="text-[#00e5ff]">/logo.svg</code>. Supports custom image URLs, Discord CDN, Imgur, or direct SVG/PNG links.
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="md:col-span-3 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] text-gray-300 font-semibold flex items-center gap-1.5">
-                <Megaphone className="w-3.5 h-3.5 text-[#00e5ff]" />
-                <span>Storefront Live Announcement Marquee Banner</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setAnnouncementEnabled(!announcementEnabled)}
-                className="flex items-center gap-1.5 text-[10px] font-bold cursor-pointer"
-              >
-                <span className={announcementEnabled ? 'text-[#00e5ff]' : 'text-gray-500'}>
-                  {announcementEnabled ? 'BANNER ACTIVE' : 'BANNER DISABLED'}
-                </span>
-                {announcementEnabled ? (
-                  <ToggleRight className="w-6 h-6 text-[#00e5ff]" />
-                ) : (
-                  <ToggleLeft className="w-6 h-6 text-gray-500" />
-                )}
-              </button>
-            </div>
-            <textarea
-              rows={2}
-              value={announcementText}
-              onChange={(e) => setAnnouncementText(e.target.value)}
-              placeholder="Enter announcement message shown at top of the user app..."
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#00e5ff] focus:outline-none text-white text-xs"
-            />
-          </div>
-
-          {/* Store Maintenance Mode Switch */}
-          <div className="md:col-span-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-1.5 text-red-400 font-bold text-xs">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Store Maintenance Mode</span>
-              </div>
-              <p className="text-[10px] text-gray-400 mt-0.5">
-                When enabled, normal customers will see a maintenance notice preventing new checkout actions.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setMaintenanceMode(!maintenanceMode)}
-              className="cursor-pointer"
-            >
-              {maintenanceMode ? (
-                <ToggleRight className="w-7 h-7 text-red-500" />
-              ) : (
-                <ToggleLeft className="w-7 h-7 text-gray-500" />
-              )}
-            </button>
-          </div>
-        </div>
-      </GlassCard>
-
-      {/* SECTION 3: Support Channels & Official Community Links */}
-      <GlassCard
-        glow="cyan"
-        className="p-4 bg-[#161622]/95 border-t-2 border-t-[#00e5ff] border-white/10 space-y-3"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-[#00e5ff]/20 border border-[#00e5ff]/40 flex items-center justify-center text-[#00e5ff]">
-              <MessageSquare className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white">3. Customer Support & Media Channels</h3>
-              <p className="text-[10px] text-gray-400">
-                Help links, Telegram support usernames, WhatsApp helpline, and video tutorial URLs.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => handleSaveSpecificSection('support')}
-            className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-[#00e5ff]/20 text-[#00e5ff] hover:bg-[#00e5ff]/30 border border-[#00e5ff]/40 transition-colors flex items-center gap-1"
-          >
-            {savedSection === 'support' ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-            <span>{savedSection === 'support' ? 'Saved' : 'Save Support'}</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold flex items-center gap-1">
-              <Send className="w-3 h-3 text-[#00e5ff]" />
-              <span>Telegram Support Username</span>
-            </label>
-            <input
-              type="text"
-              value={supportUsername}
-              onChange={(e) => setSupportUsername(e.target.value)}
-              placeholder="@kd_123_1_3"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#00e5ff] focus:outline-none text-[#00e5ff] font-mono font-bold"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold flex items-center gap-1">
-              <Phone className="w-3 h-3 text-emerald-400" />
-              <span>WhatsApp Support Number</span>
-            </label>
-            <input
-              type="text"
-              value={whatsappSupportNumber}
-              onChange={(e) => setWhatsappSupportNumber(e.target.value)}
-              placeholder="+91 9876543210"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#00e5ff] focus:outline-none text-emerald-300 font-mono"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold flex items-center gap-1">
-              <Link2 className="w-3 h-3 text-purple-400" />
-              <span>Payment Proof Telegram Channel</span>
-            </label>
-            <input
-              type="url"
-              value={paymentProofChannel}
-              onChange={(e) => setPaymentProofChannel(e.target.value)}
-              placeholder="https://t.me/yourchannel"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#00e5ff] focus:outline-none text-purple-300 font-mono text-[11px]"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold flex items-center gap-1">
-              <Play className="w-3 h-3 text-red-400" />
-              <span>How To Use & Deposit Video Guide Link</span>
-            </label>
-            <input
-              type="url"
-              value={howToUseBotLink}
-              onChange={(e) => setHowToUseBotLink(e.target.value)}
-              placeholder="https://youtube.com/watch?v=..."
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-[#00e5ff] focus:outline-none text-red-300 font-mono text-[11px]"
-            />
-          </div>
-        </div>
-      </GlassCard>
-
-      {/* SECTION 4: Financial Rules, Deposit Bonuses & Referral Rates */}
-      <GlassCard
-        glow="gold"
-        className="p-4 bg-[#161622]/95 border-t-2 border-t-yellow-500 border-white/10 space-y-3"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-400">
-              <Coins className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white">4. Financial Rules, Bonuses & Referral Rates</h3>
-              <p className="text-[10px] text-gray-400">
-                Minimum deposit floor, instant top-up bonus cashback, and referral commission rewards.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => handleSaveSpecificSection('financial')}
-            className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 border border-yellow-500/40 transition-colors flex items-center gap-1"
-          >
-            {savedSection === 'financial' ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-            <span>{savedSection === 'financial' ? 'Saved' : 'Save Financial'}</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold">
-              Min Deposit ({currencySymbol})
-            </label>
-            <input
-              type="number"
-              min={1}
-              value={minDeposit}
-              onChange={(e) => setMinDeposit(Math.max(1, Number(e.target.value) || 1))}
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-yellow-400 focus:outline-none text-yellow-300 font-bold text-base"
-            />
-            <span className="text-[9px] text-gray-400 mt-1 block">Lowest top-up allowed</span>
-          </div>
-
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold flex items-center gap-1">
-              <Percent className="w-3 h-3 text-emerald-400" />
-              <span>Deposit Bonus Cashback (%)</span>
-            </label>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={depositBonusPercent}
-              onChange={(e) => setDepositBonusPercent(Math.max(0, Number(e.target.value) || 0))}
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-yellow-400 focus:outline-none text-emerald-400 font-bold text-base"
-            />
-            <span className="text-[9px] text-gray-400 mt-1 block">Auto extra credit on deposit</span>
-          </div>
-
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold flex items-center gap-1">
-              <Gift className="w-3 h-3 text-purple-400" />
-              <span>Referral Commission (%)</span>
-            </label>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={referralBonusPercent}
-              onChange={(e) => setReferralBonusPercent(Math.max(0, Number(e.target.value) || 0))}
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-yellow-400 focus:outline-none text-purple-300 font-bold text-base"
-            />
-            <span className="text-[9px] text-gray-400 mt-1 block">Commission paid to referrer</span>
-          </div>
-        </div>
-
-        {/* Daily Lucky Spin Toggle */}
-        <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-1.5 text-yellow-400 font-bold text-xs">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Daily Lucky Spin Wheel</span>
-            </div>
-            <p className="text-[10px] text-gray-400 mt-0.5">
-              Allow registered customers to spin daily for bonus wallet credits and discount codes.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setDailySpinEnabled(!dailySpinEnabled)}
-            className="cursor-pointer"
-          >
-            {dailySpinEnabled ? (
-              <ToggleRight className="w-7 h-7 text-yellow-400" />
-            ) : (
-              <ToggleLeft className="w-7 h-7 text-gray-500" />
-            )}
-          </button>
-        </div>
-      </GlassCard>
-
-      {/* SECTION 5: Manual UPI, Payee Details & Custom QR Code */}
-      <GlassCard
-        glow="cyan"
-        className="p-4 bg-[#161622]/95 border-t-2 border-t-emerald-500 border-white/10 space-y-3"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-              <QrCode className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white">5. Manual UPI Payee & Direct QR Configuration</h3>
-              <p className="text-[10px] text-gray-400">
-                Direct UPI ID, receiver name, custom QR image URL, and payment step instructions.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => handleSaveSpecificSection('upi')}
-            className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/40 transition-colors flex items-center gap-1"
-          >
-            {savedSection === 'upi' ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-            <span>{savedSection === 'upi' ? 'Saved' : 'Save UPI'}</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold flex items-center gap-1">
-              <CreditCard className="w-3 h-3 text-emerald-400" />
-              <span>Manual Deposit UPI ID / VPA</span>
-            </label>
-            <input
-              type="text"
-              value={upiManualId}
-              onChange={(e) => setUpiManualId(e.target.value)}
-              placeholder="8056317218@fam"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-emerald-400 focus:outline-none text-emerald-300 font-mono font-bold"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold">
-              UPI Payee / Merchant Display Name
-            </label>
-            <input
-              type="text"
-              value={upiMerchantName}
-              onChange={(e) => setUpiMerchantName(e.target.value)}
-              placeholder="KALAM FF PANEL PAYMENTS"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-emerald-400 focus:outline-none text-white font-bold"
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="text-[10px] text-gray-300 block mb-1 font-semibold">
-              Custom QR Code Image URL (Optional)
-            </label>
-            <input
-              type="url"
-              value={customQrUrl}
-              onChange={(e) => setCustomQrUrl(e.target.value)}
-              placeholder="https://example.com/my-upi-qr.png"
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-emerald-400 focus:outline-none text-gray-300 font-mono text-[11px]"
-            />
-            <span className="text-[9px] text-gray-400 mt-1 block">
-              Leave blank to dynamically generate high-resolution QR vector codes.
-            </span>
-          </div>
-
-          <div className="md:col-span-2 space-y-1">
-            <label className="text-[10px] text-gray-300 block font-semibold">
-              Manual Deposit Instructions / Note
-            </label>
-            <textarea
-              rows={3}
-              value={manualPaymentInstructions}
-              onChange={(e) => setManualPaymentInstructions(e.target.value)}
-              placeholder="Step-by-step instructions shown to customers during manual UPI top-up..."
-              className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-emerald-400 focus:outline-none text-gray-200 text-xs font-mono"
-            />
-          </div>
-
-          {/* UTR Input Form Toggle in Store Settings */}
-          <div className="md:col-span-2 p-3 rounded-xl bg-black/60 border border-white/10 flex items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-xs">
-                <ListChecks className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Manual 12-Digit UTR Number Input Form</span>
-                <span
-                  className={`text-[9px] font-mono px-1.5 py-0.5 rounded border font-bold ${
-                    enableUtrInput
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                      : 'bg-red-500/20 text-red-300 border-red-500/40'
-                  }`}
-                >
-                  {enableUtrInput ? 'ON (ACTIVE)' : 'OFF (DISABLED)'}
-                </span>
-              </div>
-              <p className="text-[10px] text-gray-400 mt-0.5">
-                Control whether customers see the 12-digit UTR input field in deposit modals. Turn OFF to hide manual UTR input and rely purely on automatic payment detection.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setEnableUtrInput(!enableUtrInput)}
-              className="cursor-pointer"
-            >
-              {enableUtrInput ? (
-                <ToggleRight className="w-7 h-7 text-emerald-400" />
-              ) : (
-                <ToggleLeft className="w-7 h-7 text-gray-500" />
-              )}
-            </button>
-          </div>
-        </div>
-      </GlassCard>
-
-      {/* Bottom Master Save Bar */}
-      <div className="pt-2">
-        <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.99 }}
-          onClick={handleSaveAll}
-          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#00e5ff] via-[#8b5cf6] to-[#ff0080] text-white font-extrabold text-sm shadow-[0_0_30px_rgba(139,92,246,0.4)] flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wider"
-        >
-          {savedSuccess ? (
-            <>
-              <Check className="w-5 h-5 text-white" />
-              <span>All Store Settings Saved & Applied Live!</span>
-            </>
-          ) : (
-            <>
-              <Save className="w-5 h-5 text-white" />
-              <span>Save & Publish All Store Settings</span>
-            </>
-          )}
-        </motion.button>
-      </div>
-    </div>
-  );
-};
+export { AdminStoreCustomizerView as AdminStoreSettingsView } from "./admin-store-customizer";
 
 /* ==================== 6. ADMIN RESELLERS VIEW ==================== */
 interface AdminResellersViewProps {
@@ -2621,8 +2179,9 @@ export const AdminResellersView: React.FC<AdminResellersViewProps> = ({
   const [searchActive, setSearchActive] = useState('');
   const [searchPromote, setSearchPromote] = useState('');
 
-  const activeResellers = (resellers || []).filter((r) => r.isReseller || r.role === 'RESELLER');
-  const nonResellerUsers = (resellers || []).filter((r) => !r.isReseller && r.role !== 'RESELLER');
+  const safeResellers = useMemo(() => deduplicateUsers(resellers || []), [resellers]);
+  const activeResellers = safeResellers.filter((r) => r.isReseller || r.role === 'RESELLER');
+  const nonResellerUsers = safeResellers.filter((r) => !r.isReseller && r.role !== 'RESELLER');
 
   const filteredActive = activeResellers.filter(
     (r) =>
@@ -2718,8 +2277,8 @@ export const AdminResellersView: React.FC<AdminResellersViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {filteredActive.map((reseller) => (
-                  <tr key={reseller.id} className="text-gray-200">
+                {filteredActive.map((reseller, idx) => (
+                  <tr key={`${reseller.id || 'reseller'}_${idx}`} className="text-gray-200">
                     <td className="py-2 font-mono text-yellow-400">{reseller.email}</td>
                     <td className="py-2 font-bold truncate max-w-[90px]">{reseller.name}</td>
                     <td className="py-2 text-emerald-400 font-mono">{formatCurrency(reseller.walletBalance)}</td>
@@ -2758,9 +2317,9 @@ export const AdminResellersView: React.FC<AdminResellersViewProps> = ({
         </div>
 
         <div className="space-y-2">
-          {filteredPromote.map((u) => (
+          {filteredPromote.map((u, idx) => (
             <div
-              key={u.id}
+              key={`${u.id || 'user'}_${idx}`}
               className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center justify-between text-xs"
             >
               <div>

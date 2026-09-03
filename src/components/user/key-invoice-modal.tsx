@@ -21,6 +21,7 @@ import {
 import { PurchaseInvoice, StoreSettings } from '../../types';
 import { formatCurrency } from '../../lib/utils';
 import { StoreLogo } from '../shared/store-logo';
+import { exportInvoiceToPdf } from '../../lib/pdf-export';
 
 interface KeyInvoiceModalProps {
   isOpen: boolean;
@@ -39,9 +40,24 @@ export const KeyInvoiceModal: React.FC<KeyInvoiceModalProps> = ({
 }) => {
   const [copiedInvoice, setCopiedInvoice] = useState(false);
   const [copiedKeyIdx, setCopiedKeyIdx] = useState<number | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfSuccess, setPdfSuccess] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
 
   if (!isOpen || !invoice) return null;
+
+  const handleExportPdf = () => {
+    try {
+      setIsExportingPdf(true);
+      exportInvoiceToPdf(invoice, storeSettings);
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 3000);
+    } catch (e) {
+      console.error('Failed to export invoice to PDF:', e);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   const handleCopyKey = (k: string, idx: number) => {
     navigator.clipboard.writeText(k);
@@ -163,6 +179,17 @@ Please save this invoice for warranty and support purposes.
             </div>
 
             <div className="flex items-center gap-1.5">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleExportPdf}
+                disabled={isExportingPdf}
+                className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(6,182,212,0.35)] cursor-pointer transition-all disabled:opacity-50"
+                title="Download Official PDF Receipt"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{isExportingPdf ? 'Exporting...' : pdfSuccess ? 'Saved PDF!' : 'Export to PDF'}</span>
+              </motion.button>
               <button
                 onClick={handleCopyFullInvoice}
                 title="Copy full text receipt"
@@ -175,7 +202,7 @@ Please save this invoice for warranty and support purposes.
                 title="Download Receipt .txt"
                 className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-cyan-400 border border-white/10 cursor-pointer transition-all"
               >
-                <Download className="w-4 h-4" />
+                <FileText className="w-4 h-4" />
               </button>
               <button
                 onClick={onClose}
@@ -358,19 +385,27 @@ Please save this invoice for warranty and support purposes.
           </div>
 
           {/* Bottom Action Footer */}
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10 shrink-0">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-white/10 shrink-0">
             <button
               onClick={onClose}
-              className="py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs cursor-pointer transition-colors text-center"
+              className="py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs cursor-pointer transition-colors text-center order-3 sm:order-1"
             >
-              Done / Close
+              Close
+            </button>
+            <button
+              onClick={handleExportPdf}
+              disabled={isExportingPdf}
+              className="py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(6,182,212,0.3)] cursor-pointer transition-all disabled:opacity-50 order-1 sm:order-2"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isExportingPdf ? 'Generating PDF...' : pdfSuccess ? 'Downloaded!' : 'Export to PDF'}</span>
             </button>
             <button
               onClick={() => {
                 onClose();
                 if (onGoToMyKeys) onGoToMyKeys();
               }}
-              className="py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs shadow-[0_0_20px_rgba(139,92,246,0.4)] flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+              className="py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs shadow-[0_0_20px_rgba(139,92,246,0.4)] flex items-center justify-center gap-1.5 cursor-pointer transition-all order-2 sm:order-3"
             >
               <Key className="w-3.5 h-3.5" />
               <span>Go to My Keys</span>

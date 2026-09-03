@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Menu, Play, MessageCircle, User, ShieldCheck, LogIn, Megaphone, AlertTriangle } from 'lucide-react';
+import { Menu, Play, MessageCircle, Palette, User, ShieldCheck, LogIn, Megaphone, AlertTriangle } from 'lucide-react';
 import { UserSidebar, UserNavTab } from './user-sidebar';
 import { FloatingSupport } from '../shared/floating-support';
 import { StoreSettings, AuthUser } from '../../types';
@@ -50,8 +50,10 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
           <div className="flex items-center gap-2 text-gray-300">
             <StoreLogo
               logoUrl={storeSettings?.logoUrl}
+              shape={storeSettings?.logoShape}
+              glowColor={storeSettings?.logoGlowColor}
               alt="Logo"
-              className="w-5 h-5 rounded-md object-cover border border-[#8b5cf6]/50 shadow-[0_0_8px_rgba(139,92,246,0.4)]"
+              className="w-5 h-5 object-cover"
             />
             <span className="font-bold text-white uppercase text-[10px] tracking-wide flex items-center gap-1.5">
               <span>{storeSettings?.shopName || 'KALAM FF PANEL'}</span>
@@ -91,32 +93,48 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
             <Menu className="w-5 h-5" />
           </motion.button>
 
-          {/* Center: Red rounded pill button "HOW TO DEPOSIT?" with Play icon inside */}
-          <motion.button
-            id="how-to-deposit-pill-btn"
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.96 }}
-            onClick={onOpenHowToDeposit}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-extrabold text-[11px] tracking-wide shadow-[0_0_20px_rgba(239,68,68,0.5)] border border-red-400/40 cursor-pointer transition-all uppercase"
-          >
-            <span className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center">
-              <Play className="w-2.5 h-2.5 fill-white ml-0.5" />
-            </span>
-            <span>HOW TO DEPOSIT?</span>
-          </motion.button>
-
-          {/* Right: Two circular icon buttons */}
-          <div className="flex items-center gap-2">
-            {/* Help/Chat icon in cyan border */}
+          {/* Center: Red rounded pill button "HOW TO DEPOSIT?" with Play icon or Store Title */}
+          {storeSettings?.showDepositGuide !== false ? (
             <motion.button
-              id="help-chat-btn"
+              id="how-to-deposit-pill-btn"
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={onOpenHowToDeposit}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-[#e11d48] hover:bg-[#f43f5e] text-white font-black text-xs tracking-wider shadow-[0_0_22px_rgba(225,29,72,0.7)] border-2 border-[#ff4d6d]/70 cursor-pointer transition-all uppercase"
+            >
+              <span className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center">
+                <Play className="w-2.5 h-2.5 fill-white ml-0.5" />
+              </span>
+              <span>HOW TO DEPOSIT?</span>
+            </motion.button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <StoreLogo
+                logoUrl={storeSettings?.logoUrl}
+                shape={storeSettings?.logoShape}
+                glowColor={storeSettings?.logoGlowColor}
+                alt="Store Logo"
+                className="w-7 h-7 object-cover"
+              />
+              <span className="font-extrabold text-white text-xs tracking-wider uppercase truncate max-w-[150px]">
+                {storeSettings?.shopName || 'KALAM FF PANEL'}
+              </span>
+            </div>
+          )}
+
+          {/* Right: Theme Palette button & Avatar button */}
+          <div className="flex items-center gap-2">
+            {/* Palette / Theme / Support icon in cyan glowing rounded border */}
+            <motion.button
+              id="theme-palette-btn"
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
               onClick={onOpenSupport}
-              className="w-9 h-9 rounded-full bg-black/40 hover:bg-[#00e5ff]/10 border border-[#00e5ff]/50 text-[#00e5ff] flex items-center justify-center shadow-[0_0_12px_rgba(0,229,255,0.25)] transition-colors cursor-pointer"
-              aria-label="Help & Support"
+              className="w-10 h-10 rounded-2xl bg-[#041217] hover:bg-[#00e5ff]/15 border-2 border-[#00e5ff] text-[#00e5ff] flex items-center justify-center shadow-[0_0_15px_rgba(0,229,255,0.4)] transition-all cursor-pointer"
+              aria-label="Theme & Support"
+              title="Theme & Live Support"
             >
-              <MessageCircle className="w-4 h-4" />
+              <Palette className="w-4.5 h-4.5" />
             </motion.button>
 
             {/* User profile avatar or Login button */}
@@ -126,13 +144,15 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.92 }}
                 onClick={onOpenProfile}
-                className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#161622] via-[#8b5cf6] to-[#00e5ff] p-[1.5px] ring-2 ring-[#00e5ff]/70 shadow-[0_0_12px_rgba(0,229,255,0.3)] flex items-center justify-center cursor-pointer"
+                className="w-10 h-10 rounded-full bg-[#0d1424] border-2 border-[#00e5ff] shadow-[0_0_16px_rgba(0,229,255,0.6)] relative flex items-center justify-center cursor-pointer p-0.5"
                 aria-label="Profile"
                 title={`Logged in as ${currentUser.email}`}
               >
-                <div className="w-full h-full rounded-full bg-[#161622] flex items-center justify-center font-bold text-[11px] text-[#00e5ff]">
+                <div className="w-full h-full rounded-full bg-[#121929] flex items-center justify-center font-black text-xs text-[#00e5ff]">
                   {currentUser.name.slice(0, 1).toUpperCase()}
                 </div>
+                {/* Green active status indicator badge */}
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-[#0c0c14] rounded-full shadow-[0_0_8px_#10b981]" />
               </motion.button>
             ) : (
               <motion.button
@@ -140,7 +160,7 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onOpenAuthModal}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-[#00e5ff]/20 to-[#8b5cf6]/20 hover:from-[#00e5ff]/30 hover:to-[#8b5cf6]/30 border border-[#00e5ff]/40 text-[#00e5ff] text-[11px] font-bold shadow-[0_0_10px_rgba(0,229,255,0.2)] cursor-pointer"
+                className="flex items-center gap-1 px-3 py-2 rounded-2xl bg-[#041217] hover:bg-[#00e5ff]/15 border-2 border-[#00e5ff] text-[#00e5ff] text-xs font-black shadow-[0_0_12px_rgba(0,229,255,0.3)] cursor-pointer"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>Login</span>

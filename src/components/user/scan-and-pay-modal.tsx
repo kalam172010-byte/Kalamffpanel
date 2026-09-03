@@ -24,6 +24,7 @@ import {
 import { StoreSettings } from '../../types';
 import { formatCurrency } from '../../lib/utils';
 import { safeFetchJson } from '../../lib/safe-api';
+import { LottieSuccessAnimation } from './lottie-success-animation';
 
 interface ScanAndPayModalProps {
   isOpen: boolean;
@@ -119,12 +120,13 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
           setIsAutoChecking(false);
           setPaymentFailedState(null);
           setStatusMessage('Payment detected and verified! Crediting wallet...');
-          onPaymentSuccess(amount);
+          const verifiedAmount = data?.amount || amount;
+          onPaymentSuccess(verifiedAmount);
           setTimeout(() => {
             if (isMounted) {
               onClose();
             }
-          }, 2000);
+          }, 3200);
         } else if (
           data?.status === 'FAILED' ||
           data?.status === 'EXPIRED' ||
@@ -251,12 +253,13 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
 
       const data = res.data;
       if (data?.isPaid === true && data?.status === 'SUCCESS') {
+        const verifiedAmount = data?.amount || amount;
         setIsSuccess(true);
-        setStatusMessage('Payment verified successfully! Crediting ₹' + amount + '...');
-        onPaymentSuccess(amount);
+        setStatusMessage('Payment verified successfully! Crediting ₹' + verifiedAmount + '...');
+        onPaymentSuccess(verifiedAmount);
         setTimeout(() => {
           onClose();
-        }, 2000);
+        }, 3200);
       } else {
         setVerifyError(
           data?.message ||
@@ -293,12 +296,13 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
 
       const data = res.data;
       if (data?.isPaid === true && data?.status === 'SUCCESS') {
+        const verifiedAmount = data?.amount || amount;
         setIsSuccess(true);
-        setStatusMessage('Payment verified successfully! Crediting ₹' + amount + '...');
-        onPaymentSuccess(amount);
+        setStatusMessage('Payment verified successfully! Crediting ₹' + verifiedAmount + '...');
+        onPaymentSuccess(verifiedAmount);
         setTimeout(() => {
           onClose();
-        }, 2000);
+        }, 3200);
       } else {
         setStatusMessage('Waiting for transfer... Please complete payment in your UPI app.');
         setVerifyError(data?.message || 'Payment transfer not detected yet. Please complete the transfer in your UPI app.');
@@ -365,20 +369,20 @@ export const ScanAndPayModal: React.FC<ScanAndPayModalProps> = ({
               {isSuccess ? (
                 /* SUCCESS STATE */
                 <motion.div
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="py-8 text-center space-y-4"
+                  initial={{ scale: 0.85, opacity: 0, y: 12 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 280, damping: 20 }}
+                  className="py-2"
                 >
-                  <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-emerald-400 mx-auto shadow-[0_0_40px_rgba(16,185,129,0.6)]">
-                    <CheckCircle2 className="w-10 h-10" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-black text-white">Payment Confirmed!</h3>
-                    <p className="text-sm text-emerald-400 font-bold mt-1">
-                      ₹{amount} successfully added to your wallet!
-                    </p>
-                    <p className="text-xs text-gray-400 mt-2">Updating your balance now...</p>
-                  </div>
+                  <LottieSuccessAnimation
+                    amount={amount}
+                    orderId={orderId}
+                    utr={utrNumber}
+                    title="Payment Confirmed!"
+                    subtitle={`₹${amount} has been successfully credited to your wallet balance.`}
+                    onDone={onClose}
+                  />
                 </motion.div>
               ) : (
                 /* PAYMENT CARD */

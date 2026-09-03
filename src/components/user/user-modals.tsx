@@ -38,6 +38,7 @@ import {
 import { Product, PlanPricing, PurchasedKey, TransactionRecord, StoreSettings, PaymentGatewayConfig } from '../../types';
 import { formatCurrency, getYouTubeEmbedUrl, isYouTubeUrl } from '../../lib/utils';
 import { safeFetchJson } from '../../lib/safe-api';
+import { LottieSuccessAnimation } from './lottie-success-animation';
 
 /* ==================== HOW TO DEPOSIT MODAL ==================== */
 interface HowToDepositModalProps {
@@ -198,6 +199,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
     upiIntent: string;
     qrUrl?: string;
     payeeUpi?: string;
+    checkoutUrl?: string;
   } | null>(null);
 
   const predefinedAmounts = [1, 10, 50, 100, 250, 500];
@@ -291,8 +293,11 @@ export const DepositModal: React.FC<DepositModalProps> = ({
       const checkStatus = async () => {
         try {
           setPollingTick((prev) => prev + 1);
-          const apiKeyParam = activeGateway?.apiKey ? `?apiKey=${encodeURIComponent(activeGateway.apiKey)}` : '';
-          const res = await fetch(`/api/check-payment/${orderData.orderId}${apiKeyParam}`);
+          const queryParams = new URLSearchParams();
+          if (activeGateway?.apiKey) queryParams.set('apiKey', activeGateway.apiKey);
+          queryParams.set('gateway', 'famgateway');
+          queryParams.set('amount', String(orderData.amountInRupees || amount));
+          const res = await fetch(`/api/check-payment/${orderData.orderId}?${queryParams.toString()}`);
           const data = await res.json();
 
           if (isCancelled) return;
@@ -308,9 +313,10 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 
             // Trigger real bank credited amount
             const creditedAmount = data.amount || orderData.amountInRupees || amount;
+            const confirmedUtr = data.utr || undefined;
             setTimeout(() => {
               if (!isCancelled) {
-                onDepositSuccess(creditedAmount);
+                onDepositSuccess(creditedAmount, confirmedUtr);
                 setStep('SUCCESS');
                 setTimeout(() => {
                   if (!isCancelled) {
@@ -320,7 +326,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                     setPaymentFailedState(null);
                     onClose();
                   }
-                }, 2200);
+                }, 3200);
               }
             }, 500);
           } else if (
@@ -385,24 +391,47 @@ export const DepositModal: React.FC<DepositModalProps> = ({
           apiKey: activeGateway?.apiKey,
           gatewayUrl: activeGateway?.baseUrl || (activeGateway as any)?.gatewayUrl,
           merchantUpi: activeGateway?.merchantUpi || '8056317218@fam',
+          gateway: activeGateway?.baseUrl?.includes('famgateway') || activeGateway?.baseUrl?.includes('create-order.php')
+            ? 'famgateway'
+            : activeGateway?.baseUrl?.includes('aditya')
+            ? 'adityahost'
+            : activeGateway?.baseUrl?.includes('zap')
+            ? 'zapupi'
+            : 'freepanel',
         }),
       });
 
       const resJson = response.data;
       if (resJson?.order) {
+        const rawBackendAmount =
+          resJson.order.amountInRupees ??
+          resJson.order.amount ??
+          resJson.order.payableAmount;
+
+        const backendAmount =
+          rawBackendAmount !== undefined && rawBackendAmount !== null
+            ? (typeof rawBackendAmount === 'number' ? rawBackendAmount : parseFloat(rawBackendAmount) || amount)
+            : amount;
+
+        // Synchronize local amount state with the exact backend-stated amount
+        setAmount(backendAmount);
+
         const orderId = resJson.order.orderId || `FAMPAY_${Date.now()}`;
         const upiId = resJson.order.payeeUpi || activeGateway?.merchantUpi || '8056317218@fam';
-        const exactUpiLink = `upi://pay?pa=${upiId}&pn=Kalam%20FF%20Store&tr=${orderId}&am=${amount}&cu=INR`;
+        const exactUpiLink =
+          resJson.order.upiIntent ||
+          `upi://pay?pa=${upiId}&pn=Kalam%20FF%20Store&tr=${orderId}&am=${backendAmount}&cu=INR`;
 
         setOrderData({
           ...resJson.order,
           orderId,
-          amountInPaise: amount * 100,
-          amountInRupees: amount, // Strictly locked to exact deposit amount
-          paymentUrl: exactUpiLink,
+          amountInPaise: Math.round(backendAmount * 100),
+          amountInRupees: backendAmount, // Strictly locked to exact backend returned amount
+          paymentUrl: resJson.order.paymentUrl || exactUpiLink,
+          checkoutUrl: resJson.order.checkoutUrl || resJson.order.checkout_url,
           upiIntent: exactUpiLink,
           payeeUpi: upiId,
-          qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(exactUpiLink)}`,
+          qrUrl: resJson.order.qrUrl || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(exactUpiLink)}`,
         });
       } else {
         const orderId = `FAMPAY_${Date.now()}`;
@@ -462,7 +491,9 @@ export const DepositModal: React.FC<DepositModalProps> = ({
           amount: orderData?.amountInRupees || amount,
           utr: cleanUtr,
           apiKey: activeGateway?.apiKey,
-          gateway: activeGateway?.baseUrl?.includes('aditya')
+          gateway: activeGateway?.baseUrl?.includes('famgateway') || activeGateway?.baseUrl?.includes('create-order.php')
+            ? 'famgateway'
+            : activeGateway?.baseUrl?.includes('aditya')
             ? 'adityahost'
             : activeGateway?.baseUrl?.includes('zap')
             ? 'zapupi'
@@ -481,7 +512,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
           setUtrNumber('');
           setVerifyError(null);
           onClose();
-        }, 2200);
+        }, 3200);
       } else {
         setVerifyError(
           data?.message ||
@@ -512,7 +543,9 @@ export const DepositModal: React.FC<DepositModalProps> = ({
           orderId: orderData.orderId,
           amount: orderData.amountInRupees || amount,
           apiKey: activeGateway?.apiKey,
-          gateway: activeGateway?.baseUrl?.includes('aditya')
+          gateway: activeGateway?.baseUrl?.includes('famgateway') || activeGateway?.baseUrl?.includes('create-order.php')
+            ? 'famgateway'
+            : activeGateway?.baseUrl?.includes('aditya')
             ? 'adityahost'
             : activeGateway?.baseUrl?.includes('zap')
             ? 'zapupi'
@@ -532,7 +565,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
           setUtrNumber('');
           setVerifyError(null);
           onClose();
-        }, 2200);
+        }, 3200);
       } else {
         setAutoCheckStatus('Payment transfer not received yet. Please pay in your UPI app first.');
         setVerifyError(data?.message || 'Payment not detected on bank gateway yet. Please complete transfer in your UPI app.');
@@ -546,6 +579,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   };
 
   const activeUpiId = orderData?.payeeUpi || '8056317218@fam';
+  const activePayAmount = orderData?.amountInRupees ?? (orderData as any)?.amount ?? amount;
 
   const copyOrderId = () => {
     if (orderData?.orderId) {
@@ -556,16 +590,35 @@ export const DepositModal: React.FC<DepositModalProps> = ({
   };
 
   const copyPayAmount = () => {
-    const amtToCopy = (orderData?.amountInRupees || amount).toString();
+    const amtToCopy = activePayAmount.toString();
     navigator.clipboard.writeText(amtToCopy);
     setCopiedAmount(true);
     setTimeout(() => setCopiedAmount(false), 2000);
   };
 
-  // Construct the scannable UPI string for any UPI app
-  const qrUpiString =
-    orderData?.upiIntent ||
-    `upi://pay?pa=${activeUpiId}&pn=FamPay&tr=${orderData?.orderId || 'FAMPAY'}&am=${orderData?.amountInRupees || amount}&cu=INR`;
+  const handleCloseSuccess = () => {
+    setStep('AMOUNT');
+    setOrderData(null);
+    setUtrNumber('');
+    setVerifyError(null);
+    setPaymentFailedState(null);
+    onClose();
+  };
+
+  // Construct compliant UPI query and string containing exact amount, FamPay payee, and order note
+  const currentOrderId = orderData?.orderId || 'FAMPAY';
+  const baseUpiQuery = React.useMemo(() => {
+    if (orderData?.upiIntent && orderData.upiIntent.includes('?')) {
+      return orderData.upiIntent.split('?')[1];
+    }
+    return `pa=${encodeURIComponent(activeUpiId)}&pn=FamPay&tr=${encodeURIComponent(currentOrderId)}&tn=${encodeURIComponent(`Payment for Order ${currentOrderId}`)}&am=${activePayAmount}&cu=INR`;
+  }, [orderData, activeUpiId, activePayAmount, currentOrderId]);
+
+  const qrUpiString = orderData?.upiIntent || `upi://pay?${baseUpiQuery}`;
+  const gpayIntent = `tez://upi/pay?${baseUpiQuery}`;
+  const phonepeIntent = `phonepe://pay?${baseUpiQuery}`;
+  const paytmIntent = `paytmmp://pay?${baseUpiQuery}`;
+  const anyUpiIntent = `upi://pay?${baseUpiQuery}`;
 
   return (
     <AnimatePresence>
@@ -583,15 +636,17 @@ export const DepositModal: React.FC<DepositModalProps> = ({
             initial={{ scale: 0.94, opacity: 0, y: 15 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.94, opacity: 0, y: 15 }}
-            className={`relative z-50 w-full max-h-[92vh] overflow-y-auto ${
+            className={`relative z-50 w-full max-h-[92vh] overflow-y-auto transition-all duration-500 ${
               step === 'QR'
                 ? 'max-w-[390px] rounded-[32px] bg-[#0c0919] border border-[#7c3aed]/25 p-5 shadow-[0_0_60px_rgba(124,58,237,0.25)]'
+                : step === 'SUCCESS'
+                ? 'max-w-[380px] rounded-[32px] bg-[#081418] border border-emerald-500/40 p-5 shadow-[0_0_60px_rgba(16,185,129,0.35)]'
                 : 'max-w-sm bg-[#161622] border border-[#00e5ff]/30 rounded-3xl p-5 shadow-[0_0_35px_rgba(0,229,255,0.25)]'
             } text-white`}
           >
             <div className={step === 'QR' ? 'space-y-4' : 'space-y-4'}>
               {/* Header for AMOUNT or GENERATING */}
-              {step !== 'QR' ? (
+              {step !== 'QR' && step !== 'SUCCESS' ? (
                 <div className="flex items-center justify-between pb-3 border-b border-white/10">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-xl bg-[#00e5ff]/15 border border-[#00e5ff]/30 flex items-center justify-center text-[#00e5ff]">
@@ -738,7 +793,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                     <div className="space-y-1">
                       <div className="flex items-center justify-center gap-2">
                         <div className="text-4xl font-black text-[#c084fc] tracking-tight drop-shadow-[0_0_20px_rgba(192,132,252,0.5)] font-mono">
-                          {formatCurrency(orderData?.amountInRupees || amount)}
+                          {formatCurrency(activePayAmount)}
                         </div>
                         <button
                           onClick={copyPayAmount}
@@ -749,7 +804,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                         </button>
                       </div>
                       <p className="text-[11.5px] text-emerald-300/90 font-medium">
-                        ₹{orderData?.amountInRupees || amount} will be added 100% to your wallet
+                        ₹{activePayAmount} will be added 100% to your wallet
                       </p>
                     </div>
 
@@ -822,7 +877,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                     <div className="grid grid-cols-5 gap-2">
                       {/* Google Pay */}
                       <a
-                        href={`tez://upi/pay?pa=${activeUpiId}&pn=Kalam%20FF%20Store&tr=${orderData?.orderId || 'FAMPAY'}&am=${orderData?.amountInRupees || amount}&cu=INR`}
+                        href={gpayIntent}
                         className="flex flex-col items-center gap-1.5 group cursor-pointer"
                       >
                         <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform p-2">
@@ -841,7 +896,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 
                       {/* PhonePe */}
                       <a
-                        href={`phonepe://pay?pa=${activeUpiId}&pn=Kalam%20FF%20Store&tr=${orderData?.orderId || 'FAMPAY'}&am=${orderData?.amountInRupees || amount}&cu=INR`}
+                        href={phonepeIntent}
                         className="flex flex-col items-center gap-1.5 group cursor-pointer"
                       >
                         <div className="w-12 h-12 rounded-2xl bg-[#5f259f] flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
@@ -854,7 +909,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 
                       {/* Paytm */}
                       <a
-                        href={`paytmmp://pay?pa=${activeUpiId}&pn=Kalam%20FF%20Store&tr=${orderData?.orderId || 'FAMPAY'}&am=${orderData?.amountInRupees || amount}&cu=INR`}
+                        href={paytmIntent}
                         className="flex flex-col items-center gap-1.5 group cursor-pointer"
                       >
                         <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform px-1">
@@ -869,7 +924,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 
                       {/* BHIM */}
                       <a
-                        href={qrUpiString}
+                        href={anyUpiIntent}
                         className="flex flex-col items-center gap-1.5 group cursor-pointer"
                       >
                         <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform p-1.5">
@@ -885,19 +940,34 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                         </span>
                       </a>
 
-                      {/* Others */}
+                      {/* Others / Any UPI */}
                       <a
-                        href={qrUpiString}
+                        href={anyUpiIntent}
                         className="flex flex-col items-center gap-1.5 group cursor-pointer"
                       >
                         <div className="w-12 h-12 rounded-2xl bg-[#1e1738] border border-white/10 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform text-gray-300">
-                          <MoreHorizontal className="w-5 h-5" />
+                          <Smartphone className="w-5 h-5 text-cyan-400" />
                         </div>
-                        <span className="text-[10px] text-gray-300 font-medium tracking-tight">
-                          Others
+                        <span className="text-[10px] text-cyan-300 font-medium tracking-tight">
+                          Any App
                         </span>
                       </a>
                     </div>
+
+                    {/* Official Gateway Link (if available) */}
+                    {orderData?.checkoutUrl && (
+                      <div className="pt-1 text-center">
+                        <a
+                          href={orderData.checkoutUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-[11px] text-[#a855f7] hover:text-[#c084fc] font-semibold underline underline-offset-2 transition-colors cursor-pointer"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>Open FamGateway Checkout Page</span>
+                        </a>
+                      </div>
+                    )}
                   </div>
 
                   {/* AUTO-DETECTION REAL-TIME STATUS OR PAYMENT FAILED/EXPIRED STATE */}
@@ -911,7 +981,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                             <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
                           </div>
                           <span className="text-xs font-black tracking-wide text-rose-300 uppercase">
-                            {paymentFailedState.status === 'EXPIRED' ? 'Order Expired' : 'Payment Failed'}
+                            {paymentFailedState.status === 'EXPIRED' ? 'Order Session Expired' : 'Payment Failed'}
                           </span>
                         </div>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-rose-500/20 border border-rose-500/40 text-rose-300 font-bold">
@@ -925,10 +995,45 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                         </p>
                         <p className="text-[10.5px] text-gray-400 leading-tight">
                           {paymentFailedState.status === 'EXPIRED'
-                            ? 'The UPI payment session for this QR code timed out. To prevent failed transfers, please generate a fresh QR code.'
-                            : 'The payment was declined or could not be completed by the bank. You can retry with a new QR code.'}
+                            ? 'The upstream 5-minute session for this order has timed out.'
+                            : 'The payment was not completed or timed out.'}
                         </p>
                       </div>
+
+                      {/* Instant UTR Redemption if Money Was Debited */}
+                      <form onSubmit={handleVerifyUtr} className="p-3 rounded-xl bg-black/70 border border-amber-500/40 space-y-2 relative z-10">
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-300">
+                          <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>Money debited from your bank?</span>
+                        </div>
+                        <p className="text-[10.5px] text-gray-300 leading-tight">
+                          Enter your 12-digit UPI UTR / Reference number from your payment receipt to credit your wallet instantly:
+                        </p>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            maxLength={22}
+                            placeholder="Enter 12-digit UPI UTR / Ref No"
+                            value={utrNumber}
+                            onChange={(e) => setUtrNumber(e.target.value.replace(/\D/g, ''))}
+                            className="flex-1 px-3 py-2 rounded-xl bg-black/80 border border-amber-500/30 focus:border-amber-400 text-xs font-mono text-white placeholder:text-gray-500 outline-none"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isUtrVerifying || !utrNumber.trim()}
+                            className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-extrabold text-xs flex items-center gap-1 cursor-pointer transition-all shrink-0"
+                          >
+                            {isUtrVerifying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            <span>Claim Balance</span>
+                          </button>
+                        </div>
+                      </form>
+
+                      {verifyError && (
+                        <div className="p-2 rounded-lg bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[11px] relative z-10">
+                          {verifyError}
+                        </div>
+                      )}
 
                       <div className="pt-1 flex gap-2 relative z-10">
                         <button
@@ -948,7 +1053,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                           type="button"
                           onClick={handleInstantAutoCheck}
                           disabled={isManualChecking}
-                          className="px-3 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-gray-200 text-xs font-medium cursor-pointer transition-all border border-white/10 flex items-center gap-1.5 shrink-0"
+                          className="px-3.5 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-gray-200 text-xs font-medium cursor-pointer transition-all border border-white/10 flex items-center gap-1.5 shrink-0"
                           title="Verify if money was debited from your bank"
                         >
                           <RefreshCw className={`w-3.5 h-3.5 ${isManualChecking ? 'animate-spin' : ''}`} />
@@ -993,7 +1098,7 @@ export const DepositModal: React.FC<DepositModalProps> = ({
                             {autoCheckStatus}
                           </p>
                           <p className="text-[10px] text-gray-400 leading-tight">
-                            Pay ₹{orderData?.amountInRupees || amount} via any UPI app. System verifies the bank transfer every 2.5s automatically.
+                            Pay ₹{activePayAmount} via any UPI app. System verifies the bank transfer every 2.5s automatically.
                           </p>
                         </div>
                       </div>
@@ -1058,24 +1163,18 @@ export const DepositModal: React.FC<DepositModalProps> = ({
 
               {step === 'SUCCESS' && (
                 <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="py-6 text-center space-y-3"
+                  initial={{ scale: 0.82, opacity: 0, y: 15 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 280, damping: 20 }}
+                  className="w-full"
                 >
-                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-emerald-400 mx-auto shadow-[0_0_30px_rgba(16,185,129,0.5)]">
-                    <Check className="w-8 h-8 stroke-[3]" />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-bold text-white">Deposit Successful!</h4>
-                    <p className="text-xs text-gray-300 mt-1">
-                      {formatCurrency(orderData?.amountInRupees || amount)} has been credited instantly to your wallet balance.
-                    </p>
-                    {orderData && (
-                      <span className="text-[10px] text-gray-400 font-mono block mt-2">
-                        Ref: {orderData.orderId}
-                      </span>
-                    )}
-                  </div>
+                  <LottieSuccessAnimation
+                    amount={activePayAmount}
+                    orderId={orderData?.orderId}
+                    utr={utrNumber}
+                    onDone={handleCloseSuccess}
+                  />
                 </motion.div>
               )}
             </div>

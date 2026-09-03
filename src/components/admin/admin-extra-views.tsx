@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   KeyRound,
@@ -30,11 +30,17 @@ import {
   Key,
   Globe,
   Database,
-  Calendar
+  Calendar,
+  Download,
+  FileText,
+  CheckCheck,
+  Filter,
 } from 'lucide-react';
 import { GlassCard } from '../shared/glass-card';
 import { formatCurrency } from '../../lib/utils';
 import { AuthUser, StoreSettings, ResellerUser, Product, ApiConfig, PlanPricing, PurchasedKey } from '../../types';
+import { deduplicateUsers } from '../../lib/firestore-service';
+import { exportSoldKeysToPdf } from '../../lib/pdf-export';
 
 interface AdminIdStockViewProps {
   products?: Product[];
@@ -452,7 +458,9 @@ export const AdminMembersWalletsView: React.FC<AdminMembersWalletsViewProps> = (
 
   const quickAmounts = [20, 50, 100, 250, 500, 1000, 2000, 5000];
 
-  const filteredUsers = (users || []).filter((u) => {
+  const safeUsers = useMemo(() => deduplicateUsers(users || []), [users]);
+
+  const filteredUsers = safeUsers.filter((u) => {
     const matchSearch =
       (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -465,8 +473,8 @@ export const AdminMembersWalletsView: React.FC<AdminMembersWalletsViewProps> = (
     return true;
   });
 
-  const totalVaultBalance = (users || []).reduce((acc, u) => acc + (u.walletBalance || 0), 0);
-  const usersWithBalanceCount = (users || []).filter((u) => (u.walletBalance || 0) > 0).length;
+  const totalVaultBalance = safeUsers.reduce((acc, u) => acc + (u.walletBalance || 0), 0);
+  const usersWithBalanceCount = safeUsers.filter((u) => (u.walletBalance || 0) > 0).length;
 
   const handleOpenAdjust = (user: ResellerUser, type: 'ADD' | 'MINUS') => {
     setSelectedUser(user);
@@ -602,7 +610,7 @@ export const AdminMembersWalletsView: React.FC<AdminMembersWalletsViewProps> = (
 
         {/* Users List */}
         <div className="space-y-2.5">
-          {filteredUsers.map((u) => {
+          {filteredUsers.map((u, idx) => {
             const isCurrent = Boolean(
               currentUser?.email &&
                 u.email &&
@@ -610,7 +618,7 @@ export const AdminMembersWalletsView: React.FC<AdminMembersWalletsViewProps> = (
             );
             return (
               <div
-                key={u.id}
+                key={`${u.id || 'user'}_${idx}`}
                 className="p-3 rounded-2xl bg-black/40 border border-white/5 hover:border-white/10 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
               >
                 {/* User Info */}
@@ -891,12 +899,74 @@ export const AdminMembersWalletsView: React.FC<AdminMembersWalletsViewProps> = (
 
 interface AdminSoldKeysViewProps {
   soldKeys?: PurchasedKey[];
+  storeSettings?: StoreSettings;
+  onSeedSampleKeys?: (sampleKeys: any) => void;
 }
 
-export const AdminSoldKeysView: React.FC<AdminSoldKeysViewProps> = ({ soldKeys = [] }) => {
+export const AdminSoldKeysView: React.FC<AdminSoldKeysViewProps> = ({
+  soldKeys = [],
+  storeSettings,
+  onSeedSampleKeys,
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterProduct, setFilterProduct] = useState('ALL');
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState<string | null>(null);
+
+  const productOptions = useMemo(() => {
+    const set = new Set<string>();
+    soldKeys.forEach((k) => {
+      if (k.productName) set.add(k.productName);
+    });
+    return Array.from(set);
+  }, [soldKeys]);
+
+  const filteredKeys = useMemo(() => {
+    return soldKeys.filter((k) => {
+      const matchesSearch =
+        !searchTerm.trim() ||
+        (k.productName && k.productName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (k.keyCode && k.keyCode.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (k.invoiceNumber && k.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (k.planName && k.planName.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      const matchesProduct = filterProduct === 'ALL' || k.productName === filterProduct;
+
+      return matchesSearch && matchesProduct;
+    });
+  }, [soldKeys, searchTerm, filterProduct]);
+
+  const totalRevenue = useMemo(() => {
+    return filteredKeys.reduce((acc, k) => acc + (k.price || 0), 0);
+  }, [filteredKeys]);
+
+  const handleExportPdf = () => {
+    if (filteredKeys.length === 0) {
+      setExportFeedback('No keys to export.');
+      setTimeout(() => setExportFeedback(null), 3000);
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      const res = exportSoldKeysToPdf({
+        soldKeys: filteredKeys,
+        storeSettings,
+        filterLabel: filterProduct !== 'ALL' ? filterProduct : undefined,
+      });
+      setExportFeedback(`Exported ${res.count} keys to ${res.filename}`);
+      setTimeout(() => setExportFeedback(null), 4000);
+    } catch (err: any) {
+      setExportFeedback(`Export error: ${err.message}`);
+      setTimeout(() => setExportFeedback(null), 4000);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-4" id="admin-sold-keys-view">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-extrabold text-white flex items-center gap-2">
             <ScrollText className="w-4 h-4 text-emerald-400" />
@@ -904,7 +974,68 @@ export const AdminSoldKeysView: React.FC<AdminSoldKeysViewProps> = ({ soldKeys =
           </h2>
           <span className="text-[11px] text-gray-400">Real-time stream of all keys generated by bot and users</span>
         </div>
+
+        <div className="flex items-center gap-2">
+          {soldKeys.length > 0 && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={handleExportPdf}
+              disabled={isExporting || filteredKeys.length === 0}
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:opacity-50 cursor-pointer"
+            >
+              {isExporting ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              <span>Export to PDF ({filteredKeys.length})</span>
+            </motion.button>
+          )}
+        </div>
       </div>
+
+      {exportFeedback && (
+        <motion.div
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2"
+        >
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{exportFeedback}</span>
+        </motion.div>
+      )}
+
+      {/* Revenue & Filter Bar */}
+      {soldKeys.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="sm:col-span-2 relative">
+            <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search key code, product, invoice..."
+              className="w-full pl-8 pr-3 py-2 rounded-xl bg-black/50 border border-white/10 focus:border-emerald-400 focus:outline-none text-white text-xs"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={filterProduct}
+              onChange={(e) => setFilterProduct(e.target.value)}
+              className="flex-1 px-3 py-2 rounded-xl bg-black/50 border border-white/10 text-white text-xs focus:border-emerald-400 focus:outline-none"
+            >
+              <option value="ALL">All Products ({soldKeys.length})</option>
+              {productOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {soldKeys.length === 0 ? (
         <GlassCard className="p-8 text-center space-y-3 bg-[#161622]/90 border-white/10">
@@ -916,9 +1047,18 @@ export const AdminSoldKeysView: React.FC<AdminSoldKeysViewProps> = ({ soldKeys =
             When users or resellers purchase keys, their live delivery and license codes will stream here in real time.
           </p>
         </GlassCard>
+      ) : filteredKeys.length === 0 ? (
+        <GlassCard className="p-6 text-center space-y-2 bg-[#161622]/90 border-white/10">
+          <p className="text-xs text-gray-400">No sold keys match your search or filter.</p>
+        </GlassCard>
       ) : (
         <div className="space-y-2.5">
-          {soldKeys.map((k) => (
+          <div className="flex items-center justify-between text-xs text-gray-400 px-1">
+            <span>Showing {filteredKeys.length} of {soldKeys.length} keys</span>
+            <span className="text-emerald-400 font-mono font-bold">Total Sales: ₹{totalRevenue.toFixed(2)}</span>
+          </div>
+
+          {filteredKeys.map((k) => (
             <GlassCard key={k.id} glow="green" className="p-4 bg-[#161622]/95 border-white/10 space-y-2.5">
               <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-xs">
                 <div className="flex items-center justify-between font-bold">
@@ -1202,8 +1342,8 @@ export const AdminTopupsView: React.FC<AdminTopupsViewProps> = ({
               onChange={(e) => setSelectedUserId(e.target.value)}
               className="w-full px-3 py-2.5 rounded-xl bg-black/60 border border-white/10 focus:border-[#00e5ff] text-white font-medium focus:outline-none"
             >
-              {users.map((u) => (
-                <option key={u.id} value={u.id} className="bg-[#161622] text-white">
+              {deduplicateUsers(users || []).map((u, idx) => (
+                <option key={`${u.id || 'user'}_${idx}`} value={u.id} className="bg-[#161622] text-white">
                   {u.name} ({u.email}) — Balance: ₹{(u.walletBalance || 0).toFixed(2)}
                 </option>
               ))}

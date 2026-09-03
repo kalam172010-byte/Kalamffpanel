@@ -574,9 +574,9 @@ export const ReferralView: React.FC<ReferralViewProps> = ({
           </GlassCard>
         ) : (
           <div className="space-y-2">
-            {referredFriends.map((friend) => (
+            {referredFriends.map((friend, idx) => (
               <GlassCard
-                key={friend.id}
+                key={`${friend.id || 'friend'}_${idx}`}
                 className="p-3 bg-[#161622]/90 border-white/10 flex items-center justify-between gap-3"
               >
                 <div className="flex items-center gap-2.5">

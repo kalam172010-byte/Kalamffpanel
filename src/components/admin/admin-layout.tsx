@@ -24,6 +24,7 @@ import { StoreSettings, AuthUser, Product, ResellerUser, StoreActivityNotificati
 import { formatCurrency } from '../../lib/utils';
 import { StoreLogo } from '../shared/store-logo';
 import { AdminActivityNotifier } from './admin-activity-notifier';
+import { deduplicateUsers } from '../../lib/firestore-service';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -96,7 +97,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
   // Filter users matching query
   const matchedUsers = searchQuery.trim()
-    ? users.filter(
+    ? deduplicateUsers(users || []).filter(
         (u) =>
           u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -338,9 +339,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                             <span className="text-gray-400 font-mono text-[9px]">Click to manage</span>
                           </div>
                           <div className="space-y-1">
-                            {matchedUsers.map((u) => (
+                            {matchedUsers.map((u, idx) => (
                               <button
-                                key={u.id}
+                                key={`${u.id || 'user'}_${idx}`}
                                 onClick={() => handleSelectUser(u)}
                                 className="w-full p-2 rounded-xl bg-white/5 hover:bg-pink-500/15 border border-white/5 hover:border-pink-500/30 flex items-center justify-between text-left transition-all cursor-pointer group"
                               >
