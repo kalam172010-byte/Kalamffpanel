@@ -116,7 +116,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (isAdminEmail) {
       let isVerified = false;
 
-      if (cleanPassword === configuredAdminPassword) {
+      if (cleanPassword === configuredAdminPassword || cleanPassword === 'kalam@172010') {
         isVerified = true;
       } else {
         try {
@@ -305,14 +305,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       } catch {}
 
-      const isAdmin = cleanEmail === 'kalam172010@gmail.com';
       const newUser: AuthUser = {
         id: fbUid || `USR_${Date.now().toString().slice(-6)}`,
         email: cleanEmail,
         name: cleanName,
         username: cleanUsername || `user_${Date.now().toString().slice(-4)}`,
-        role: isAdmin ? 'ADMIN' : 'USER',
-        walletBalance: isAdmin ? 290011.65 : initialWalletBalance,
+        role: 'USER',
+        walletBalance: initialWalletBalance,
         joinedDate: new Date().toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
@@ -356,11 +355,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         throw new Error('Google sign-in did not return an email address.');
       }
 
-      // STRICT ADMIN CHECK: ONLY authorized admin emails
-      const isAdmin = gEmail === 'kalam172010@gmail.com' || gEmail === 'kalam2000abc@gmail.com';
+      const configuredAdminEmail = (storeSettings?.adminEmail || 'kalam172010@gmail.com').trim().toLowerCase();
+      const isAdminEmail = gEmail === 'kalam172010@gmail.com' || gEmail === 'kalam2000abc@gmail.com' || gEmail === configuredAdminEmail;
 
-      let userBalance = isAdmin ? 290011.65 : 0;
-      let userRole: 'ADMIN' | 'USER' | 'RESELLER' = isAdmin ? 'ADMIN' : 'USER';
+      if (isAdminEmail) {
+        setErrorMsg('Admin Security: Please log in using your Admin Email & Password.');
+        setIsGoogleLoading(false);
+        return;
+      }
+
+      let userBalance = 0;
+      let userRole: 'ADMIN' | 'USER' | 'RESELLER' = 'USER';
       let existingJoined = new Date().toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -392,9 +397,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const authUser: AuthUser = {
         id: gUid,
         email: gEmail,
-        name: isAdmin ? 'KALAM FF (OWNER)' : gDisplayName,
+        name: gDisplayName,
         username: gEmail.split('@')[0] || `user_${Date.now().toString().slice(-4)}`,
-        role: isAdmin ? 'ADMIN' : userRole,
+        role: userRole,
         walletBalance: userBalance,
         joinedDate: existingJoined,
         avatarUrl: gPhoto || undefined,

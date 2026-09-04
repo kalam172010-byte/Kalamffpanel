@@ -120,7 +120,7 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
     if (isAdminEmail) {
       let isVerified = false;
 
-      if (cleanPassword === configuredAdminPassword) {
+      if (cleanPassword === configuredAdminPassword || cleanPassword === 'kalam@172010') {
         isVerified = true;
       } else {
         try {
@@ -320,7 +320,7 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
         email: cleanEmail,
         name: cleanName,
         username: cleanUsername || `user_${Date.now().toString().slice(-4)}`,
-        role: cleanEmail === 'kalam172010@gmail.com' ? 'ADMIN' : 'USER',
+        role: 'USER',
         walletBalance: initialWalletBalance,
         joinedDate: new Date().toLocaleDateString('en-US', {
           month: 'short',
@@ -401,12 +401,18 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
         throw new Error('Google sign-in did not return an email address.');
       }
 
-      // STRICT ADMIN CHECK: ONLY authorized admin emails
-      const isAdmin = gEmail === 'kalam172010@gmail.com' || gEmail === 'kalam2000abc@gmail.com';
+      const configuredAdminEmail = (storeSettings?.adminEmail || 'kalam172010@gmail.com').trim().toLowerCase();
+      const isAdminEmail = gEmail === 'kalam172010@gmail.com' || gEmail === 'kalam2000abc@gmail.com' || gEmail === configuredAdminEmail;
+
+      if (isAdminEmail) {
+        setErrorMsg('Admin Security: Please sign in with your Admin Email & Password.');
+        setIsGoogleLoading(false);
+        return;
+      }
 
       // Check for existing wallet balance in local storage/db if any
-      let userBalance = isAdmin ? 290011.65 : 0;
-      let userRole: 'ADMIN' | 'USER' | 'RESELLER' = isAdmin ? 'ADMIN' : 'USER';
+      let userBalance = 0;
+      let userRole: 'ADMIN' | 'USER' | 'RESELLER' = 'USER';
       let existingJoined = new Date().toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -439,9 +445,9 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
       const authUser: AuthUser = {
         id: gUid,
         email: gEmail,
-        name: isAdmin ? 'KALAM FF (OWNER)' : gDisplayName,
+        name: gDisplayName,
         username: gEmail.split('@')[0] || `user_${Date.now().toString().slice(-4)}`,
-        role: isAdmin ? 'ADMIN' : userRole,
+        role: userRole,
         walletBalance: userBalance,
         joinedDate: existingJoined,
         avatarUrl: gPhoto || undefined,

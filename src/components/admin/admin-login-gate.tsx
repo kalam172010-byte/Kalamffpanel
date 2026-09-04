@@ -45,7 +45,9 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({
     new Set([configuredAdminEmail, ...ADMIN_AUTHORIZED_EMAILS])
   );
 
-  const [email, setEmail] = useState(currentEmail || configuredAdminEmail);
+  const [email, setEmail] = useState(
+    currentEmail && authorizedEmails.includes(currentEmail.trim().toLowerCase()) ? currentEmail : ''
+  );
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -85,13 +87,10 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({
     try {
       let isVerified = false;
 
-      // Check 1: Direct Master Password configured in Store Settings or standard master passwords
+      // Check 1: Master Password configured in Store Settings or Master Password
       if (
         cleanPassword === configuredAdminPassword ||
-        cleanPassword === 'kalam@172010' ||
-        cleanPassword === 'admin123' ||
-        cleanPassword === 'kalam172010' ||
-        cleanPassword === 'admin'
+        cleanPassword === 'kalam@172010'
       ) {
         isVerified = true;
       } else {
@@ -194,43 +193,13 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({
           className="p-5 bg-[#10101a]/95 border-amber-500/30 rounded-2xl shadow-[0_0_40px_rgba(234,179,8,0.2)] space-y-4"
         >
           {/* Owner Notice Badge */}
-          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-left">
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-left">
             <KeyRound className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
             <div className="space-y-1 text-[11px] w-full">
               <span className="font-bold text-yellow-300 block">Master Admin Login</span>
-              <p className="text-gray-300 font-mono text-[10px]">
-                Authorized Administrator Credentials Required
+              <p className="text-gray-300 text-[10px]">
+                Please enter your registered administrator email address and password to access the Bot Control Center.
               </p>
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                {authorizedEmails.map((authMail) => (
-                  <button
-                    key={authMail}
-                    type="button"
-                    onClick={() => {
-                      setEmail(authMail);
-                      setPassword('kalam@172010');
-                    }}
-                    className={`px-2 py-0.5 rounded-lg border text-[10px] font-mono cursor-pointer transition-all ${
-                      email.toLowerCase() === authMail.toLowerCase()
-                        ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300 font-bold'
-                        : 'bg-black/40 border-white/10 text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    {authMail}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail('kalam172010@gmail.com');
-                    setPassword('kalam@172010');
-                  }}
-                  className="px-2 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1"
-                >
-                  <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
-                  <span>Auto-Fill Credentials</span>
-                </button>
-              </div>
             </div>
           </div>
 

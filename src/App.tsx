@@ -601,11 +601,14 @@ export default function App() {
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Master Admin privileges check (kalam172010@gmail.com)
+  // Master Admin privileges check (kalam172010@gmail.com or configured admin email)
+  const configuredAdminEmail = (storeSettings?.adminEmail || 'kalam172010@gmail.com').trim().toLowerCase();
   const isMasterAdmin = Boolean(
     currentUser &&
-      (currentUser.email?.trim().toLowerCase() === 'kalam172010@gmail.com' ||
-       currentUser.role === 'ADMIN')
+      (currentUser.role === 'ADMIN' ||
+       currentUser.email?.trim().toLowerCase() === configuredAdminEmail ||
+       currentUser.email?.trim().toLowerCase() === 'kalam172010@gmail.com' ||
+       currentUser.email?.trim().toLowerCase() === 'kalam2000abc@gmail.com')
   );
 
   const showToast = (msg: string) => {
@@ -650,8 +653,9 @@ export default function App() {
   };
 
   const handleLoginSuccess = (user: AuthUser) => {
+    const configuredAdminEmail = (storeSettings?.adminEmail || 'kalam172010@gmail.com').trim().toLowerCase();
     const cleanEmail = (user.email || '').trim().toLowerCase();
-    const isAdmin = cleanEmail === 'kalam172010@gmail.com' || cleanEmail === 'kalam2000abc@gmail.com' || user.role === 'ADMIN';
+    const isAdmin = cleanEmail === configuredAdminEmail || cleanEmail === 'kalam172010@gmail.com' || cleanEmail === 'kalam2000abc@gmail.com' || user.role === 'ADMIN';
 
     // Check if user has updated balance in resellers
     const found = (resellers || []).find(
@@ -673,6 +677,22 @@ export default function App() {
       ...prev,
       balance: resolvedBalance,
     }));
+
+    if (isAdmin) {
+      setAppMode('admin');
+      setAdminTab('dashboard');
+      try {
+        localStorage.setItem('kalam_app_mode', 'admin');
+      } catch {}
+      showToast(`Master Admin verified: ${cleanEmail}`);
+    } else {
+      setAppMode('user');
+      setUserTab('dashboard');
+      try {
+        localStorage.setItem('kalam_app_mode', 'user');
+      } catch {}
+      showToast(`Welcome back, ${user.name || 'User'}!`);
+    }
 
     // Register / update in resellers list for User Management
     const userRecord: ResellerUser = {
@@ -704,8 +724,6 @@ export default function App() {
     try {
       localStorage.setItem('kalam_auth_user', JSON.stringify(resolvedUser));
     } catch {}
-
-    showToast(`Welcome back, ${user.name}!`);
   };
 
   const handleLogout = async () => {

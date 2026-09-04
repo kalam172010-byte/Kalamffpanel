@@ -34,11 +34,13 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
   onLogout,
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const configuredAdminEmail = (storeSettings?.adminEmail || 'kalam172010@gmail.com').trim().toLowerCase();
   const isMasterAdmin = Boolean(
     currentUser &&
-      (currentUser.email?.trim().toLowerCase() === 'kalam172010@gmail.com' ||
-       currentUser.email?.trim().toLowerCase() === 'kalam2000abc@gmail.com' ||
-       currentUser.role === 'ADMIN')
+      (currentUser.role === 'ADMIN' ||
+       currentUser.email?.trim().toLowerCase() === configuredAdminEmail ||
+       currentUser.email?.trim().toLowerCase() === 'kalam172010@gmail.com' ||
+       currentUser.email?.trim().toLowerCase() === 'kalam2000abc@gmail.com')
   );
 
   return (
@@ -61,14 +63,16 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={onSwitchToAdmin}
-              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/40 text-yellow-300 font-bold text-[10px] shadow-[0_0_10px_rgba(234,179,8,0.25)] transition-all cursor-pointer"
-              title="Open Admin Control Center"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-yellow-400" />
-              <span>Admin Panel</span>
-            </button>
+            {isMasterAdmin && (
+              <button
+                onClick={onSwitchToAdmin}
+                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/40 text-yellow-300 font-bold text-[10px] shadow-[0_0_10px_rgba(234,179,8,0.25)] transition-all cursor-pointer"
+                title="Open Admin Control Center"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-yellow-400" />
+                <span>Admin Panel</span>
+              </button>
+            )}
             <span className="hidden sm:inline-flex text-[10px] text-emerald-400/90 font-mono items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               <span>ONLINE</span>

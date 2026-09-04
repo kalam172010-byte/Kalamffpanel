@@ -793,10 +793,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }, 1800);
   };
 
+  const configuredAdminEmail = (storeSettings?.adminEmail || 'kalam172010@gmail.com').trim().toLowerCase();
   const isMasterAdmin = Boolean(
     currentUser &&
-      (currentUser.email?.trim().toLowerCase() === 'kalam172010@gmail.com' ||
-       currentUser.role === 'ADMIN')
+      (currentUser.role === 'ADMIN' ||
+       currentUser.email?.trim().toLowerCase() === configuredAdminEmail ||
+       currentUser.email?.trim().toLowerCase() === 'kalam172010@gmail.com' ||
+       currentUser.email?.trim().toLowerCase() === 'kalam2000abc@gmail.com')
   );
   const displayName = currentUser?.name || `${storeSettings?.shopName || 'KALAM FF'} Guest`;
   const displayEmail = currentUser?.email || 'Not logged in';
@@ -954,16 +957,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           )}
         </div>
 
-        <div className="pt-2">
-          <button
-            onClick={onSwitchToAdmin}
-            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-yellow-500 via-amber-500 to-orange-500 text-black font-extrabold text-xs shadow-[0_0_20px_rgba(234,179,8,0.3)] flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.02]"
-          >
-            <ShieldCheck className="w-4 h-4 text-black" />
-            <span>{isMasterAdmin ? 'Open Master Admin Panel (Bot Control)' : 'Open Admin Panel / Owner Login'}</span>
-            <ArrowUpRight className="w-4 h-4 text-black" />
-          </button>
-        </div>
+        {isMasterAdmin && (
+          <div className="pt-2">
+            <button
+              onClick={onSwitchToAdmin}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-yellow-500 via-amber-500 to-orange-500 text-black font-extrabold text-xs shadow-[0_0_20px_rgba(234,179,8,0.3)] flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.02]"
+            >
+              <ShieldCheck className="w-4 h-4 text-black" />
+              <span>Open Master Admin Panel (Bot Control)</span>
+              <ArrowUpRight className="w-4 h-4 text-black" />
+            </button>
+          </div>
+        )}
 
         {!currentUser && (
           <div className="pt-2">

@@ -65,11 +65,13 @@ export const UserSidebar: React.FC<UserSidebarProps> = ({
   onOpenAuthModal,
   onLogout,
 }) => {
+  const configuredAdminEmail = (storeSettings?.adminEmail || 'kalam172010@gmail.com').trim().toLowerCase();
   const isMasterAdmin = Boolean(
     currentUser &&
-      (currentUser.email?.trim().toLowerCase() === 'kalam172010@gmail.com' ||
-       currentUser.email?.trim().toLowerCase() === 'kalam2000abc@gmail.com' ||
-       currentUser.role === 'ADMIN')
+      (currentUser.role === 'ADMIN' ||
+       currentUser.email?.trim().toLowerCase() === configuredAdminEmail ||
+       currentUser.email?.trim().toLowerCase() === 'kalam172010@gmail.com' ||
+       currentUser.email?.trim().toLowerCase() === 'kalam2000abc@gmail.com')
   );
 
   return (
@@ -177,7 +179,7 @@ export const UserSidebar: React.FC<UserSidebarProps> = ({
                     <span>My Profile</span>
                   </button>
 
-                  {onSwitchToAdmin && (
+                  {isMasterAdmin && onSwitchToAdmin && (
                     <button
                       onClick={() => {
                         onClose();
@@ -187,10 +189,10 @@ export const UserSidebar: React.FC<UserSidebarProps> = ({
                     >
                       <span className="flex items-center gap-2.5">
                         <ShieldCheck className="w-4 h-4 text-yellow-400" />
-                        <span>{isMasterAdmin ? 'Master Admin Panel' : 'Admin Panel Login'}</span>
+                        <span>Master Admin Panel</span>
                       </span>
                       <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-500/30 font-mono text-yellow-300 font-black">
-                        {isMasterAdmin ? 'ACTIVE' : 'ADMIN'}
+                        ADMIN
                       </span>
                     </button>
                   )}
