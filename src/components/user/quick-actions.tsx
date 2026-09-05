@@ -1,14 +1,15 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Wallet, ShoppingCart, Key, Clock, Gift, User, LucideIcon, Sparkles } from 'lucide-react';
+import { Wallet, ShoppingCart, Key, Clock, Gift, User, LucideIcon, Sparkles, Tag } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { playPopSound } from '../../lib/sound-fx';
 
 export type QuickActionKey =
   | 'DEPOSIT'
   | 'BUY_KEYS'
   | 'MY_KEYS'
-  | 'HISTORY'
   | 'REFERRAL'
+  | 'HISTORY'
   | 'PROFILE';
 
 interface QuickActionItem {
@@ -63,10 +64,10 @@ const ACTION_ITEMS: QuickActionItem[] = [
     id: 'HISTORY',
     label: 'HISTORY',
     icon: Clock,
-    borderColor: 'border-cyan-500/40 hover:border-cyan-500',
-    glowShadow: 'hover:shadow-[0_0_20px_rgba(0,229,255,0.3)]',
-    iconColor: 'text-cyan-400',
-    iconBg: 'bg-cyan-500/15',
+    borderColor: 'border-purple-500/40 hover:border-purple-500',
+    glowShadow: 'hover:shadow-[0_0_20px_rgba(168,85,247,0.3)]',
+    iconColor: 'text-purple-400',
+    iconBg: 'bg-purple-500/15',
   },
   {
     id: 'PROFILE',
@@ -85,7 +86,7 @@ interface QuickActionsGridProps {
 
 export const QuickActionsGrid: React.FC<QuickActionsGridProps> = ({ onActionClick }) => {
   return (
-    <div id="quick-actions-grid" className="grid grid-cols-3 gap-2.5">
+    <div id="quick-actions-grid" className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
       {ACTION_ITEMS.map((item) => {
         const Icon = item.icon;
         return (
@@ -93,7 +94,10 @@ export const QuickActionsGrid: React.FC<QuickActionsGridProps> = ({ onActionClic
             key={item.id}
             type="button"
             id={`quick-action-${item.id.toLowerCase()}`}
-            onClick={() => onActionClick(item.id)}
+            onClick={() => {
+              playPopSound();
+              onActionClick(item.id);
+            }}
             className={cn(
               'relative flex flex-col items-center justify-center p-3 rounded-2xl bg-[#161626] border transition-all duration-200 cursor-pointer aspect-square group shadow-lg overflow-hidden active:scale-95 hover:scale-[1.02] hover:-translate-y-0.5',
               item.borderColor,

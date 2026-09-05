@@ -30,8 +30,11 @@ import {
   AuthUser,
   StoreActivityNotification,
   PurchaseInvoice,
+  DiscountCoupon,
 } from './types';
 import { playNotificationSound, getSoundMuted, setSoundMuted } from './lib/sound';
+import { playPopSound, playClickSound, playSuccessChime } from './lib/sound-fx';
+import { recordCouponUsage } from './lib/coupon-service';
 
 // Layouts and Sub-views
 import { UserLayout } from './components/user/user-layout';
@@ -127,9 +130,61 @@ export default function App() {
     return 'user';
   });
 
-  // Active Nav Tabs
-  const [userTab, setUserTab] = useState<UserNavTab>('dashboard');
+  // Direct Product Link target ID from URL parameters (?product=... or ?prod=... or hash #prod-...)
+  const [targetProductId, setTargetProductId] = useState<string | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const prod = params.get('product') || params.get('prod');
+        if (prod) return prod;
+        const hashMatch = window.location.hash.match(/#prod(?:uct)?-([a-zA-Z0-9_-]+)/);
+        if (hashMatch) return hashMatch[1];
+      }
+    } catch {}
+    return null;
+  });
+
+  // Active Nav Tabs - Defaults to buy_keys if a direct product link is opened
+  const [userTab, setUserTab] = useState<UserNavTab>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('product') || params.get('prod') || window.location.hash.includes('prod')) {
+          return 'buy_keys';
+        }
+      }
+    } catch {}
+    return 'dashboard';
+  });
   const [adminTab, setAdminTab] = useState<AdminNavTab>('dashboard');
+
+  // Smooth loading state & store synchronization
+  const [isGlobalLoading, setIsGlobalLoading] = useState(false);
+  const [isSyncingStore, setIsSyncingStore] = useState(false);
+
+  // URL listener for direct links navigation in runtime
+  useEffect(() => {
+    const handleUrlChange = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const prod = params.get('product') || params.get('prod');
+        const hashMatch = window.location.hash.match(/#prod(?:uct)?-([a-zA-Z0-9_-]+)/);
+        const target = prod || (hashMatch ? hashMatch[1] : null);
+        if (target) {
+          setTargetProductId(target);
+          setUserTab('buy_keys');
+          setAppMode('user');
+        }
+      } catch {}
+    };
+
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, []);
 
   // Guest preview mode enabled by default so users directly see storefront
   const [guestPreview, setGuestPreview] = useState(true);
@@ -543,6 +598,36 @@ export default function App() {
       if (firebaseUser) {
         const cleanEmail = (firebaseUser.email || '').trim().toLowerCase();
         const isAdmin = cleanEmail === 'kalam172010@gmail.com';
+
+        // Extract the permanent account creation date from Firebase Auth metadata
+        const accountCreatedDate = firebaseUser.metadata?.creationTime
+          ? new Date(firebaseUser.metadata.creationTime).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })
+          : undefined;
+
+        // Check if there's a stored historical joinedDate in local database
+        let storedJoinedDate: string | undefined;
+        try {
+          const storedUsersRaw = localStorage.getItem('kalam_users_db');
+          if (storedUsersRaw) {
+            const storedUsers: any[] = JSON.parse(storedUsersRaw);
+            const found = storedUsers.find(
+              (u) => u.id === firebaseUser.uid || (u.email && u.email.toLowerCase() === cleanEmail)
+            );
+            if (found?.joinedDate && found.joinedDate !== 'Recently' && !found.joinedDate.toLowerCase().includes('today')) {
+              storedJoinedDate = found.joinedDate;
+            }
+          }
+        } catch {}
+
+        const finalJoinedDate =
+          accountCreatedDate ||
+          storedJoinedDate ||
+          new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
         const initialAuth: AuthUser = {
           id: firebaseUser.uid,
           email: cleanEmail,
@@ -550,22 +635,29 @@ export default function App() {
           username: cleanEmail.split('@')[0] || 'user',
           role: isAdmin ? 'ADMIN' : 'USER',
           walletBalance: isAdmin ? 290011.65 : 0,
-          joinedDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          joinedDate: finalJoinedDate,
           avatarUrl: firebaseUser.photoURL || undefined,
         };
 
         try {
           const synced = await syncAuthUserToFirestore(initialAuth);
+          const resolvedJoined =
+            accountCreatedDate ||
+            (synced.joinedDate && synced.joinedDate !== 'Recently' && !synced.joinedDate.toLowerCase().includes('today') ? synced.joinedDate : null) ||
+            storedJoinedDate ||
+            finalJoinedDate;
+
           const resolvedUser: AuthUser = {
             ...initialAuth,
             walletBalance: synced.walletBalance,
             role: synced.role === 'ADMIN' ? 'ADMIN' : (synced.isReseller ? 'RESELLER' : 'USER'),
             name: synced.name,
             username: synced.username,
+            joinedDate: resolvedJoined,
           };
           setCurrentUser(resolvedUser);
           setResellers((prev) => {
-            const nextList = deduplicateUsers([synced, ...prev]);
+            const nextList = deduplicateUsers([{ ...synced, joinedDate: resolvedJoined }, ...prev]);
             try {
               localStorage.setItem('kalam_users_db', JSON.stringify(nextList));
             } catch {}
@@ -652,6 +744,50 @@ export default function App() {
     }
   };
 
+  const handleSyncStoreData = async () => {
+    setIsSyncingStore(true);
+    setIsGlobalLoading(true);
+    playPopSound();
+    showToast('🔄 Synchronizing store & catalog data...');
+    try {
+      const res = await safeFetchJson<{ success: boolean; products: Product[] }>('/api/products');
+      if (res.data?.success && Array.isArray(res.data.products)) {
+        setProducts(res.data.products);
+        try {
+          localStorage.setItem('kalam_products_db', JSON.stringify(res.data.products));
+        } catch {}
+      }
+
+      const settingsRes = await safeFetchJson<{ success: boolean; settings: StoreSettings }>('/api/store-settings');
+      if (settingsRes.data?.success && settingsRes.data.settings) {
+        setStoreSettings(settingsRes.data.settings);
+      }
+
+      playSuccessChime();
+      showToast('✨ Panel synchronized smoothly!');
+    } catch {
+      showToast('⚠️ Catalog synced from cache.');
+    } finally {
+      setIsSyncingStore(false);
+      setTimeout(() => setIsGlobalLoading(false), 350);
+    }
+  };
+
+  const handleSelectUserTab = (tab: UserNavTab) => {
+    if (tab !== 'dashboard' && !currentUser) {
+      requireAuth(() => handleSelectUserTab(tab), tab.replace('_', ' ').toUpperCase());
+      return;
+    }
+    if (tab === userTab) return;
+    playPopSound();
+    setIsGlobalLoading(true);
+    setUserTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => {
+      setIsGlobalLoading(false);
+    }, 220);
+  };
+
   const handleLoginSuccess = (user: AuthUser) => {
     const configuredAdminEmail = (storeSettings?.adminEmail || 'kalam172010@gmail.com').trim().toLowerCase();
     const cleanEmail = (user.email || '').trim().toLowerCase();
@@ -665,8 +801,17 @@ export default function App() {
     );
     const resolvedBalance = found ? found.walletBalance : (user.walletBalance ?? (isAdmin ? 290011.65 : 0));
 
+    // Preserve the original registration date, never overwrite with today's login date
+    const resolvedJoinedDate =
+      (user.joinedDate && user.joinedDate !== 'Recently' && !user.joinedDate.toLowerCase().includes('today') ? user.joinedDate : null) ||
+      (found?.joinedDate && found.joinedDate !== 'Recently' && !found.joinedDate.toLowerCase().includes('today') ? found.joinedDate : null) ||
+      user.joinedDate ||
+      found?.joinedDate ||
+      new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
     const resolvedUser: AuthUser = {
       ...user,
+      joinedDate: resolvedJoinedDate,
       walletBalance: resolvedBalance,
       role: isAdmin ? 'ADMIN' : (found?.role || user.role || 'USER'),
     };
@@ -708,7 +853,7 @@ export default function App() {
       isReseller: isAdmin || user.role === 'RESELLER' || Boolean(found?.isReseller),
       role: isAdmin ? 'ADMIN' : (found?.role || user.role || 'USER'),
       status: found?.status || 'ACTIVE',
-      joinedDate: found?.joinedDate || user.joinedDate || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      joinedDate: resolvedJoinedDate,
     };
 
     setResellers((prev) => {
@@ -932,11 +1077,27 @@ export default function App() {
     showToast(`₹${amount} deposited successfully to your wallet!`);
   };
 
-  const handlePurchaseKey = async (product: Product, plan: PlanPricing, quantity: number = 1) => {
+  const handlePurchaseKey = async (
+    product: Product,
+    plan: PlanPricing,
+    quantity: number = 1,
+    coupon?: DiscountCoupon
+  ) => {
     const currentBal = currentUser ? currentUser.walletBalance : userStats.balance;
     const isUserReseller = Boolean(currentUser?.role === 'RESELLER' || currentUser?.isReseller);
     const unitPrice = isUserReseller && typeof plan.resellerPrice === 'number' ? plan.resellerPrice : plan.price;
-    const totalCost = unitPrice * quantity;
+    const rawCost = unitPrice * quantity;
+
+    let discountAmount = 0;
+    if (coupon) {
+      if (typeof coupon.discountPercent === 'number' && coupon.discountPercent > 0) {
+        discountAmount = (rawCost * coupon.discountPercent) / 100;
+      } else if (typeof coupon.discountFlat === 'number' && coupon.discountFlat > 0) {
+        discountAmount = coupon.discountFlat;
+      }
+      discountAmount = Math.min(rawCost, Math.round(discountAmount * 100) / 100);
+    }
+    const totalCost = Math.max(0, Math.round((rawCost - discountAmount) * 100) / 100);
 
     if (currentBal < totalCost) {
       showToast(`Insufficient balance! You need ₹${(totalCost - currentBal).toFixed(2)} more. Opening Deposit...`);
@@ -954,6 +1115,8 @@ export default function App() {
       plan,
       quantity,
       totalCost,
+      discountAmount: discountAmount > 0 ? discountAmount : undefined,
+      couponCode: coupon?.code,
       stage: 'CONNECTING',
       label: 'Connecting to Engine',
       subLabel: `Connecting to API gateway and verifying balance for ${product.name}...`,
@@ -1150,6 +1313,10 @@ export default function App() {
       saveProductsToFirestore(updatedProducts).catch(console.warn);
 
       // 4. Record Transaction & persist to Firestore
+      if (coupon) {
+        recordCouponUsage(coupon.code);
+      }
+
       const newTx: TransactionRecord = {
         id: `TXN-${Date.now().toString().slice(-6)}`,
         type: 'KEY_PURCHASE',
@@ -1158,7 +1325,9 @@ export default function App() {
         date: purchaseTimestamp,
         method: 'Wallet Balance',
         utrOrReference: orderRef,
-        description: `Delivered ${quantity} key(s) from ${data.source || 'API'} [${invoiceNum}]`,
+        description: `Delivered ${quantity} key(s) from ${data.source || 'API'} [${invoiceNum}]${
+          coupon ? ` (Coupon: ${coupon.code} -₹${discountAmount.toFixed(2)})` : ''
+        }`,
       };
 
       const nextTxns = [newTx, ...transactions];
@@ -1203,6 +1372,7 @@ export default function App() {
         quantity,
       }).catch(() => {});
 
+      playSuccessChime();
       showToast(`Key Delivered & Invoice #${invoiceNum} Generated!`);
 
       // Set Progress Bar to 100% SUCCESS and show delivered keys inside the Key Purchase Modal
@@ -1279,21 +1449,105 @@ export default function App() {
     } else {
       updatedProducts = [prod, ...products];
       setProducts(updatedProducts);
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://kalam-store.com';
       const newLink: ProductLink = {
         id: `link-${Date.now()}`,
         productId: prod.id,
         productName: prod.name,
         status: prod.status === 'ACTIVE' ? 'ACTIVE' : 'DISABLED',
-        directLink: `https://t.me/Kalam_Mods_Official_bot?start=prod_${prod.name.toLowerCase().replace(/\s+/g, '_')}`,
+        directLink: `${origin}/?product=${prod.id}`,
+        websiteLink: `${origin}/?product=${prod.id}`,
+        botLink: `https://t.me/Kalam_Mods_Official_bot?start=prod_${prod.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+        game: prod.game,
+        category: prod.category,
+        customSlug: prod.id,
+        createdAt: new Date().toISOString(),
       };
       setProductLinks((prev) => {
         const nextLinks = [newLink, ...prev];
+        try {
+          localStorage.setItem('kalam_product_links_db', JSON.stringify(nextLinks));
+        } catch {}
         saveProductLinksToFirestore(nextLinks).catch(console.warn);
         return nextLinks;
       });
       showToast(`Product "${prod.name}" created successfully!`);
     }
     saveProductsToFirestore(updatedProducts).catch(console.warn);
+  };
+
+  const handleSaveProductLink = (link: ProductLink) => {
+    setProductLinks((prev) => {
+      const exists = prev.some((l) => l.id === link.id);
+      const updated = exists ? prev.map((l) => (l.id === link.id ? link : l)) : [link, ...prev];
+      try {
+        localStorage.setItem('kalam_product_links_db', JSON.stringify(updated));
+      } catch {}
+      saveProductLinksToFirestore(updated).catch(console.warn);
+      return updated;
+    });
+    showToast(`Product link for "${link.productName}" saved!`);
+  };
+
+  const handleDeleteProductLink = (linkId: string) => {
+    setProductLinks((prev) => {
+      const updated = prev.filter((l) => l.id !== linkId);
+      try {
+        localStorage.setItem('kalam_product_links_db', JSON.stringify(updated));
+      } catch {}
+      saveProductLinksToFirestore(updated).catch(console.warn);
+      return updated;
+    });
+    showToast('Product link deleted.');
+  };
+
+  const handleSyncAllProductLinks = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://kalam-store.com';
+    const existingProductIds = new Set(productLinks.map((l) => l.productId));
+
+    const newLinks: ProductLink[] = [];
+    products.forEach((prod) => {
+      if (!existingProductIds.has(prod.id)) {
+        newLinks.push({
+          id: `link-${prod.id}`,
+          productId: prod.id,
+          productName: prod.name,
+          directLink: `${origin}/?product=${prod.id}`,
+          websiteLink: `${origin}/?product=${prod.id}`,
+          botLink: `https://t.me/Kalam_Mods_Official_bot?start=prod_${prod.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+          status: prod.status === 'ACTIVE' ? 'ACTIVE' : 'DISABLED',
+          game: prod.game,
+          category: prod.category,
+          customSlug: prod.id,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    if (newLinks.length === 0) {
+      showToast('All catalog products already have active links!');
+      return;
+    }
+
+    const merged = [...productLinks, ...newLinks];
+    setProductLinks(merged);
+    try {
+      localStorage.setItem('kalam_product_links_db', JSON.stringify(merged));
+    } catch {}
+    saveProductLinksToFirestore(merged).catch(console.warn);
+    showToast(`Synced ${newLinks.length} product link(s) to store!`);
+  };
+
+  const handleToggleProductLinkStatus = (linkId: string, nextStatus: 'ACTIVE' | 'DISABLED') => {
+    setProductLinks((prev) => {
+      const updated = prev.map((l) => (l.id === linkId ? { ...l, status: nextStatus } : l));
+      try {
+        localStorage.setItem('kalam_product_links_db', JSON.stringify(updated));
+      } catch {}
+      saveProductLinksToFirestore(updated).catch(console.warn);
+      return updated;
+    });
+    showToast(`Link status set to ${nextStatus}.`);
   };
 
   const handleEditProduct = (product: Product) => {
@@ -1743,16 +1997,10 @@ export default function App() {
           {appMode === 'user' && (
             <UserLayout
               activeTab={userTab}
-              onSelectTab={(tab) => {
-                if (tab !== 'dashboard' && !currentUser) {
-                  requireAuth(() => setUserTab(tab), tab.replace('_', ' ').toUpperCase());
-                  return;
-                }
-                setUserTab(tab);
-              }}
+              onSelectTab={handleSelectUserTab}
               onOpenHowToDeposit={() => setIsHowToDepositOpen(true)}
-              onOpenSupport={() => requireAuth(() => setUserTab('tickets'), 'Support Tickets')}
-              onOpenProfile={() => requireAuth(() => setUserTab('profile'), 'Profile')}
+              onOpenSupport={() => requireAuth(() => handleSelectUserTab('tickets'), 'Support Tickets')}
+              onOpenProfile={() => requireAuth(() => handleSelectUserTab('profile'), 'Profile')}
               onSwitchToAdmin={() => {
                 setAppMode('admin');
                 setAdminTab('dashboard');
@@ -1764,6 +2012,12 @@ export default function App() {
               currentUser={currentUser}
               onOpenAuthModal={() => handleOpenAuth('LOGIN')}
               onLogout={handleLogout}
+              isLoading={isGlobalLoading}
+              onRefreshData={handleSyncStoreData}
+              isRefreshing={isSyncingStore}
+              products={products}
+              onOpenDeposit={() => requireAuth(() => setIsDepositOpen(true), 'Deposit Wallet')}
+              onOpenBuyKeys={() => requireAuth(() => handleSelectUserTab('buy_keys'), 'Key Store')}
             >
               {userTab === 'dashboard' && (
                 <UserDashboard
@@ -1805,6 +2059,7 @@ export default function App() {
                   }
                   onOpenDeposit={() => requireAuth(() => setIsDepositOpen(true), 'Deposit Wallet')}
                   storeSettings={storeSettings}
+                  targetProductId={targetProductId}
                 />
               )}
 
@@ -1922,6 +2177,7 @@ export default function App() {
                 currentUser={currentUser}
                 userKeys={userKeys}
                 transactions={transactions}
+                storeSettings={storeSettings}
               />
             )}
 
@@ -1950,7 +2206,14 @@ export default function App() {
             )}
 
             {adminTab === 'product_links' && (
-              <AdminProductLinksView productLinks={productLinks} />
+              <AdminProductLinksView
+                productLinks={productLinks}
+                products={products}
+                onSaveProductLink={handleSaveProductLink}
+                onDeleteProductLink={handleDeleteProductLink}
+                onSyncAllProductLinks={handleSyncAllProductLinks}
+                onToggleLinkStatus={handleToggleProductLinkStatus}
+              />
             )}
 
             {adminTab === 'api_setup' && (
@@ -1991,7 +2254,9 @@ export default function App() {
             {adminTab === 'sold_keys' && (
               <AdminSoldKeysView
                 soldKeys={userKeys}
+                transactions={transactions}
                 storeSettings={storeSettings}
+                currentUser={currentUser}
                 onSeedSampleKeys={(sampleKeys) => setUserKeys((prev) => [...sampleKeys, ...prev])}
               />
             )}

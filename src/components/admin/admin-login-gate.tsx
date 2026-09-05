@@ -128,6 +128,34 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({
         // ignore
       }
 
+      let adminJoined = 'Jan 15, 2024';
+      try {
+        const storedUsersRaw = localStorage.getItem('kalam_users_db');
+        if (storedUsersRaw) {
+          const storedUsers: any[] = JSON.parse(storedUsersRaw);
+          const found = storedUsers.find(
+            (u) => (u.email && u.email.toLowerCase() === cleanEmail) || u.role === 'ADMIN'
+          );
+          if (found && found.joinedDate && !found.joinedDate.toLowerCase().includes('today')) {
+            adminJoined = found.joinedDate;
+          }
+        }
+        const cachedAuth = localStorage.getItem('kalam_auth_user');
+        if (cachedAuth) {
+          const parsed = JSON.parse(cachedAuth);
+          if (parsed && parsed.joinedDate && !parsed.joinedDate.toLowerCase().includes('today')) {
+            adminJoined = parsed.joinedDate;
+          }
+        }
+        if (auth.currentUser?.metadata?.creationTime) {
+          adminJoined = new Date(auth.currentUser.metadata.creationTime).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+        }
+      } catch {}
+
       const adminUser: AuthUser = {
         id: 'USR_172010_ADMIN',
         email: cleanEmail,
@@ -135,11 +163,7 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({
         username: 'kalam_admin',
         role: 'ADMIN',
         walletBalance: adminBalance,
-        joinedDate: new Date().toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        }),
+        joinedDate: adminJoined,
       };
 
       try {

@@ -59,6 +59,10 @@ import {
   Gift,
   Radio,
   Clock,
+  Bot,
+  Share2,
+  Smartphone,
+  Filter,
 } from 'lucide-react';
 import { GlassCard } from '../shared/glass-card';
 import { StoreLogo } from '../shared/store-logo';
@@ -508,91 +512,810 @@ export const AdminProductsView: React.FC<AdminProductsViewProps> = ({
 /* ==================== 2. ADMIN PRODUCT LINKS VIEW ==================== */
 interface AdminProductLinksViewProps {
   productLinks: ProductLink[];
+  products?: Product[];
+  onSaveProductLink?: (link: ProductLink) => void;
+  onDeleteProductLink?: (id: string) => void;
+  onSyncAllProductLinks?: () => void;
+  onToggleLinkStatus?: (linkId: string, status: 'ACTIVE' | 'DISABLED') => void;
 }
 
 export const AdminProductLinksView: React.FC<AdminProductLinksViewProps> = ({
   productLinks,
+  products = [],
+  onSaveProductLink,
+  onDeleteProductLink,
+  onSyncAllProductLinks,
+  onToggleLinkStatus,
 }) => {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://kalam-store.com';
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disabled'>('all');
+  const [viewMode, setViewMode] = useState<'all' | 'website' | 'bot'>('all');
+  const [qrModal, setQrModal] = useState<{ name: string; url: string } | null>(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
-  const handleCopy = (link: ProductLink) => {
-    navigator.clipboard.writeText(link.directLink);
-    setCopiedId(link.id);
-    setTimeout(() => setCopiedId(null), 2000);
+  // New Link form state
+  const [newProductId, setNewProductId] = useState<string>('');
+  const [newProductName, setNewProductName] = useState<string>('');
+  const [newSlug, setNewSlug] = useState<string>('');
+  const [newCustomUrl, setNewCustomUrl] = useState<string>('');
+
+  // Automatically merge all catalog products with productLinks
+  const mergedLinks: ProductLink[] = useMemo(() => {
+    const list: ProductLink[] = [];
+    const seenProductIds = new Set<string>();
+
+    // 1. Every product in the current catalog gets an active Website Product Link
+    products.forEach((prod) => {
+      seenProductIds.add(prod.id);
+      const existing = productLinks.find((l) => l.productId === prod.id);
+      const slug = existing?.customSlug || prod.id;
+      const webUrl = `${origin}/?product=${encodeURIComponent(slug)}`;
+      const botUrl = `https://t.me/Kalam_Mods_Official_bot?start=prod_${prod.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+
+      list.push({
+        id: existing?.id || `link-${prod.id}`,
+        productId: prod.id,
+        productName: prod.name,
+        status: existing ? existing.status : prod.status === 'ACTIVE' ? 'ACTIVE' : 'DISABLED',
+        directLink: existing?.directLink || webUrl,
+        websiteLink: existing?.websiteLink || webUrl,
+        botLink: existing?.botLink || botUrl,
+        customSlug: slug,
+        game: prod.game,
+        category: prod.category,
+      });
+    });
+
+    // 2. Add custom or standalone links from productLinks
+    productLinks.forEach((link) => {
+      if (link.productId && seenProductIds.has(link.productId)) return;
+      const webUrl = link.websiteLink || link.directLink || `${origin}/?product=${link.id}`;
+      const botUrl = link.botLink || (link.directLink?.includes('t.me') ? link.directLink : undefined);
+      list.push({
+        ...link,
+        directLink: webUrl,
+        websiteLink: webUrl,
+        botLink: botUrl,
+      });
+    });
+
+    return list;
+  }, [products, productLinks, origin]);
+
+  // Filtered links
+  const filteredLinks = useMemo(() => {
+    return mergedLinks.filter((link) => {
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        link.productName.toLowerCase().includes(q) ||
+        (link.game || '').toLowerCase().includes(q) ||
+        (link.category || '').toLowerCase().includes(q) ||
+        (link.customSlug || '').toLowerCase().includes(q) ||
+        link.productId.toLowerCase().includes(q);
+
+      if (!matchesSearch) return false;
+
+      if (statusFilter === 'active' && link.status !== 'ACTIVE') return false;
+      if (statusFilter === 'disabled' && link.status !== 'DISABLED') return false;
+
+      return true;
+    });
+  }, [mergedLinks, searchQuery, statusFilter]);
+
+  const handleCopy = (key: string, textToCopy: string) => {
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const handleSyncAll = () => {
+    if (onSyncAllProductLinks) {
+      onSyncAllProductLinks();
+    } else if (onSaveProductLink) {
+      mergedLinks.forEach((l) => onSaveProductLink(l));
+    }
+    setSyncNotice(`✓ Synced all ${mergedLinks.length} website product links!`);
+    setTimeout(() => setSyncNotice(null), 3000);
+  };
+
+  const handleToggleStatus = (link: ProductLink) => {
+    const nextStatus = link.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
+    if (onToggleLinkStatus) {
+      onToggleLinkStatus(link.id, nextStatus);
+    } else if (onSaveProductLink) {
+      onSaveProductLink({
+        ...link,
+        status: nextStatus,
+      });
+    }
+  };
+
+  const handleCreateCustomLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    const selectedProd = products.find((p) => p.id === newProductId);
+    const prodName = selectedProd ? selectedProd.name : newProductName.trim() || 'Custom Product Link';
+    const slug = (newSlug.trim() || (selectedProd ? selectedProd.id : `link-${Date.now()}`)).replace(/\s+/g, '-');
+    const webUrl = newCustomUrl.trim() || `${origin}/?product=${encodeURIComponent(slug)}`;
+    const botUrl = `https://t.me/Kalam_Mods_Official_bot?start=prod_${prodName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+
+    const newLink: ProductLink = {
+      id: `link-${Date.now()}`,
+      productId: selectedProd ? selectedProd.id : `custom-${Date.now()}`,
+      productName: prodName,
+      status: 'ACTIVE',
+      directLink: webUrl,
+      websiteLink: webUrl,
+      botLink: botUrl,
+      customSlug: slug,
+      game: selectedProd?.game,
+      category: selectedProd?.category,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (onSaveProductLink) {
+      onSaveProductLink(newLink);
+    }
+    setIsAddModalOpen(false);
+    setNewProductId('');
+    setNewProductName('');
+    setNewSlug('');
+    setNewCustomUrl('');
+    setSyncNotice(`✓ Product link for "${prodName}" added!`);
+    setTimeout(() => setSyncNotice(null), 3000);
+  };
+
+  const handleExportAll = () => {
+    const lines = [
+      '# KALAM STORE - OFFICIAL PRODUCT DIRECT LINKS',
+      `# Generated: ${new Date().toLocaleString()}`,
+      `# Total Links: ${mergedLinks.length}`,
+      '',
+    ];
+
+    mergedLinks.forEach((l) => {
+      lines.push(`Product: ${l.productName} [${l.status}]`);
+      if (l.game) lines.push(`Game: ${l.game}`);
+      lines.push(`Website Storefront Link: ${l.websiteLink || l.directLink}`);
+      if (l.botLink) lines.push(`Telegram Bot Link: ${l.botLink}`);
+      lines.push('----------------------------------------');
+    });
+
+    navigator.clipboard.writeText(lines.join('\n'));
+    setSyncNotice('✓ All product links copied to clipboard!');
+    setTimeout(() => setSyncNotice(null), 3000);
   };
 
   return (
     <div className="space-y-4" id="admin-product-links-view">
-      {/* Header */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-[#00e5ff]/20 border border-[#00e5ff]/40 flex items-center justify-center text-[#00e5ff]">
-            <Link2 className="w-3.5 h-3.5" />
+      {/* Header & Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#161622]/90 p-4 rounded-2xl border border-white/10 shadow-lg">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-[#00e5ff]/20 border border-[#00e5ff]/40 flex items-center justify-center text-[#00e5ff] shadow-[0_0_15px_rgba(0,229,255,0.3)]">
+              <Link2 className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-extrabold text-white">Website Product Links</h2>
+                <span className="px-2 py-0.5 rounded-full bg-[#00e5ff]/15 border border-[#00e5ff]/30 text-[#00e5ff] text-[10px] font-mono font-bold">
+                  {mergedLinks.length} Products
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-400">
+                Direct storefront URLs & Telegram bot links for all catalog items.
+              </p>
+            </div>
           </div>
-          <h2 className="text-base font-extrabold text-white">Product Links</h2>
         </div>
-        {/* English Description */}
-        <p className="text-[11px] text-gray-300 leading-relaxed font-medium">
-          Direct links for every product — when customers open this link, the storefront navigates directly to that product's plan and pricing list.
-        </p>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleSyncAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 hover:border-cyan-400/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
+            title="Sync all products from store catalog"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Sync Catalog</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 hover:border-purple-400/40 text-xs font-bold transition-all cursor-pointer shadow-sm"
+            title="Copy all links as formatted list"
+          >
+            <Share2 className="w-3.5 h-3.5 text-purple-400" />
+            <span>Export List</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#00e5ff] to-cyan-500 hover:from-cyan-400 hover:to-cyan-500 text-black font-extrabold text-xs shadow-[0_0_15px_rgba(0,229,255,0.4)] transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Custom Link</span>
+          </button>
+        </div>
       </div>
 
-      {/* Product Links Table / Cards */}
-      <GlassCard glow="cyan" className="p-3 bg-[#161622]/95 border-white/10 overflow-x-auto space-y-2">
-        <div className="grid grid-cols-12 text-[10px] font-bold text-gray-400 uppercase py-1 px-2 border-b border-white/5 tracking-wider min-w-[340px]">
-          <div className="col-span-4">PRODUCT</div>
-          <div className="col-span-3">STATUS</div>
-          <div className="col-span-5 text-right">ACTION</div>
-        </div>
-
-        <div className="divide-y divide-white/5 min-w-[340px]">
-          {productLinks.map((link) => (
-            <div key={link.id} className="py-2.5 px-2 space-y-1.5">
-              <div className="grid grid-cols-12 items-center">
-                <div className="col-span-4 font-bold text-white text-xs truncate">
-                  {link.productName}
-                </div>
-                <div className="col-span-3">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    {link.status}
-                  </span>
-                </div>
-                <div className="col-span-5 flex justify-end">
-                  <button
-                    onClick={() => handleCopy(link)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[#8b5cf6]/40 hover:border-[#8b5cf6] text-[#8b5cf6] hover:bg-[#8b5cf6]/10 text-xs font-semibold transition-all cursor-pointer"
-                  >
-                    {copiedId === link.id ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400">Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy Link</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* URL preview */}
-              <div className="p-1.5 rounded bg-black/50 text-[10px] font-mono text-gray-400 truncate select-all">
-                {link.directLink}
-              </div>
+      {/* Sync Toast Feedback */}
+      <AnimatePresence>
+        {syncNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center justify-between shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>{syncNotice}</span>
             </div>
-          ))}
+            <button
+              onClick={() => setSyncNotice(null)}
+              className="text-gray-400 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Search & Filter Bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+        {/* Search Input */}
+        <div className="sm:col-span-6 relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by product name, game, category, or ID..."
+            className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-[#12121c] border border-white/10 focus:border-cyan-400 focus:outline-none text-xs text-white placeholder-gray-500 transition-colors"
+          />
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
+
+        {/* View Mode Switcher */}
+        <div className="sm:col-span-3 flex rounded-xl bg-[#12121c] p-1 border border-white/10">
+          <button
+            type="button"
+            onClick={() => setViewMode('all')}
+            className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold transition-all ${
+              viewMode === 'all'
+                ? 'bg-[#00e5ff]/20 text-[#00e5ff] shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            All Links
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('website')}
+            className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold transition-all ${
+              viewMode === 'website'
+                ? 'bg-cyan-500/20 text-cyan-300 shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            🌐 Website
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('bot')}
+            className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold transition-all ${
+              viewMode === 'bot'
+                ? 'bg-purple-500/20 text-purple-300 shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            🤖 Bot
+          </button>
+        </div>
+
+        {/* Status Filter */}
+        <div className="sm:col-span-3 flex rounded-xl bg-[#12121c] p-1 border border-white/10">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold transition-all ${
+              statusFilter === 'all'
+                ? 'bg-white/10 text-white shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('active')}
+            className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold transition-all ${
+              statusFilter === 'active'
+                ? 'bg-emerald-500/20 text-emerald-300 shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Active
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('disabled')}
+            className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold transition-all ${
+              statusFilter === 'disabled'
+                ? 'bg-rose-500/20 text-rose-300 shadow-sm'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Disabled
+          </button>
+        </div>
+      </div>
+
+      {/* Product Links List */}
+      <GlassCard glow="cyan" className="p-4 bg-[#161622]/95 border-white/10 space-y-3">
+        {filteredLinks.length === 0 ? (
+          <div className="text-center py-10 space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-gray-400">
+              <Link2 className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-bold text-gray-300">No product links found</p>
+              <p className="text-xs text-gray-500">
+                {searchQuery
+                  ? 'Try changing your search keywords or filter settings.'
+                  : 'Click "Sync Catalog" to populate links from your active products.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSyncAll}
+              className="px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition-all cursor-pointer"
+            >
+              Sync Products Catalog
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredLinks.map((link) => {
+              const websiteUrl = link.websiteLink || link.directLink || `${origin}/?product=${link.productId}`;
+              const botUrl =
+                link.botLink ||
+                `https://t.me/Kalam_Mods_Official_bot?start=prod_${link.productName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+
+              const isWebCopied = copiedKey === `web-${link.id}`;
+              const isBotCopied = copiedKey === `bot-${link.id}`;
+              const isActive = link.status === 'ACTIVE';
+
+              return (
+                <div
+                  key={link.id}
+                  id={`link-card-${link.id}`}
+                  className={`p-3.5 rounded-2xl border transition-all duration-200 space-y-3 ${
+                    isActive
+                      ? 'bg-[#10101a] border-white/10 hover:border-cyan-500/40 shadow-sm'
+                      : 'bg-black/40 border-white/5 opacity-75'
+                  }`}
+                >
+                  {/* Top Row: Title, Game, Status & Quick Actions */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500/20 to-cyan-500/20 border border-white/10 flex items-center justify-center shrink-0">
+                        <Box className="w-4 h-4 text-cyan-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-xs font-extrabold text-white truncate max-w-[240px] sm:max-w-md">
+                            {link.productName}
+                          </h4>
+                          {link.game && (
+                            <span className="px-2 py-0.5 rounded-full bg-purple-950/80 border border-purple-500/40 text-purple-300 text-[9px] font-bold uppercase tracking-wider">
+                              {link.game}
+                            </span>
+                          )}
+                          {link.category && (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-300 text-[9px] font-bold uppercase tracking-wider">
+                              {link.category}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono text-gray-400">
+                          ID: {link.productId}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Status & QR / Delete */}
+                    <div className="flex items-center gap-2">
+                      {/* Active/Disabled status toggle */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus(link)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                          isActive
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                            : 'bg-rose-500/10 text-rose-400 border-rose-500/30 hover:bg-rose-500/20'
+                        }`}
+                      >
+                        {isActive ? (
+                          <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>ACTIVE</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                            <span>DISABLED</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* QR Code trigger */}
+                      <button
+                        type="button"
+                        onClick={() => setQrModal({ name: link.productName, url: websiteUrl })}
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-cyan-400 border border-white/10 transition-colors cursor-pointer"
+                        title="Show QR Code for Website Product Link"
+                      >
+                        <QrCode className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Delete Custom Link */}
+                      {link.id.startsWith('link-custom-') || !products.some((p) => p.id === link.productId) ? (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteProductLink && onDeleteProductLink(link.id)}
+                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors cursor-pointer"
+                          title="Delete custom link"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Dual URL Section */}
+                  <div className="space-y-2">
+                    {/* 1. Website Storefront Direct URL */}
+                    {(viewMode === 'all' || viewMode === 'website') && (
+                      <div className="p-2.5 rounded-xl bg-black/60 border border-cyan-500/30 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-cyan-400 text-[10px] font-extrabold uppercase tracking-wider">
+                            <Globe className="w-3.5 h-3.5" />
+                            <span>Website Storefront Product Link</span>
+                            <span className="px-1.5 py-0.2 rounded bg-cyan-950 text-[9px] text-cyan-300 font-mono">
+                              Direct Web URL
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <a
+                              href={websiteUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-950/60 hover:bg-cyan-900/80 text-cyan-300 hover:text-cyan-200 border border-cyan-500/40 text-[10px] font-semibold transition-colors"
+                            >
+                              <span>Test / Open</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(`web-${link.id}`, websiteUrl)}
+                              className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                                isWebCopied
+                                  ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50'
+                                  : 'bg-[#00e5ff]/20 hover:bg-[#00e5ff]/30 text-[#00e5ff] border border-[#00e5ff]/40'
+                              }`}
+                            >
+                              {isWebCopied ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span>Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>Copy Website Link</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-1.5 rounded-lg bg-[#0a0a10] border border-white/5 font-mono text-[11px] text-cyan-200 select-all truncate">
+                          {websiteUrl}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2. Telegram Bot URL */}
+                    {(viewMode === 'all' || viewMode === 'bot') && (
+                      <div className="p-2.5 rounded-xl bg-black/60 border border-purple-500/30 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-purple-400 text-[10px] font-extrabold uppercase tracking-wider">
+                            <Bot className="w-3.5 h-3.5" />
+                            <span>Telegram Bot Start Link</span>
+                            <span className="px-1.5 py-0.2 rounded bg-purple-950 text-[9px] text-purple-300 font-mono">
+                              Bot Direct Key
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <a
+                              href={botUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 hover:text-purple-200 border border-purple-500/40 text-[10px] font-semibold transition-colors"
+                            >
+                              <span>Open Bot</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(`bot-${link.id}`, botUrl)}
+                              className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                                isBotCopied
+                                  ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50'
+                                  : 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40'
+                              }`}
+                            >
+                              {isBotCopied ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span>Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>Copy Bot Link</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-1.5 rounded-lg bg-[#0a0a10] border border-white/5 font-mono text-[11px] text-purple-300 select-all truncate">
+                          {botUrl}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </GlassCard>
 
-      {/* Yellow Info Box with Lightbulb icon */}
-      <div className="p-3.5 rounded-2xl bg-yellow-950/40 border border-yellow-500/30 text-yellow-300 flex items-start gap-2.5">
+      {/* Info Guideline Card */}
+      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-yellow-950/40 via-purple-950/30 to-cyan-950/30 border border-yellow-500/30 text-yellow-300 flex items-start gap-3 shadow-lg">
         <Lightbulb className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
-        <p className="text-[11px] leading-relaxed">
-          Links for disabled products will not function until the product is re-enabled from the Manage Products tab.
-        </p>
+        <div className="space-y-1 text-[11px] leading-relaxed">
+          <p className="font-bold text-yellow-200">
+            How Website Product Links Work on Storefront:
+          </p>
+          <p className="text-gray-300">
+            When a customer clicks or opens a <span className="text-cyan-300 font-mono font-bold">Website Storefront Link</span> (e.g. <span className="font-mono text-white">/?product=...</span>), the store automatically opens directly to that product, highlights the item card, and expands all available plans so they can buy instantly without searching.
+          </p>
+        </div>
       </div>
+
+      {/* ==================== ADD CUSTOM PRODUCT LINK MODAL ==================== */}
+      <AnimatePresence>
+        {isAddModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-[#161622] border border-cyan-500/30 rounded-3xl p-5 shadow-[0_0_40px_rgba(0,229,255,0.2)] space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-white">Add Product Link</h3>
+                    <p className="text-[11px] text-gray-400">Create a direct storefront or bot link</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="p-1 rounded-lg text-gray-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateCustomLink} className="space-y-3.5">
+                {/* Select from catalog products */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-300 mb-1">
+                    Select Catalog Product (Optional)
+                  </label>
+                  <select
+                    value={newProductId}
+                    onChange={(e) => {
+                      setNewProductId(e.target.value);
+                      const prod = products.find((p) => p.id === e.target.value);
+                      if (prod) {
+                        setNewProductName(prod.name);
+                        setNewSlug(prod.id);
+                      }
+                    }}
+                    className="w-full px-3 py-2.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:border-cyan-400 focus:outline-none"
+                  >
+                    <option value="">-- Choose from existing products --</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.game || 'Game'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Product Name (if custom) */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-300 mb-1">
+                    Product Name / Title
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newProductName}
+                    onChange={(e) => setNewProductName(e.target.value)}
+                    placeholder="e.g. FREE FIRE VIP MOD"
+                    className="w-full px-3 py-2.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
+
+                {/* Custom URL Slug */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-300 mb-1">
+                    Direct Slug Parameter (e.g. ?product=your_slug)
+                  </label>
+                  <div className="flex items-center gap-1 bg-black/60 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-gray-400 font-mono">
+                    <span>{origin}/?product=</span>
+                    <input
+                      type="text"
+                      value={newSlug}
+                      onChange={(e) => setNewSlug(e.target.value)}
+                      placeholder="freefire_vip"
+                      className="bg-transparent text-white font-mono flex-1 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Custom Destination URL (Optional Override) */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-300 mb-1">
+                    Custom Target URL (Optional override)
+                  </label>
+                  <input
+                    type="url"
+                    value={newCustomUrl}
+                    onChange={(e) => setNewCustomUrl(e.target.value)}
+                    placeholder="Leave blank to use default storefront direct URL"
+                    className="w-full px-3 py-2.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-black text-xs font-extrabold shadow-[0_0_20px_rgba(0,229,255,0.4)] transition-all cursor-pointer"
+                  >
+                    Create Product Link
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ==================== QR CODE MODAL ==================== */}
+      <AnimatePresence>
+        {qrModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-sm bg-[#161622] border border-cyan-500/40 rounded-3xl p-5 text-center space-y-4 shadow-[0_0_40px_rgba(0,229,255,0.25)]"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                <h3 className="text-xs font-extrabold text-white truncate max-w-[220px]">
+                  {qrModal.name}
+                </h3>
+                <button
+                  onClick={() => setQrModal(null)}
+                  className="text-gray-400 hover:text-white p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* High Contrast QR Code */}
+              <div className="p-4 bg-white rounded-2xl mx-auto inline-block shadow-inner">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=4&data=${encodeURIComponent(
+                    qrModal.url
+                  )}`}
+                  alt="QR Code"
+                  className="w-48 h-48 block mx-auto"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-[11px] text-gray-300 font-medium">
+                  Scan to open website product directly on mobile
+                </p>
+                <p className="text-[10px] font-mono text-cyan-400 break-all select-all">
+                  {qrModal.url}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleCopy('qr-url', qrModal.url)}
+                  className="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  {copiedKey === 'qr-url' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy URL</span>
+                    </>
+                  )}
+                </button>
+
+                <a
+                  href={`https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=6&data=${encodeURIComponent(
+                    qrModal.url
+                  )}`}
+                  download={`qr-${qrModal.name.toLowerCase().replace(/\s+/g, '_')}.png`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download QR</span>
+                </a>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

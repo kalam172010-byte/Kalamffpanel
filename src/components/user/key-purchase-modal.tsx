@@ -29,6 +29,8 @@ export interface KeyPurchaseModalData {
   plan: PlanPricing;
   quantity: number;
   totalCost: number;
+  discountAmount?: number;
+  couponCode?: string;
   stage: PurchaseStage;
   label: string;
   subLabel: string;
@@ -210,6 +212,12 @@ export const KeyPurchaseModal: React.FC<KeyPurchaseModalProps> = ({
               </span>
             </div>
             <h4 className="text-sm font-extrabold text-white truncate">{product.name}</h4>
+            {purchaseData.discountAmount && purchaseData.discountAmount > 0 ? (
+              <div className="flex items-center justify-between text-[11px] text-yellow-300 font-semibold bg-yellow-500/10 px-2 py-1 rounded-lg border border-yellow-500/20">
+                <span>Promo Discount ({purchaseData.couponCode || 'PROMO'}):</span>
+                <span>-{formatCurrency(purchaseData.discountAmount)}</span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between pt-1 border-t border-white/5 text-xs">
               <span className="text-gray-400 text-[11px]">Total Deducted Amount:</span>
               <span className="font-mono font-black text-emerald-400 text-sm">

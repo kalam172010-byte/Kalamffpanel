@@ -29,12 +29,16 @@ import {
   Sparkles,
   ExternalLink,
   Coins,
-  FileText
+  FileText,
+  Zap,
+  AlertCircle,
+  UserPlus
 } from 'lucide-react';
 import { GlassCard } from '../shared/glass-card';
 import { formatCurrency } from '../../lib/utils';
-import { AuthUser, ResellerUser, PurchasedKey, TransactionRecord } from '../../types';
+import { AuthUser, ResellerUser, PurchasedKey, TransactionRecord, StoreSettings } from '../../types';
 import { deduplicateUsers } from '../../lib/firestore-service';
+import { exportUsersToPdf } from '../../lib/pdf-export';
 
 interface AdminUserManagementViewProps {
   users: ResellerUser[];
@@ -48,6 +52,7 @@ interface AdminUserManagementViewProps {
   currentUser?: AuthUser | null;
   userKeys?: PurchasedKey[];
   transactions?: TransactionRecord[];
+  storeSettings?: StoreSettings;
 }
 
 export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = ({
@@ -62,15 +67,22 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
   currentUser,
   userKeys = [],
   transactions = [],
+  storeSettings,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'RESELLER' | 'USER' | 'ADMIN'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'BLOCKED' | 'WARNING' | 'NON_ZERO'>('ALL');
   const [sortBy, setSortBy] = useState<'balance_desc' | 'balance_asc' | 'keys_desc' | 'recent' | 'name'>('balance_desc');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [exportPdfFeedback, setExportPdfFeedback] = useState<string | null>(null);
 
   // Modals state
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [quickName, setQuickName] = useState('');
+  const [quickEmail, setQuickEmail] = useState('');
+  const [quickError, setQuickError] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<ResellerUser | null>(null);
   const [inspectingUser, setInspectingUser] = useState<ResellerUser | null>(null);
   const [balanceUser, setBalanceUser] = useState<{ user: ResellerUser; type: 'ADD' | 'MINUS' } | null>(null);
@@ -184,6 +196,60 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
     });
   };
 
+  const handleQuickAddSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setQuickError(null);
+
+    const cleanName = quickName.trim();
+    const cleanEmail = quickEmail.trim().toLowerCase();
+
+    if (!cleanName) {
+      setQuickError('Please enter the user\'s name.');
+      return;
+    }
+
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setQuickError('Please enter a valid email address.');
+      return;
+    }
+
+    // Check duplicate email
+    const exists = safeUsers.some((u) => u.email && u.email.trim().toLowerCase() === cleanEmail);
+    if (exists) {
+      setQuickError(`A user with email "${cleanEmail}" is already registered.`);
+      return;
+    }
+
+    const derivedUsername =
+      cleanEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') ||
+      cleanName.toLowerCase().replace(/\s+/g, '_');
+
+    onAddUser({
+      name: cleanName,
+      username: derivedUsername,
+      email: cleanEmail,
+      phone: '',
+      walletBalance: 0,
+      depositedToday: 0,
+      soldToday: 0,
+      totalKeysSold: 0,
+      isReseller: false,
+      role: 'USER',
+      joinedDate: new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }),
+      status: 'ACTIVE',
+      notes: 'Added via Quick Add',
+    });
+
+    setIsQuickAddOpen(false);
+    setQuickName('');
+    setQuickEmail('');
+    setQuickError(null);
+  };
+
   const handleSaveEditUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
@@ -199,6 +265,42 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+  };
+
+  // Export current filtered user list to PDF for bookkeeping
+  const handleExportUsersPdf = () => {
+    if (filteredUsers.length === 0) {
+      setExportPdfFeedback('No users match current filter to export.');
+      setTimeout(() => setExportPdfFeedback(null), 3500);
+      return;
+    }
+
+    try {
+      setIsExportingPdf(true);
+      const activeFiltersList: string[] = [];
+      if (roleFilter !== 'ALL') activeFiltersList.push(`Role: ${roleFilter}`);
+      if (statusFilter !== 'ALL') activeFiltersList.push(`Status: ${statusFilter}`);
+      if (searchTerm.trim()) activeFiltersList.push(`Search: "${searchTerm.trim()}"`);
+      const filterLabel =
+        activeFiltersList.length > 0
+          ? activeFiltersList.join(' | ')
+          : `All Filtered Accounts (${filteredUsers.length} Users)`;
+
+      const res = exportUsersToPdf({
+        users: filteredUsers,
+        storeSettings,
+        filterLabel,
+      });
+
+      setExportPdfFeedback(`Downloaded bookkeeping PDF: ${res.filename} (${res.count} users)`);
+      setTimeout(() => setExportPdfFeedback(null), 4000);
+    } catch (err: any) {
+      console.error('Error generating users PDF:', err);
+      setExportPdfFeedback(`Export error: ${err.message || 'Failed to generate PDF'}`);
+      setTimeout(() => setExportPdfFeedback(null), 4500);
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   return (
@@ -225,7 +327,7 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
         </div>
 
         {/* Global Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {onRefreshUsers && (
             <button
               onClick={() => {
@@ -242,13 +344,45 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
             </button>
           )}
 
+          {/* Export to PDF Button for Bookkeeping (Filtered Users: Name, Email, Wallet Balance) */}
+          <button
+            id="admin-export-users-pdf-btn"
+            onClick={handleExportUsersPdf}
+            disabled={isExportingPdf}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(239,68,68,0.35)] border border-red-400/40 cursor-pointer transition-all disabled:opacity-50"
+            title="Export current filtered list of user data (name, email, wallet balance) to PDF for bookkeeping"
+          >
+            {isExportingPdf ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 text-white" />
+            )}
+            <span>Export to PDF</span>
+          </button>
+
           <button
             onClick={handleExportUsers}
             className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all"
             title="Export Users to JSON"
           >
             <Download className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">Export</span>
+            <span className="hidden sm:inline">JSON</span>
+          </button>
+
+          {/* Quick Add Button (Opens minimalist modal with only Name and Email) */}
+          <button
+            id="admin-quick-add-user-btn"
+            onClick={() => {
+              setQuickName('');
+              setQuickEmail('');
+              setQuickError(null);
+              setIsQuickAddOpen(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:opacity-95 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(16,185,129,0.35)] border border-emerald-400/40 cursor-pointer transition-all"
+            title="Quickly add a user with only Name and Email"
+          >
+            <Zap className="w-3.5 h-3.5 fill-white text-white" />
+            <span>Quick Add</span>
           </button>
 
           <button
@@ -260,6 +394,27 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
           </button>
         </div>
       </div>
+
+      {/* PDF Export Feedback Alert */}
+      {exportPdfFeedback && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          className="p-3 rounded-xl bg-gradient-to-r from-slate-900 via-indigo-950/90 to-slate-900 border border-indigo-500/40 text-indigo-200 text-xs font-semibold flex items-center justify-between shadow-lg"
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{exportPdfFeedback}</span>
+          </div>
+          <button
+            onClick={() => setExportPdfFeedback(null)}
+            className="text-gray-400 hover:text-white p-1"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </motion.div>
+      )}
 
       {/* KPI Stats Overview Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -365,27 +520,45 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
             ))}
           </div>
 
-          {/* Status Filters */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-bold text-gray-400 uppercase mr-1">Status:</span>
-            {[
-              { id: 'ALL', label: 'All' },
-              { id: 'ACTIVE', label: 'Active' },
-              { id: 'BLOCKED', label: 'Blocked' },
-              { id: 'NON_ZERO', label: '₹ > 0 Balance' },
-            ].map((st) => (
-              <button
-                key={st.id}
-                onClick={() => setStatusFilter(st.id as any)}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono transition-all cursor-pointer ${
-                  statusFilter === st.id
-                    ? 'bg-cyan-500/20 border border-cyan-400 text-cyan-300 font-bold'
-                    : 'bg-black/40 border border-white/5 text-gray-400 hover:text-white'
-                }`}
-              >
-                {st.label}
-              </button>
-            ))}
+          {/* Status Filters & Quick PDF Export */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-bold text-gray-400 uppercase mr-1">Status:</span>
+              {[
+                { id: 'ALL', label: 'All' },
+                { id: 'ACTIVE', label: 'Active' },
+                { id: 'BLOCKED', label: 'Blocked' },
+                { id: 'NON_ZERO', label: '₹ > 0 Balance' },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setStatusFilter(st.id as any)}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-mono transition-all cursor-pointer ${
+                    statusFilter === st.id
+                      ? 'bg-cyan-500/20 border border-cyan-400 text-cyan-300 font-bold'
+                      : 'bg-black/40 border border-white/5 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Quick Export PDF Shortcut for Current Filter */}
+            <button
+              id="admin-filter-export-pdf-btn"
+              onClick={handleExportUsersPdf}
+              disabled={isExportingPdf || filteredUsers.length === 0}
+              className="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 hover:text-white font-bold text-[10px] flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Download current filtered list to PDF for bookkeeping"
+            >
+              {isExportingPdf ? (
+                <RefreshCw className="w-3 h-3 animate-spin text-red-400" />
+              ) : (
+                <FileText className="w-3 h-3 text-red-400" />
+              )}
+              <span>Export PDF ({filteredUsers.length})</span>
+            </button>
           </div>
         </div>
       </GlassCard>
@@ -638,6 +811,120 @@ export const AdminUserManagementView: React.FC<AdminUserManagementViewProps> = (
           })
         )}
       </div>
+
+      {/* ========================================================= */}
+      {/* 0. MINIMALIST QUICK ADD USER MODAL (Name & Email Only)     */}
+      {/* ========================================================= */}
+      <AnimatePresence>
+        {isQuickAddOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsQuickAddOpen(false)}
+              className="fixed inset-0 bg-black/85 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-sm bg-[#13131e] border border-emerald-500/40 rounded-3xl p-5 shadow-[0_0_50px_rgba(16,185,129,0.25)] space-y-4 z-10"
+            >
+              {/* Minimalist Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-400 to-teal-500 flex items-center justify-center text-black font-black shadow-[0_0_15px_rgba(16,185,129,0.35)]">
+                    <Zap className="w-4 h-4 fill-black text-black" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-white">Quick Add User</h3>
+                    <p className="text-[10px] text-gray-400">Minimalist registration with name & email</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  id="quick-add-close-x-btn"
+                  onClick={() => setIsQuickAddOpen(false)}
+                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Minimalist Form (Only Name & Email) */}
+              <form onSubmit={handleQuickAddSubmit} className="space-y-3.5">
+                {/* Error Banner */}
+                {quickError && (
+                  <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-300 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{quickError}</span>
+                  </div>
+                )}
+
+                {/* 1. Name Field */}
+                <div>
+                  <label className="text-xs font-bold text-gray-300 block mb-1">
+                    Full Name <span className="text-emerald-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="quick-add-name-input"
+                      type="text"
+                      required
+                      autoFocus
+                      value={quickName}
+                      onChange={(e) => setQuickName(e.target.value)}
+                      placeholder="e.g. Alex Carter"
+                      className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs focus:outline-none focus:border-emerald-400 placeholder:text-gray-600 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Email Field */}
+                <div>
+                  <label className="text-xs font-bold text-gray-300 block mb-1">
+                    Email Address <span className="text-emerald-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="quick-add-email-input"
+                      type="email"
+                      required
+                      value={quickEmail}
+                      onChange={(e) => setQuickEmail(e.target.value)}
+                      placeholder="e.g. alex@example.com"
+                      className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-black/60 border border-white/10 text-white text-xs font-mono focus:outline-none focus:border-emerald-400 placeholder:text-gray-600 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    id="quick-add-cancel-btn"
+                    onClick={() => setIsQuickAddOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    id="quick-add-submit-btn"
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white text-xs font-extrabold shadow-[0_0_20px_rgba(16,185,129,0.4)] flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Quick Add</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ========================================================= */}
       {/* 1. ADD NEW USER MODAL                                     */}

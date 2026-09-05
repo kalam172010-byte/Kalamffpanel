@@ -1,10 +1,27 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Menu, Play, MessageCircle, Palette, User, ShieldCheck, LogIn, Megaphone, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  Menu,
+  Play,
+  Palette,
+  ShieldCheck,
+  LogIn,
+  Megaphone,
+  AlertTriangle,
+  Search,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { UserSidebar, UserNavTab } from './user-sidebar';
-import { FloatingSupport } from '../shared/floating-support';
-import { StoreSettings, AuthUser } from '../../types';
+import { StoreSettings, AuthUser, Product } from '../../types';
 import { StoreLogo } from '../shared/store-logo';
+import {
+  TopLoadingBar,
+  ScrollToTopButton,
+  LatencyMonitorBadge,
+  QuickCommandPalette,
+  QuickOptionsModal,
+} from '../shared/smooth-enhancements';
+import { playClickSound, playPopSound } from '../../lib/sound-fx';
 
 interface UserLayoutProps {
   children: React.ReactNode;
@@ -18,6 +35,12 @@ interface UserLayoutProps {
   currentUser?: AuthUser | null;
   onOpenAuthModal?: () => void;
   onLogout?: () => void;
+  isLoading?: boolean;
+  onRefreshData?: () => void;
+  isRefreshing?: boolean;
+  products?: Product[];
+  onOpenDeposit?: () => void;
+  onOpenBuyKeys?: () => void;
 }
 
 export const UserLayout: React.FC<UserLayoutProps> = ({
@@ -32,8 +55,17 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
   currentUser,
   onOpenAuthModal,
   onLogout,
+  isLoading = false,
+  onRefreshData,
+  isRefreshing = false,
+  products = [],
+  onOpenDeposit = () => {},
+  onOpenBuyKeys = () => {},
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [quickOptionsOpen, setQuickOptionsOpen] = useState(false);
+
   const configuredAdminEmail = (storeSettings?.adminEmail || 'kalam172010@gmail.com').trim().toLowerCase();
   const isMasterAdmin = Boolean(
     currentUser &&
@@ -45,9 +77,12 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col items-center justify-start selection:bg-[#ff0080]/30 selection:text-white">
+      {/* Top Nano/Neon Loading Bar */}
+      <TopLoadingBar isLoading={isLoading || isRefreshing} />
+
       {/* Mobile Shell Container (Max width md centered) */}
-      <div className="w-full max-w-md min-h-screen bg-[#0a0a0f] flex flex-col relative border-x border-white/5 shadow-[0_0_60px_rgba(0,0,0,0.8)] pb-20">
-        {/* Top Header / Store Status Banner */}
+      <div className="w-full max-w-md min-h-screen bg-[#0a0a0f] flex flex-col relative border-x border-white/5 shadow-[0_0_60px_rgba(0,0,0,0.8)] pb-20 smooth-gpu">
+        {/* Top Header / Store Status & Latency Banner */}
         <div className="bg-[#10101a] border-b border-white/10 px-3 py-1.5 flex items-center justify-between text-[11px]">
           <div className="flex items-center gap-2 text-gray-300">
             <StoreLogo
@@ -62,35 +97,41 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </span>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-1.5">
+            {/* Live Real-time Latency Monitor */}
+            <LatencyMonitorBadge onOpenQuickSettings={() => setQuickOptionsOpen(true)} />
+
             {isMasterAdmin && (
               <button
-                onClick={onSwitchToAdmin}
-                className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/40 text-yellow-300 font-bold text-[10px] shadow-[0_0_10px_rgba(234,179,8,0.25)] transition-all cursor-pointer"
+                onClick={() => {
+                  playClickSound();
+                  onSwitchToAdmin();
+                }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/40 text-yellow-300 font-bold text-[9px] shadow-[0_0_10px_rgba(234,179,8,0.25)] transition-all cursor-pointer"
                 title="Open Admin Control Center"
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-yellow-400" />
-                <span>Admin Panel</span>
+                <ShieldCheck className="w-3 h-3 text-yellow-400" />
+                <span>Admin</span>
               </button>
             )}
-            <span className="hidden sm:inline-flex text-[10px] text-emerald-400/90 font-mono items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>ONLINE</span>
-            </span>
           </div>
         </div>
 
         {/* Top Navigation Bar */}
         <header
           id="user-top-navbar"
-          className="sticky top-0 z-30 bg-[#0c0c14] border-b border-white/10 px-4 py-3 flex items-center justify-between gap-2 shadow-md"
+          className="sticky top-0 z-30 bg-[#0c0c14]/95 backdrop-blur-md border-b border-white/10 px-3.5 py-2.5 flex items-center justify-between gap-2 shadow-md"
         >
           {/* Left: Hamburger Icon */}
           <motion.button
             id="user-hamburger-btn"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => setSidebarOpen(true)}
+            onClick={() => {
+              playPopSound();
+              setSidebarOpen(true);
+            }}
             className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-gray-200 hover:text-white transition-colors cursor-pointer"
             aria-label="Open Sidebar"
           >
@@ -103,8 +144,11 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
               id="how-to-deposit-pill-btn"
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
-              onClick={onOpenHowToDeposit}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-[#e11d48] hover:bg-[#f43f5e] text-white font-black text-xs tracking-wider shadow-[0_0_22px_rgba(225,29,72,0.7)] border-2 border-[#ff4d6d]/70 cursor-pointer transition-all uppercase"
+              onClick={() => {
+                playClickSound();
+                onOpenHowToDeposit();
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl bg-[#e11d48] hover:bg-[#f43f5e] text-white font-black text-xs tracking-wider shadow-[0_0_22px_rgba(225,29,72,0.7)] border-2 border-[#ff4d6d]/70 cursor-pointer transition-all uppercase"
             >
               <span className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center">
                 <Play className="w-2.5 h-2.5 fill-white ml-0.5" />
@@ -120,25 +164,57 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
                 alt="Store Logo"
                 className="w-7 h-7 object-cover"
               />
-              <span className="font-extrabold text-white text-xs tracking-wider uppercase truncate max-w-[150px]">
+              <span className="font-extrabold text-white text-xs tracking-wider uppercase truncate max-w-[140px]">
                 {storeSettings?.shopName || 'KALAM FF PANEL'}
               </span>
             </div>
           )}
 
-          {/* Right: Theme Palette button & Avatar button */}
-          <div className="flex items-center gap-2">
-            {/* Palette / Theme / Support icon in cyan glowing rounded border */}
+          {/* Right Action Controls: Quick Search, Options & Profile */}
+          <div className="flex items-center gap-1.5">
+            {/* Quick Search / Command Palette (Ctrl+K) */}
+            <motion.button
+              id="quick-search-btn"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              onClick={() => setCommandPaletteOpen(true)}
+              className="w-8.5 h-8.5 rounded-xl bg-white/5 hover:bg-[#00e5ff]/15 border border-white/10 hover:border-[#00e5ff]/50 text-gray-300 hover:text-[#00e5ff] flex items-center justify-center transition-all cursor-pointer"
+              title="Quick Search & Commands (Ctrl+K)"
+              aria-label="Quick Search"
+            >
+              <Search className="w-4 h-4" />
+            </motion.button>
+
+            {/* Quick Options / Performance / Sound */}
+            <motion.button
+              id="quick-options-btn"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              onClick={() => {
+                playPopSound();
+                setQuickOptionsOpen(true);
+              }}
+              className="w-8.5 h-8.5 rounded-xl bg-white/5 hover:bg-[#ff0080]/15 border border-white/10 hover:border-[#ff0080]/50 text-gray-300 hover:text-[#ff0080] flex items-center justify-center transition-all cursor-pointer"
+              title="Quick Options (Sound, 60fps Turbo, Sync)"
+              aria-label="Quick Options"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </motion.button>
+
+            {/* Palette / Support button */}
             <motion.button
               id="theme-palette-btn"
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
-              onClick={onOpenSupport}
-              className="w-10 h-10 rounded-2xl bg-[#041217] hover:bg-[#00e5ff]/15 border-2 border-[#00e5ff] text-[#00e5ff] flex items-center justify-center shadow-[0_0_15px_rgba(0,229,255,0.4)] transition-all cursor-pointer"
+              onClick={() => {
+                playClickSound();
+                onOpenSupport();
+              }}
+              className="w-8.5 h-8.5 rounded-xl bg-[#041217] hover:bg-[#00e5ff]/15 border border-[#00e5ff]/60 text-[#00e5ff] flex items-center justify-center shadow-[0_0_12px_rgba(0,229,255,0.3)] transition-all cursor-pointer"
               aria-label="Theme & Support"
-              title="Theme & Live Support"
+              title="Theme & Support"
             >
-              <Palette className="w-4.5 h-4.5" />
+              <Palette className="w-4 h-4" />
             </motion.button>
 
             {/* User profile avatar or Login button */}
@@ -147,33 +223,38 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
                 id="user-avatar-btn"
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.92 }}
-                onClick={onOpenProfile}
-                className="w-10 h-10 rounded-full bg-[#0d1424] border-2 border-[#00e5ff] shadow-[0_0_16px_rgba(0,229,255,0.6)] relative flex items-center justify-center cursor-pointer p-0.5"
+                onClick={() => {
+                  playClickSound();
+                  onOpenProfile();
+                }}
+                className="w-8.5 h-8.5 rounded-full bg-[#0d1424] border-2 border-[#00e5ff] shadow-[0_0_14px_rgba(0,229,255,0.5)] relative flex items-center justify-center cursor-pointer p-0.5"
                 aria-label="Profile"
                 title={`Logged in as ${currentUser.email}`}
               >
-                <div className="w-full h-full rounded-full bg-[#121929] flex items-center justify-center font-black text-xs text-[#00e5ff]">
+                <div className="w-full h-full rounded-full bg-[#121929] flex items-center justify-center font-black text-[11px] text-[#00e5ff]">
                   {currentUser.name.slice(0, 1).toUpperCase()}
                 </div>
-                {/* Green active status indicator badge */}
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-[#0c0c14] rounded-full shadow-[0_0_8px_#10b981]" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 border-2 border-[#0c0c14] rounded-full shadow-[0_0_6px_#10b981]" />
               </motion.button>
             ) : (
               <motion.button
                 id="login-btn-top"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={onOpenAuthModal}
-                className="flex items-center gap-1 px-3 py-2 rounded-2xl bg-[#041217] hover:bg-[#00e5ff]/15 border-2 border-[#00e5ff] text-[#00e5ff] text-xs font-black shadow-[0_0_12px_rgba(0,229,255,0.3)] cursor-pointer"
+                onClick={() => {
+                  playClickSound();
+                  onOpenAuthModal?.();
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#041217] hover:bg-[#00e5ff]/15 border border-[#00e5ff]/60 text-[#00e5ff] text-xs font-black shadow-[0_0_10px_rgba(0,229,255,0.3)] cursor-pointer"
               >
-                <LogIn className="w-3.5 h-3.5" />
+                <LogIn className="w-3 h-3" />
                 <span>Login</span>
               </motion.button>
             )}
           </div>
         </header>
 
-        {/* Live Announcement Marquee Banner (configured manually in Store Settings) */}
+        {/* Live Announcement Marquee Banner */}
         {storeSettings?.announcementEnabled && storeSettings?.announcementText && (
           <div className="bg-gradient-to-r from-[#00e5ff]/20 via-[#8b5cf6]/25 to-[#ff0080]/20 border-b border-[#00e5ff]/30 px-3 py-1.5 flex items-center gap-2 overflow-hidden shadow-[0_0_15px_rgba(0,229,255,0.15)]">
             <div className="shrink-0 flex items-center gap-1 text-[#00e5ff] text-[10px] font-black uppercase tracking-wider bg-black/40 px-1.5 py-0.5 rounded border border-[#00e5ff]/40">
@@ -186,7 +267,7 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
           </div>
         )}
 
-        {/* Store Maintenance Notice (if enabled in Store Settings) */}
+        {/* Store Maintenance Notice */}
         {storeSettings?.maintenanceMode && (
           <div className="bg-red-950/80 border-b border-red-600/50 px-3 py-2 flex items-center justify-between gap-2 text-red-200 text-xs">
             <div className="flex items-center gap-1.5 font-bold">
@@ -200,15 +281,58 @@ export const UserLayout: React.FC<UserLayoutProps> = ({
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 p-4 space-y-4">{children}</main>
+        <main className="flex-1 p-4 space-y-4">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="space-y-4"
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+
+        {/* Floating Scroll To Top with Circular Progress */}
+        <ScrollToTopButton />
+
+        {/* Quick Command Palette (Ctrl+K) */}
+        <QuickCommandPalette
+          isOpen={commandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+          onSelectTab={onSelectTab}
+          onOpenDeposit={onOpenDeposit}
+          onOpenBuyKeys={onOpenBuyKeys}
+          onRefreshData={onRefreshData}
+          products={products}
+          currentUser={currentUser}
+          storeSettings={storeSettings}
+        />
+
+        {/* Quick Options & Experience Modal */}
+        <QuickOptionsModal
+          isOpen={quickOptionsOpen}
+          onClose={() => setQuickOptionsOpen(false)}
+          onRefreshData={onRefreshData}
+          isRefreshing={isRefreshing}
+        />
 
         {/* User Sidebar Sheet */}
         <UserSidebar
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           activeTab={activeTab}
-          onSelectTab={onSelectTab}
-          onSwitchToAdmin={onSwitchToAdmin}
+          onSelectTab={(tab) => {
+            playPopSound();
+            onSelectTab(tab);
+          }}
+          onSwitchToAdmin={() => {
+            playClickSound();
+            onSwitchToAdmin();
+          }}
           currentUser={currentUser}
           storeSettings={storeSettings}
           onOpenAuthModal={onOpenAuthModal}

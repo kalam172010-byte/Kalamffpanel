@@ -1191,7 +1191,7 @@ interface BuyKeysModalProps {
   onClose: () => void;
   products: Product[];
   balance: number;
-  onPurchaseKey: (product: Product, plan: PlanPricing) => void;
+  onPurchaseKey: (product: Product, plan: PlanPricing, quantity?: number, coupon?: any) => void;
   onOpenDeposit: () => void;
 }
 

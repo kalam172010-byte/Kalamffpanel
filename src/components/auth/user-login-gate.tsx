@@ -154,6 +154,27 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
         }
       } catch {}
 
+      let adminJoined = 'Jan 15, 2024';
+      try {
+        const storedUsersRaw = localStorage.getItem('kalam_users_db');
+        if (storedUsersRaw) {
+          const storedUsers: any[] = JSON.parse(storedUsersRaw);
+          const found = storedUsers.find(
+            (u) => (u.email && u.email.toLowerCase() === cleanEmail) || u.role === 'ADMIN'
+          );
+          if (found && found.joinedDate && !found.joinedDate.toLowerCase().includes('today')) {
+            adminJoined = found.joinedDate;
+          }
+        }
+        const cachedAuth = localStorage.getItem('kalam_auth_user');
+        if (cachedAuth) {
+          const parsed = JSON.parse(cachedAuth);
+          if (parsed && parsed.joinedDate && !parsed.joinedDate.toLowerCase().includes('today')) {
+            adminJoined = parsed.joinedDate;
+          }
+        }
+      } catch {}
+
       const authenticatedUser: AuthUser = {
         id: 'USR_172010_ADMIN',
         email: cleanEmail,
@@ -161,11 +182,7 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
         username: 'kalam_admin',
         role: 'ADMIN',
         walletBalance: adminBalance,
-        joinedDate: new Date().toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        }),
+        joinedDate: adminJoined,
       };
 
       try {
@@ -190,11 +207,15 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
       let existingName = fbUser.displayName || cleanEmail.split('@')[0];
       let existingUsername = cleanEmail.split('@')[0];
       let existingRole: 'ADMIN' | 'USER' | 'RESELLER' = 'USER';
-      let existingJoined = new Date().toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
+
+      // Always retrieve permanent account creation date from Firebase Auth metadata
+      let existingJoined = fbUser.metadata?.creationTime
+        ? new Date(fbUser.metadata.creationTime).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+        : '';
 
       try {
         const storedUsersRaw = localStorage.getItem('kalam_users_db');
@@ -213,10 +234,20 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
             existingName = found.name || existingName;
             existingUsername = found.username || existingUsername;
             if (found.isReseller || found.role === 'RESELLER') existingRole = 'RESELLER';
-            if (found.joinedDate) existingJoined = found.joinedDate;
+            if (!existingJoined && found.joinedDate && !found.joinedDate.toLowerCase().includes('today')) {
+              existingJoined = found.joinedDate;
+            }
           }
         }
       } catch {}
+
+      if (!existingJoined) {
+        existingJoined = new Date().toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+      }
 
       const authenticatedUser: AuthUser = {
         id: fbUser.uid || `USR_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
@@ -413,11 +444,15 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
       // Check for existing wallet balance in local storage/db if any
       let userBalance = 0;
       let userRole: 'ADMIN' | 'USER' | 'RESELLER' = 'USER';
-      let existingJoined = new Date().toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
+
+      // Permanent Account Creation Date from Firebase Auth metadata
+      let existingJoined = user.metadata?.creationTime
+        ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+        : '';
 
       try {
         const storedUsersRaw = localStorage.getItem('kalam_users_db');
@@ -433,12 +468,20 @@ export const UserLoginGate: React.FC<UserLoginGateProps> = ({
             if (found.isReseller || found.role === 'RESELLER') {
               userRole = 'RESELLER';
             }
-            if (found.joinedDate) {
+            if (!existingJoined && found.joinedDate && !found.joinedDate.toLowerCase().includes('today')) {
               existingJoined = found.joinedDate;
             }
           }
         }
       } catch {}
+
+      if (!existingJoined) {
+        existingJoined = new Date().toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+      }
 
       const cleanReferral = (referralCode || localStorage.getItem('kalam_referred_by') || '').trim();
 

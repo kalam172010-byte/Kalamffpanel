@@ -27,7 +27,8 @@ import {
   Send,
   Zap,
   DollarSign,
-  FileText
+  FileText,
+  Tag
 } from 'lucide-react';
 import { GlassCard } from '../shared/glass-card';
 import { PurchasedKey, TransactionRecord, StoreSettings, AuthUser, ResellerUser, PurchaseInvoice } from '../../types';
@@ -93,12 +94,14 @@ export const MyKeysView: React.FC<MyKeysViewProps> = ({
           </h2>
           <span className="text-[11px] text-gray-400">Copy your license keys to activate in-app</span>
         </div>
-        <button
-          onClick={onOpenBuyKeys}
-          className="px-3 py-1.5 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-400 text-xs font-bold shadow-[0_0_15px_rgba(249,115,22,0.2)] transition-all cursor-pointer"
-        >
-          + Buy New
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenBuyKeys}
+            className="px-3 py-1.5 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-400 text-xs font-bold shadow-[0_0_15px_rgba(249,115,22,0.2)] transition-all cursor-pointer"
+          >
+            + Buy New
+          </button>
+        </div>
       </div>
 
       {keys.length === 0 ? (
@@ -162,7 +165,7 @@ export const MyKeysView: React.FC<MyKeysViewProps> = ({
                   {onViewInvoice && (
                     <button
                       onClick={() => handleGenerateInvoiceFromKey(k)}
-                      className="px-2 py-0.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/30 text-cyan-300 font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all"
+                      className="px-2 py-0.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 text-emerald-300 font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-all"
                       title="View & Download Invoice"
                     >
                       <FileText className="w-3 h-3" />

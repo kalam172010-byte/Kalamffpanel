@@ -69,6 +69,12 @@ export interface ProductLink {
   productName: string;
   status: 'ACTIVE' | 'DISABLED';
   directLink: string;
+  websiteLink?: string;
+  botLink?: string;
+  customSlug?: string;
+  game?: string;
+  category?: string;
+  createdAt?: string;
 }
 
 export interface ApiConfig {
@@ -249,4 +255,17 @@ export interface StoreActivityNotification {
   timestamp: number;
   createdAtStr: string;
   read?: boolean;
+}
+
+export interface DiscountCoupon {
+  id: string;
+  code: string;
+  discountPercent: number;
+  discountFlat?: number;
+  minAmount?: number;
+  maxUses?: number;
+  usedCount?: number;
+  description?: string;
+  isActive: boolean;
+  expiryDate?: string;
 }

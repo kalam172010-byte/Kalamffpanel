@@ -1,6 +1,489 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { PurchasedKey, StoreSettings, PurchaseInvoice } from '../types';
+import { PurchasedKey, StoreSettings, PurchaseInvoice, TransactionRecord, ResellerUser } from '../types';
+
+export interface ExportAccountingTransactionsPdfOptions {
+  soldKeys?: PurchasedKey[];
+  transactions?: TransactionRecord[];
+  storeSettings?: StoreSettings;
+  filterLabel?: string;
+  customTitle?: string;
+  dateRangeLabel?: string;
+  adminName?: string;
+}
+
+/**
+ * Generates and downloads an official financial transaction history
+ * and accounting ledger statement in PDF format for tax, auditing, and bookkeeping.
+ */
+export function exportAccountingTransactionsToPdf({
+  soldKeys = [],
+  transactions = [],
+  storeSettings,
+  filterLabel,
+  customTitle,
+  dateRangeLabel,
+  adminName,
+}: ExportAccountingTransactionsPdfOptions): {
+  success: boolean;
+  count: number;
+  filename: string;
+  totalRevenue: number;
+  totalCredit: number;
+  totalDebit: number;
+} {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const storeName = storeSettings?.shopName || 'KALAM FF PANEL';
+  const tagline = storeSettings?.tagline || 'Official Digital License & Key Reselling Platform';
+  const reportTitle = customTitle || 'OFFICIAL TRANSACTION HISTORY & ACCOUNTING STATEMENT';
+
+  const now = new Date();
+  const dateFormatted = now.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  const timeFormatted = now.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  const timestampString = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const cleanStoreSlug = storeName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+  const filename = `${cleanStoreSlug}_accounting_transactions_${timestampString}.pdf`;
+
+  // Compile unified accounting ledger entries:
+  interface AccountingEntry {
+    id: string;
+    date: string;
+    description: string;
+    category: string;
+    method: string;
+    status: string;
+    amount: number;
+    isCredit: boolean;
+  }
+
+  const entries: AccountingEntry[] = [];
+  const seenTxIds = new Set<string>();
+
+  // 1. Process sold keys as verified sales transactions
+  soldKeys.forEach((key, idx) => {
+    const txId = key.invoiceNumber || key.orderId || `SALE-${key.id || idx + 1}`;
+    seenTxIds.add(txId);
+    entries.push({
+      id: txId,
+      date: key.purchaseDate || dateFormatted,
+      description: `${key.productName || 'Digital License'} [${key.planName || 'Standard'}]`,
+      category: 'KEY SALE / REVENUE',
+      method: 'Wallet Balance / Direct',
+      status: key.status || 'COMPLETED',
+      amount: Number(key.price) || 0,
+      isCredit: true,
+    });
+  });
+
+  // 2. Process wallet transactions & deposits
+  transactions.forEach((tx, idx) => {
+    const txId = tx.id || `TXN-${idx + 1}`;
+    if (seenTxIds.has(txId) || (tx.utrOrReference && seenTxIds.has(tx.utrOrReference))) {
+      return;
+    }
+    const isDeposit = tx.type === 'DEPOSIT' || tx.type === 'REFERRAL_REWARD' || tx.amount > 0;
+    entries.push({
+      id: txId,
+      date: tx.date || dateFormatted,
+      description: tx.description || (tx.type === 'DEPOSIT' ? 'Wallet Deposit / Top-up' : 'Adjustment / Payout'),
+      category: tx.type === 'DEPOSIT' ? 'WALLET TOPUP' : tx.type.replace('_', ' '),
+      method: tx.method || (tx.type === 'DEPOSIT' ? 'UPI / Auto-Gateway' : 'Store Balance'),
+      status: tx.status || 'COMPLETED',
+      amount: Math.abs(Number(tx.amount) || 0),
+      isCredit: isDeposit,
+    });
+  });
+
+  // Calculate accounting aggregates
+  const totalCount = entries.length;
+  const totalCredit = entries.filter((e) => e.isCredit).reduce((acc, e) => acc + e.amount, 0);
+  const totalDebit = entries.filter((e) => !e.isCredit).reduce((acc, e) => acc + e.amount, 0);
+  const grossSales = soldKeys.reduce((acc, k) => acc + (Number(k.price) || 0), 0);
+  const netTurnover = totalCredit - totalDebit;
+  const avgOrderValue =
+    soldKeys.length > 0
+      ? grossSales / soldKeys.length
+      : totalCount > 0
+      ? totalCredit / totalCount
+      : 0;
+
+  // 1. Top Decorative Brand Bar
+  doc.setFillColor(16, 185, 129); // Emerald 500
+  doc.rect(0, 0, pageWidth, 4, 'F');
+
+  // 2. Header Brand Section
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(15, 23, 42); // Slate 900
+  doc.text(storeName.toUpperCase(), 14, 15);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100, 116, 139); // Slate 500
+  doc.text(tagline, 14, 20);
+
+  // Right Header: Report Meta
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(5, 150, 105); // Emerald 600
+  doc.text(reportTitle, pageWidth - 14, 13, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Generated: ${dateFormatted} at ${timeFormatted}`, pageWidth - 14, 18, { align: 'right' });
+  doc.text(
+    `Scope: ${filterLabel || dateRangeLabel || 'All Historical Records'} (${totalCount} Transactions)`,
+    pageWidth - 14,
+    23,
+    { align: 'right' }
+  );
+
+  // Subtle divider rule
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.4);
+  doc.line(14, 26, pageWidth - 14, 26);
+
+  // 3. Accounting Executive KPI Cards (4 cards)
+  const cardWidth = (pageWidth - 28 - 9) / 4;
+  const cardHeight = 16;
+  const cardY = 29;
+
+  const statBoxes = [
+    {
+      label: 'TOTAL GROSS SALES',
+      value: `INR ${grossSales.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      color: [5, 150, 105], // Emerald 600
+      bg: [236, 253, 245],
+      border: [167, 243, 208],
+    },
+    {
+      label: 'TOTAL TRANSACTIONS',
+      value: `${totalCount} Records`,
+      color: [15, 23, 42],
+      bg: [241, 245, 249],
+      border: [203, 213, 225],
+    },
+    {
+      label: 'AVERAGE ORDER VALUE',
+      value: `INR ${avgOrderValue.toFixed(2)}`,
+      color: [2, 132, 199], // Sky 600
+      bg: [240, 249, 255],
+      border: [186, 230, 253],
+    },
+    {
+      label: 'NET TURNOVER VOLUME',
+      value: `INR ${netTurnover.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      color: [124, 58, 237], // Purple 600
+      bg: [245, 243, 255],
+      border: [221, 214, 254],
+    },
+  ];
+
+  statBoxes.forEach((stat, index) => {
+    const x = 14 + index * (cardWidth + 3);
+    doc.setFillColor(stat.bg[0], stat.bg[1], stat.bg[2]);
+    doc.setDrawColor(stat.border[0], stat.border[1], stat.border[2]);
+    doc.roundedRect(x, cardY, cardWidth, cardHeight, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text(stat.label, x + 3.5, cardY + 5.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(stat.color[0], stat.color[1], stat.color[2]);
+    doc.text(stat.value, x + 3.5, cardY + 12);
+  });
+
+  // 4. Data Table using autoTable
+  const tableRows =
+    entries.length > 0
+      ? entries.map((entry, idx) => {
+          const formattedAmount = `${entry.isCredit ? '+' : '-'} INR ${entry.amount.toFixed(2)}`;
+          return [
+            idx + 1,
+            entry.date,
+            entry.id,
+            entry.description,
+            entry.category,
+            entry.method,
+            entry.status,
+            formattedAmount,
+          ];
+        })
+      : [
+          [
+            '1',
+            dateFormatted,
+            'N/A',
+            'No transactions recorded yet in accounting period',
+            'AUDIT',
+            'N/A',
+            'COMPLETED',
+            'INR 0.00',
+          ],
+        ];
+
+  autoTable(doc, {
+    startY: cardY + cardHeight + 5,
+    margin: { left: 14, right: 14 },
+    head: [
+      [
+        '#',
+        'Date & Time',
+        'Reference / Invoice ID',
+        'Description / Particulars',
+        'Type / Ledger',
+        'Channel',
+        'Status',
+        'Amount (INR)',
+      ],
+    ],
+    body: tableRows,
+    theme: 'striped',
+    headStyles: {
+      fillColor: [15, 23, 42], // Slate 900
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      halign: 'left',
+      valign: 'middle',
+      cellPadding: 2.5,
+    },
+    bodyStyles: {
+      fontSize: 8,
+      textColor: [30, 41, 59],
+      cellPadding: 2.2,
+      valign: 'middle',
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' }, // #
+      1: { cellWidth: 32 }, // Date
+      2: { cellWidth: 44, font: 'courier', fontStyle: 'bold' }, // Ref ID
+      3: { cellWidth: 70, fontStyle: 'bold' }, // Particulars
+      4: { cellWidth: 34 }, // Type
+      5: { cellWidth: 30 }, // Channel
+      6: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }, // Status
+      7: { cellWidth: 29, halign: 'right', fontStyle: 'bold' }, // Amount
+    },
+    foot: [
+      [
+        '',
+        '',
+        'Statement Totals',
+        `${totalCount} Total Transactions`,
+        '',
+        '',
+        'Net Total:',
+        `INR ${netTurnover.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      ],
+    ],
+    footStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      cellPadding: 2.5,
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        if (data.column.index === 6) {
+          const val = String(data.cell.raw).toUpperCase();
+          if (val === 'COMPLETED' || val === 'ACTIVE') {
+            data.cell.styles.textColor = [5, 150, 105]; // Emerald
+          } else if (val === 'PENDING') {
+            data.cell.styles.textColor = [180, 83, 9]; // Amber
+          } else if (val === 'FAILED' || val === 'EXPIRED') {
+            data.cell.styles.textColor = [220, 38, 38]; // Red
+          }
+        }
+        if (data.column.index === 7) {
+          const val = String(data.cell.raw);
+          if (val.startsWith('+')) {
+            data.cell.styles.textColor = [5, 150, 105];
+          } else if (val.startsWith('-')) {
+            data.cell.styles.textColor = [220, 38, 38];
+          }
+        }
+      }
+    },
+    didDrawPage: () => {
+      const currentHeight = doc.internal.pageSize.getHeight();
+      const currentWidth = doc.internal.pageSize.getWidth();
+
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(14, currentHeight - 11, currentWidth - 14, currentHeight - 11);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        `Generated on ${dateFormatted} at ${timeFormatted} | ${storeName} Official Accounting & Transaction Statement • For Tax & Bookkeeping Audit`,
+        14,
+        currentHeight - 6
+      );
+
+      doc.text(
+        `Page ${doc.getNumberOfPages()}`,
+        currentWidth - 14,
+        currentHeight - 6,
+        { align: 'right' }
+      );
+    },
+  });
+
+  doc.save(filename);
+
+  return {
+    success: true,
+    count: totalCount,
+    filename,
+    totalRevenue: grossSales,
+    totalCredit,
+    totalDebit,
+  };
+}
+
+export interface ExportAccountingTransactionsCsvOptions {
+  soldKeys?: PurchasedKey[];
+  transactions?: TransactionRecord[];
+  storeSettings?: StoreSettings;
+  filterLabel?: string;
+}
+
+/**
+ * Generates and downloads an accounting and transaction ledger spreadsheet in CSV format
+ * for direct analysis and import into Microsoft Excel or Google Sheets.
+ */
+export function exportAccountingTransactionsToCsv({
+  soldKeys = [],
+  transactions = [],
+  storeSettings,
+  filterLabel,
+}: ExportAccountingTransactionsCsvOptions): {
+  success: boolean;
+  count: number;
+  filename: string;
+} {
+  const storeName = storeSettings?.shopName || 'KALAM FF PANEL';
+  const now = new Date();
+  const timestampString = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const cleanStoreSlug = storeName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+  const filename = `${cleanStoreSlug}_accounting_ledger_${timestampString}.csv`;
+
+  // Headers
+  const headers = [
+    '#',
+    'Transaction Date & Time',
+    'Reference / Invoice ID',
+    'Order Reference',
+    'Description / Product',
+    'Plan / Duration',
+    'License Key(s)',
+    'Type / Category',
+    'Channel / Payment Method',
+    'Status',
+    'Flow',
+    'Amount (INR)',
+  ];
+
+  const rows: string[][] = [];
+  const seenTxIds = new Set<string>();
+
+  // 1. Process sold keys
+  soldKeys.forEach((key, idx) => {
+    const txId = key.invoiceNumber || key.orderId || `SALE-${key.id || idx + 1}`;
+    seenTxIds.add(txId);
+    rows.push([
+      String(idx + 1),
+      key.purchaseDate || now.toLocaleString(),
+      txId,
+      key.orderId || 'N/A',
+      key.productName || 'Digital Key',
+      key.planName || 'Standard Plan',
+      key.keyCode || 'N/A',
+      'KEY SALE / REVENUE',
+      'Wallet Balance / Direct',
+      key.status || 'COMPLETED',
+      'CREDIT (+)',
+      String(Number(key.price) || 0),
+    ]);
+  });
+
+  // 2. Process transactions
+  transactions.forEach((tx, idx) => {
+    const txId = tx.id || `TXN-${idx + 1}`;
+    if (seenTxIds.has(txId) || (tx.utrOrReference && seenTxIds.has(tx.utrOrReference))) {
+      return;
+    }
+    const isDeposit = tx.type === 'DEPOSIT' || tx.type === 'REFERRAL_REWARD' || tx.amount > 0;
+    rows.push([
+      String(rows.length + 1),
+      tx.date || now.toLocaleString(),
+      txId,
+      tx.utrOrReference || 'N/A',
+      tx.description || (tx.type === 'DEPOSIT' ? 'Wallet Deposit / Topup' : 'Adjustment'),
+      'N/A',
+      'N/A',
+      tx.type === 'DEPOSIT' ? 'WALLET TOPUP' : tx.type.replace('_', ' '),
+      tx.method || (tx.type === 'DEPOSIT' ? 'UPI / Gateway' : 'Store Balance'),
+      tx.status || 'COMPLETED',
+      isDeposit ? 'CREDIT (+)' : 'DEBIT (-)',
+      String(Math.abs(Number(tx.amount) || 0)),
+    ]);
+  });
+
+  // Convert to CSV format with proper escaping
+  const csvContent = [
+    `"sep=,"`, // Excel CSV hint
+    `"${storeName} - Accounting & Transaction Ledger Report"`,
+    `"Generated on: ${now.toLocaleString()} | Scope: ${filterLabel || 'All Transactions'}"`,
+    '',
+    headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(','),
+    ...rows.map((row) =>
+      row.map((cell) => `"${String(cell || '').replace(/"/g, '""')}"`).join(',')
+    ),
+  ].join('\r\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  return {
+    success: true,
+    count: rows.length,
+    filename,
+  };
+}
 
 export interface ExportSoldKeysPdfOptions {
   soldKeys: PurchasedKey[];
@@ -717,6 +1200,312 @@ export function exportEnvVariablesToPdf(
   return {
     success: true,
     filename,
+  };
+}
+
+export interface ExportUsersPdfOptions {
+  users: ResellerUser[];
+  storeSettings?: StoreSettings;
+  filterLabel?: string;
+  customTitle?: string;
+  adminName?: string;
+}
+
+/**
+ * Generates and downloads a branded, official user accounts and wallet balance
+ * ledger in PDF format for bookkeeping, financial liability accounting, and administrative audits.
+ */
+export function exportUsersToPdf({
+  users = [],
+  storeSettings,
+  filterLabel,
+  customTitle,
+  adminName,
+}: ExportUsersPdfOptions): {
+  success: boolean;
+  count: number;
+  filename: string;
+  totalBalance: number;
+} {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const storeName = storeSettings?.shopName || 'KALAM FF PANEL';
+  const tagline = storeSettings?.tagline || 'Official Digital License & Key Reselling Platform';
+  const reportTitle = customTitle || 'USER ACCOUNTS & WALLET BALANCES (BOOKKEEPING LEDGER)';
+
+  const now = new Date();
+  const dateFormatted = now.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  const timeFormatted = now.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  const timestampString = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const cleanStoreSlug = storeName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+  const filename = `${cleanStoreSlug}_users_bookkeeping_${timestampString}.pdf`;
+
+  // Financial and account aggregates
+  const totalCount = users.length;
+  const totalBalance = users.reduce((acc, u) => acc + (Number(u.walletBalance) || 0), 0);
+  const positiveAccounts = users.filter((u) => (Number(u.walletBalance) || 0) > 0).length;
+  const avgBalance = totalCount > 0 ? totalBalance / totalCount : 0;
+
+  // 1. Top Decorative Brand Bar (Indigo/Cyan Accent)
+  doc.setFillColor(99, 102, 241); // Indigo 500
+  doc.rect(0, 0, pageWidth, 4, 'F');
+
+  // 2. Header Brand Section
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(15, 23, 42); // Slate 900
+  doc.text(storeName.toUpperCase(), 14, 15);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 116, 139); // Slate 500
+  doc.text(tagline, 14, 20);
+
+  // Right Header: Report Meta
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(79, 70, 229); // Indigo 600
+  doc.text(reportTitle, pageWidth - 14, 13, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Generated: ${dateFormatted} at ${timeFormatted}`, pageWidth - 14, 18, { align: 'right' });
+  doc.text(
+    `Scope: ${filterLabel || 'Current Filtered User List'} (${totalCount} Accounts)`,
+    pageWidth - 14,
+    23,
+    { align: 'right' }
+  );
+
+  // Subtle divider rule
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.4);
+  doc.line(14, 26, pageWidth - 14, 26);
+
+  // 3. KPI Summary Boxes for Bookkeeping (4 inline boxes)
+  const availableWidth = pageWidth - 28;
+  const cardWidth = (availableWidth - 9) / 4;
+  const cardHeight = 15;
+  const cardY = 29;
+
+  const statBoxes = [
+    {
+      label: 'TOTAL ACCOUNTS',
+      value: `${totalCount} Users`,
+      color: [15, 23, 42], // Slate 900
+      bg: [241, 245, 249],
+      border: [203, 213, 225],
+    },
+    {
+      label: 'TOTAL WALLET BALANCE',
+      value: `INR ${totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      color: [5, 150, 105], // Emerald 600
+      bg: [236, 253, 245],
+      border: [167, 243, 208],
+    },
+    {
+      label: 'POSITIVE BALANCES',
+      value: `${positiveAccounts} Accounts`,
+      color: [2, 132, 199], // Sky 600
+      bg: [240, 249, 255],
+      border: [186, 230, 253],
+    },
+    {
+      label: 'AVERAGE BALANCE',
+      value: `INR ${avgBalance.toFixed(2)}`,
+      color: [124, 58, 237], // Purple 600
+      bg: [245, 243, 255],
+      border: [221, 214, 254],
+    },
+  ];
+
+  statBoxes.forEach((stat, index) => {
+    const x = 14 + index * (cardWidth + 3);
+    doc.setFillColor(stat.bg[0], stat.bg[1], stat.bg[2]);
+    doc.setDrawColor(stat.border[0], stat.border[1], stat.border[2]);
+    doc.roundedRect(x, cardY, cardWidth, cardHeight, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(stat.label, x + 3, cardY + 5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(stat.color[0], stat.color[1], stat.color[2]);
+    doc.text(stat.value, x + 3, cardY + 11);
+  });
+
+  // 4. Data Table Rows: name, email, wallet balance (plus role and status)
+  const tableRows =
+    users.length > 0
+      ? users.map((user, idx) => {
+          const userName = user.name || 'Unnamed User';
+          const usernameTag = user.username ? ` (@${user.username})` : '';
+          const email = user.email || 'N/A';
+          const role = user.role || (user.isReseller ? 'RESELLER' : 'USER');
+          const status = user.status || 'ACTIVE';
+          const balanceNum = Number(user.walletBalance) || 0;
+          const formattedBalance = `INR ${balanceNum.toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`;
+
+          return [
+            idx + 1,
+            `${userName}${usernameTag}`,
+            email,
+            role,
+            status,
+            formattedBalance,
+          ];
+        })
+      : [
+          [
+            '1',
+            'No matching users found',
+            'N/A',
+            'USER',
+            'ACTIVE',
+            'INR 0.00',
+          ],
+        ];
+
+  autoTable(doc, {
+    startY: cardY + cardHeight + 5,
+    margin: { left: 14, right: 14 },
+    head: [
+      [
+        '#',
+        'User / Name',
+        'Email Address',
+        'Role',
+        'Status',
+        'Wallet Balance (INR)',
+      ],
+    ],
+    body: tableRows,
+    theme: 'striped',
+    headStyles: {
+      fillColor: [15, 23, 42], // Slate 900
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      halign: 'left',
+      valign: 'middle',
+      cellPadding: 2.5,
+    },
+    bodyStyles: {
+      fontSize: 8,
+      textColor: [30, 41, 59],
+      cellPadding: 2.2,
+      valign: 'middle',
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' }, // #
+      1: { cellWidth: 48, fontStyle: 'bold' }, // User / Name
+      2: { cellWidth: 54 }, // Email Address
+      3: { cellWidth: 20, halign: 'center' }, // Role
+      4: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }, // Status
+      5: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }, // Wallet Balance
+    },
+    foot: [
+      [
+        '',
+        'Bookkeeping Statement Totals',
+        `${totalCount} Filtered Users`,
+        '',
+        'Total Balance:',
+        `INR ${totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      ],
+    ],
+    footStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      cellPadding: 2.5,
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        // Status column highlighting
+        if (data.column.index === 4) {
+          const val = String(data.cell.raw).toUpperCase();
+          if (val === 'ACTIVE') {
+            data.cell.styles.textColor = [5, 150, 105]; // Emerald
+          } else if (val === 'WARNING') {
+            data.cell.styles.textColor = [180, 83, 9]; // Amber
+          } else if (val === 'BLOCKED' || val === 'INACTIVE') {
+            data.cell.styles.textColor = [220, 38, 38]; // Red
+          }
+        }
+        // Balance column highlighting
+        if (data.column.index === 5) {
+          const raw = String(data.cell.raw);
+          const num = parseFloat(raw.replace(/[^0-9.-]/g, ''));
+          if (num > 0) {
+            data.cell.styles.textColor = [5, 150, 105]; // Emerald 600
+          } else if (num < 0) {
+            data.cell.styles.textColor = [220, 38, 38]; // Red 600
+          } else {
+            data.cell.styles.textColor = [100, 116, 139]; // Slate 500
+          }
+        }
+      }
+    },
+    didDrawPage: () => {
+      const currentHeight = doc.internal.pageSize.getHeight();
+      const currentWidth = doc.internal.pageSize.getWidth();
+
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(14, currentHeight - 11, currentWidth - 14, currentHeight - 11);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        `Generated on ${dateFormatted} at ${timeFormatted} | ${storeName} Official User Accounts Ledger • Bookkeeping & Audit Record`,
+        14,
+        currentHeight - 6
+      );
+
+      doc.text(
+        `Page ${doc.getNumberOfPages()}`,
+        currentWidth - 14,
+        currentHeight - 6,
+        { align: 'right' }
+      );
+    },
+  });
+
+  doc.save(filename);
+
+  return {
+    success: true,
+    count: totalCount,
+    filename,
+    totalBalance,
   };
 }
 

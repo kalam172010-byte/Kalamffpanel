@@ -23,19 +23,24 @@ import {
   ShoppingCart,
   Video,
   Tv,
-  RefreshCw
+  RefreshCw,
+  Ticket,
+  Share2,
+  Link2,
 } from 'lucide-react';
-import { Product, PlanPricing, StoreSettings } from '../../types';
+import { Product, PlanPricing, StoreSettings, DiscountCoupon } from '../../types';
 import { formatCurrency, getYouTubeEmbedUrl, isYouTubeUrl, getYouTubeThumbnailUrl } from '../../lib/utils';
+import { validateCoupon } from '../../lib/coupon-service';
 
 interface BuyKeysViewProps {
   products: Product[];
   balance: number;
-  onPurchaseKey: (product: Product, plan: PlanPricing, quantity: number) => void;
+  onPurchaseKey: (product: Product, plan: PlanPricing, quantity: number, coupon?: DiscountCoupon) => void;
   onOpenDeposit: () => void;
   storeSettings: StoreSettings;
   hideBalanceBar?: boolean;
   onRefreshProducts?: () => void;
+  targetProductId?: string | null;
 }
 
 export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
@@ -46,6 +51,7 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
   storeSettings,
   hideBalanceBar = false,
   onRefreshProducts,
+  targetProductId,
 }) => {
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,9 +62,49 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
 
   // Expanded card accordions (map of productId -> boolean)
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [highlightedProductId, setHighlightedProductId] = useState<string | null>(null);
+  const [copiedProductLinkId, setCopiedProductLinkId] = useState<string | null>(null);
 
   // Quantities map for each plan (planId -> number)
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+
+  // Deep Link Handling: when targetProductId is passed or in URL, auto-select, expand, and scroll
+  React.useEffect(() => {
+    if (targetProductId && products.length > 0) {
+      const cleanTarget = targetProductId.toLowerCase().trim();
+      const match = products.find(
+        (p) =>
+          p.id.toLowerCase() === cleanTarget ||
+          p.name.toLowerCase().replace(/[^a-z0-9]+/g, '_') === cleanTarget ||
+          p.name.toLowerCase().includes(cleanTarget)
+      );
+
+      if (match) {
+        setSelectedGame('ALL GAMES');
+        setSelectedDevice('ALL Systems');
+        setSearchQuery('');
+        setExpandedCards((prev) => ({ ...prev, [match.id]: true }));
+        setHighlightedProductId(match.id);
+
+        setTimeout(() => {
+          const el = document.getElementById(`product-card-${match.id}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 350);
+
+        const timer = setTimeout(() => {
+          setHighlightedProductId(null);
+        }, 6000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [targetProductId, products]);
+
+  // Coupon / Promo Code state for checkout
+  const [appliedCoupons, setAppliedCoupons] = useState<Record<string, DiscountCoupon>>({});
+  const [couponInputs, setCouponInputs] = useState<Record<string, string>>({});
+  const [couponMessages, setCouponMessages] = useState<Record<string, { text: string; isError: boolean }>>({});
 
   // Modals state
   const [activeVideoModal, setActiveVideoModal] = useState<{
@@ -91,6 +137,50 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
       const current = prev[planId] || 1;
       const next = Math.max(1, Math.min(50, current + delta));
       return { ...prev, [planId]: next };
+    });
+  };
+
+  const handleApplyCoupon = (product: Product) => {
+    const code = (couponInputs[product.id] || '').trim();
+    if (!code) {
+      setCouponMessages((prev) => ({
+        ...prev,
+        [product.id]: { text: 'Please enter a coupon code', isError: true },
+      }));
+      return;
+    }
+
+    // Determine baseline price of the first plan to test validity
+    const firstPlanPrice = product.plans && product.plans[0] ? product.plans[0].price : 50;
+    const result = validateCoupon(code, firstPlanPrice);
+
+    if (result.valid && result.coupon) {
+      setAppliedCoupons((prev) => ({
+        ...prev,
+        [product.id]: result.coupon!,
+      }));
+      setCouponMessages((prev) => ({
+        ...prev,
+        [product.id]: { text: result.message, isError: false },
+      }));
+    } else {
+      setCouponMessages((prev) => ({
+        ...prev,
+        [product.id]: { text: result.message, isError: true },
+      }));
+    }
+  };
+
+  const handleRemoveCoupon = (productId: string) => {
+    setAppliedCoupons((prev) => {
+      const copy = { ...prev };
+      delete copy[productId];
+      return copy;
+    });
+    setCouponMessages((prev) => {
+      const copy = { ...prev };
+      delete copy[productId];
+      return copy;
     });
   };
 
@@ -356,14 +446,31 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
           filteredProducts.map((product) => {
             const isExpanded = Boolean(expandedCards[product.id]);
             const isService = product.category === 'BOT SERVICES';
+            const isHighlighted = highlightedProductId === product.id;
 
             return (
               <motion.div
                 key={product.id}
+                id={`product-card-${product.id}`}
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="rounded-3xl bg-[#12121c] border border-purple-500/40 p-3.5 shadow-[0_0_30px_rgba(139,92,246,0.15)] space-y-3 relative overflow-hidden"
+                className={`rounded-3xl bg-[#12121c] border p-3.5 space-y-3 relative overflow-hidden transition-all duration-500 ${
+                  isHighlighted
+                    ? 'border-[#00e5ff] shadow-[0_0_40px_rgba(0,229,255,0.45)] ring-2 ring-[#00e5ff]/50'
+                    : 'border-purple-500/40 shadow-[0_0_30px_rgba(139,92,246,0.15)]'
+                }`}
               >
+                {/* Deep Link Active Highlight Banner */}
+                {isHighlighted && (
+                  <div className="bg-gradient-to-r from-cyan-950 via-cyan-900/60 to-purple-950 border border-cyan-400/60 text-cyan-300 px-3 py-1.5 rounded-xl text-[10px] font-black flex items-center justify-between animate-pulse">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>DIRECT PRODUCT LINK TARGET</span>
+                    </div>
+                    <span className="text-[9px] uppercase tracking-wider text-cyan-400 font-extrabold">Selected</span>
+                  </div>
+                )}
+
                 {/* Banner / Media Container */}
                 {(() => {
                   const coverImage =
@@ -432,11 +539,28 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
                   );
                 })()}
 
-                {/* Product Title */}
-                <div className="text-center pt-0.5">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                {/* Product Title and Quick Share Link */}
+                <div className="flex items-center justify-between pt-0.5 gap-2">
+                  <div className="w-7" />
+                  <h3 className="text-sm font-black uppercase tracking-wider text-white text-center flex-1">
                     {product.name}
                   </h3>
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}/?product=${product.id}`;
+                      navigator.clipboard.writeText(url);
+                      setCopiedProductLinkId(product.id);
+                      setTimeout(() => setCopiedProductLinkId(null), 2000);
+                    }}
+                    title="Copy Direct Website Link"
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-300 border border-white/5 hover:border-cyan-400/40 transition-colors cursor-pointer shrink-0"
+                  >
+                    {copiedProductLinkId === product.id ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <Share2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
                 </div>
 
                 {/* Feature Pills */}
@@ -523,13 +647,117 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
                       transition={{ duration: 0.25 }}
-                      className="space-y-2 pt-2 border-t border-white/10"
+                      className="space-y-2.5 pt-2 border-t border-white/10"
                     >
+                      {/* Coupon / Promo Code Input Box */}
+                      <div className="p-2.5 rounded-xl bg-black/60 border border-white/10 space-y-1.5">
+                        {appliedCoupons[product.id] ? (
+                          <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-xs">
+                            <div className="flex items-center gap-1.5 text-emerald-300">
+                              <Ticket className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span className="font-mono font-bold tracking-wider">
+                                {appliedCoupons[product.id].code}
+                              </span>
+                              <span className="text-[11px] text-emerald-200">
+                                ({appliedCoupons[product.id].discountPercent > 0
+                                  ? `${appliedCoupons[product.id].discountPercent}% OFF`
+                                  : `₹${appliedCoupons[product.id].discountFlat} FLAT OFF`})
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCoupon(product.id)}
+                              className="text-gray-400 hover:text-rose-400 p-0.5 cursor-pointer transition-colors"
+                              title="Remove coupon"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <div className="relative flex-1">
+                                <Ticket className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                <input
+                                  type="text"
+                                  value={couponInputs[product.id] || ''}
+                                  onChange={(e) =>
+                                    setCouponInputs((prev) => ({
+                                      ...prev,
+                                      [product.id]: e.target.value.toUpperCase(),
+                                    }))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleApplyCoupon(product);
+                                    }
+                                  }}
+                                  placeholder="Have a promo code? e.g. KALAM50"
+                                  className="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-black/80 border border-white/10 text-white font-mono uppercase text-xs focus:border-yellow-400 focus:outline-none"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleApplyCoupon(product)}
+                                className="px-3 py-1.5 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/40 text-yellow-300 font-bold text-xs transition-colors cursor-pointer shrink-0"
+                              >
+                                Apply
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap px-1 text-[10px] text-gray-400">
+                              <span>Hot Promos:</span>
+                              {['KALAM50', 'VIP20', 'FREEFIRE'].map((promo) => (
+                                <button
+                                  key={promo}
+                                  type="button"
+                                  onClick={() => {
+                                    setCouponInputs((prev) => ({ ...prev, [product.id]: promo }));
+                                    const firstPlanPrice = product.plans && product.plans[0] ? product.plans[0].price : 50;
+                                    const result = validateCoupon(promo, firstPlanPrice);
+                                    if (result.valid && result.coupon) {
+                                      setAppliedCoupons((prev) => ({ ...prev, [product.id]: result.coupon! }));
+                                      setCouponMessages((prev) => ({ ...prev, [product.id]: { text: result.message, isError: false } }));
+                                    }
+                                  }}
+                                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-yellow-500/20 text-yellow-300/90 hover:text-yellow-200 border border-white/10 hover:border-yellow-500/30 font-mono transition-colors cursor-pointer"
+                                >
+                                  {promo}
+                                </button>
+                              ))}
+                            </div>
+                            {couponMessages[product.id] && (
+                              <p
+                                className={`text-[10px] px-1 font-medium ${
+                                  couponMessages[product.id].isError
+                                    ? 'text-rose-400'
+                                    : 'text-emerald-400'
+                                }`}
+                              >
+                                {couponMessages[product.id].text}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       {(product.plans || []).map((plan) => {
                         const qty = getQuantity(plan.id);
                         const planPrice = typeof plan.price === 'number' ? plan.price : 0;
                         const totalPrice = planPrice * qty;
-                        const hasEnoughBalance = (balance || 0) >= totalPrice;
+
+                        // Calculate discount if coupon is applied
+                        const activeCoupon = appliedCoupons[product.id];
+                        let planDiscount = 0;
+                        if (activeCoupon) {
+                          if (activeCoupon.discountPercent && activeCoupon.discountPercent > 0) {
+                            planDiscount = (totalPrice * activeCoupon.discountPercent) / 100;
+                          } else if (activeCoupon.discountFlat && activeCoupon.discountFlat > 0) {
+                            planDiscount = activeCoupon.discountFlat;
+                          }
+                          planDiscount = Math.min(totalPrice, Math.round(planDiscount * 100) / 100);
+                        }
+                        const finalPlanPrice = Math.max(0, Math.round((totalPrice - planDiscount) * 100) / 100);
 
                         const planStockKeys = (product.planKeys && product.planKeys[plan.id]) || product.keys || [];
                         const hasStock = planStockKeys.length > 0;
@@ -563,9 +791,22 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
                                   </span>
                                 )}
                               </div>
-                              <span className="text-sm font-black text-white font-mono">
-                                {storeSettings?.currencySymbol || '₹'}{planPrice.toFixed(2)}
-                              </span>
+                              <div className="flex items-baseline gap-1.5">
+                                {activeCoupon && planDiscount > 0 ? (
+                                  <>
+                                    <span className="text-xs text-gray-500 line-through font-mono">
+                                      {storeSettings?.currencySymbol || '₹'}{totalPrice.toFixed(2)}
+                                    </span>
+                                    <span className="text-sm font-black text-emerald-400 font-mono">
+                                      {storeSettings?.currencySymbol || '₹'}{finalPlanPrice.toFixed(2)}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-sm font-black text-white font-mono">
+                                    {storeSettings?.currencySymbol || '₹'}{totalPrice.toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             {/* Center: Quantity Counter */}
@@ -591,7 +832,7 @@ export const BuyKeysView: React.FC<BuyKeysViewProps> = ({
                             <motion.button
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
-                              onClick={() => onPurchaseKey(product, plan, qty)}
+                              onClick={() => onPurchaseKey(product, plan, qty, activeCoupon)}
                               className={`px-4 py-2 rounded-xl font-black text-xs uppercase shadow-[0_0_15px_rgba(139,92,246,0.5)] cursor-pointer transition-all shrink-0 ${
                                 isOutOfStock
                                   ? 'bg-rose-900/60 hover:bg-rose-800/80 text-rose-200 border border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.3)]'

@@ -219,7 +219,12 @@ export async function saveUserToFirestore(user: ResellerUser | (Partial<Reseller
     const list: ResellerUser[] = raw ? JSON.parse(raw) : [];
     const index = list.findIndex((u) => u.id === user.id);
     if (index >= 0) {
-      list[index] = { ...list[index], ...safeUser } as ResellerUser;
+      const existing = list[index];
+      const preservedJoined =
+        (existing.joinedDate && existing.joinedDate !== 'Recently' && !existing.joinedDate.toLowerCase().includes('today') ? existing.joinedDate : null) ||
+        (user as ResellerUser).joinedDate ||
+        existing.joinedDate;
+      list[index] = { ...existing, ...safeUser, joinedDate: preservedJoined } as ResellerUser;
     } else {
       list.unshift(safeUser as ResellerUser);
     }
@@ -382,66 +387,123 @@ export async function savePurchasedKeysToFirestore(userId: string, keys: Purchas
  * Sync logged-in Auth User to Firestore database
  */
 export async function syncAuthUserToFirestore(authUser: AuthUser): Promise<ResellerUser> {
+  const cleanEmail = (authUser.email || '').trim().toLowerCase();
+  const isAdmin = cleanEmail === 'kalam172010@gmail.com' || cleanEmail === 'kalam2000abc@gmail.com' || authUser.role === 'ADMIN';
+
+  // Read existing cached user to prevent state wipe during offline or initial connection phase
+  let cachedUser: ResellerUser | null = null;
+  try {
+    const rawAuth = localStorage.getItem('kalam_auth_user');
+    if (rawAuth) {
+      const parsed = JSON.parse(rawAuth);
+      if (parsed && (parsed.id === authUser.id || parsed.email === cleanEmail)) {
+        cachedUser = {
+          id: authUser.id,
+          name: parsed.name || authUser.name,
+          username: parsed.username || authUser.username,
+          email: cleanEmail,
+          phone: parsed.phone || '',
+          walletBalance: typeof parsed.walletBalance === 'number' ? parsed.walletBalance : (isAdmin ? 290011.65 : 0),
+          isReseller: Boolean(parsed.role === 'RESELLER' || parsed.isReseller),
+          role: isAdmin ? 'ADMIN' : (parsed.role || 'USER'),
+          status: 'ACTIVE',
+          joinedDate: parsed.joinedDate || authUser.joinedDate || new Date().toLocaleDateString(),
+          totalKeysSold: parsed.totalKeysSold || 0,
+          totalSpent: parsed.totalSpent || 0,
+          depositedToday: parsed.depositedToday || 0,
+          notes: parsed.notes || (isAdmin ? 'Master Administrator' : ''),
+          customDiscountPercent: parsed.customDiscountPercent || 0,
+        };
+      }
+    }
+  } catch {}
+
   try {
     const userRef = doc(db, 'users', authUser.id);
     const snap = await getDoc(userRef);
-    const cleanEmail = (authUser.email || '').trim().toLowerCase();
-    const isAdmin = cleanEmail === 'kalam172010@gmail.com' || cleanEmail === 'kalam2000abc@gmail.com' || authUser.role === 'ADMIN';
 
     if (snap.exists()) {
       const data = snap.data();
+      const existingCreatedAt = data.createdAt
+        ? new Date(typeof data.createdAt === 'number' ? data.createdAt : data.createdAt).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+        : null;
+
+      // Real account creation date: preserve permanently across all login sessions
+      const permanentJoinedDate =
+        (data.joinedDate && data.joinedDate !== 'Recently' && !data.joinedDate.toLowerCase().includes('today') ? data.joinedDate : null) ||
+        existingCreatedAt ||
+        (authUser.joinedDate && authUser.joinedDate !== 'Recently' && !authUser.joinedDate.toLowerCase().includes('today') ? authUser.joinedDate : null) ||
+        (cachedUser?.joinedDate && cachedUser.joinedDate !== 'Recently' && !cachedUser.joinedDate.toLowerCase().includes('today') ? cachedUser.joinedDate : null) ||
+        data.joinedDate ||
+        authUser.joinedDate ||
+        new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
       const updatedUser: ResellerUser = {
         id: authUser.id,
-        name: authUser.name || data.name || 'User',
-        username: authUser.username || data.username || cleanEmail.split('@')[0],
+        name: authUser.name || data.name || cachedUser?.name || 'User',
+        username: authUser.username || data.username || cachedUser?.username || cleanEmail.split('@')[0],
         email: cleanEmail,
-        phone: data.phone || '',
-        walletBalance: typeof data.walletBalance === 'number' ? data.walletBalance : (isAdmin ? 290011.65 : 0),
-        isReseller: Boolean(data.isReseller || data.role === 'RESELLER'),
-        role: isAdmin ? 'ADMIN' : (data.role || 'USER'),
+        phone: data.phone || cachedUser?.phone || '',
+        walletBalance: typeof data.walletBalance === 'number' ? data.walletBalance : (cachedUser?.walletBalance ?? (isAdmin ? 290011.65 : 0)),
+        isReseller: Boolean(data.isReseller || data.role === 'RESELLER' || cachedUser?.isReseller),
+        role: isAdmin ? 'ADMIN' : (data.role || cachedUser?.role || 'USER'),
         status: data.status || 'ACTIVE',
-        joinedDate: data.joinedDate || authUser.joinedDate || new Date().toLocaleDateString(),
-        totalKeysSold: data.totalKeysSold || 0,
-        totalSpent: data.totalSpent || 0,
-        depositedToday: data.depositedToday || 0,
-        notes: data.notes || '',
-        customDiscountPercent: data.customDiscountPercent || 0,
+        joinedDate: permanentJoinedDate,
+        totalKeysSold: data.totalKeysSold || cachedUser?.totalKeysSold || 0,
+        totalSpent: data.totalSpent || cachedUser?.totalSpent || 0,
+        depositedToday: data.depositedToday || cachedUser?.depositedToday || 0,
+        notes: data.notes || cachedUser?.notes || '',
+        customDiscountPercent: data.customDiscountPercent || cachedUser?.customDiscountPercent || 0,
       };
-      await setDoc(userRef, { ...updatedUser, lastLoginAt: Date.now() }, { merge: true });
+      setDoc(userRef, { ...updatedUser, lastLoginAt: Date.now() }, { merge: true }).catch(() => {});
       return updatedUser;
     } else {
       const newUser: ResellerUser = {
         id: authUser.id,
-        name: authUser.name || (isAdmin ? 'KALAM FF (OWNER)' : cleanEmail.split('@')[0]),
-        username: authUser.username || cleanEmail.split('@')[0],
+        name: authUser.name || cachedUser?.name || (isAdmin ? 'KALAM FF (OWNER)' : cleanEmail.split('@')[0]),
+        username: authUser.username || cachedUser?.username || cleanEmail.split('@')[0],
         email: cleanEmail,
-        phone: '',
-        walletBalance: isAdmin ? 290011.65 : (authUser.walletBalance || 0),
-        isReseller: false,
-        role: isAdmin ? 'ADMIN' : (authUser.role || 'USER'),
+        phone: cachedUser?.phone || '',
+        walletBalance: cachedUser ? cachedUser.walletBalance : (isAdmin ? 290011.65 : (authUser.walletBalance || 0)),
+        isReseller: cachedUser?.isReseller ?? false,
+        role: isAdmin ? 'ADMIN' : (cachedUser?.role || authUser.role || 'USER'),
         status: 'ACTIVE',
-        joinedDate: authUser.joinedDate || new Date().toLocaleDateString(),
-        totalKeysSold: 0,
-        totalSpent: 0,
+        joinedDate: authUser.joinedDate || cachedUser?.joinedDate || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        totalKeysSold: cachedUser?.totalKeysSold || 0,
+        totalSpent: cachedUser?.totalSpent || 0,
         depositedToday: 0,
         notes: isAdmin ? 'Master Administrator' : 'Self-registered user',
         customDiscountPercent: 0,
       };
-      await setDoc(userRef, { ...newUser, createdAt: Date.now() });
+      setDoc(userRef, { ...newUser, createdAt: Date.now(), lastLoginAt: Date.now() }).catch(() => {});
       return newUser;
     }
-  } catch (err) {
-    console.error('[Firestore] Error syncing auth user:', err);
+  } catch (err: any) {
+    const isOffline = err?.code === 'unavailable' || String(err?.message || '').includes('offline');
+    if (isOffline) {
+      console.warn('[Firestore] Operating in offline-safe mode for auth user:', cleanEmail);
+    } else {
+      console.warn('[Firestore] Notice during user sync, using safe fallback:', err?.message || err);
+    }
+
+    if (cachedUser) {
+      return cachedUser;
+    }
+
     return {
       id: authUser.id,
       name: authUser.name,
       username: authUser.username,
       email: authUser.email,
-      walletBalance: authUser.walletBalance || 0,
+      walletBalance: isAdmin ? 290011.65 : (authUser.walletBalance || 0),
       depositedToday: 0,
       soldToday: 0,
       isReseller: authUser.role === 'RESELLER',
-      role: authUser.role,
+      role: isAdmin ? 'ADMIN' : authUser.role,
       status: 'ACTIVE',
       joinedDate: authUser.joinedDate,
       totalKeysSold: 0,
@@ -641,9 +703,27 @@ function sanitizeProducts(prods: any[]): Product[] {
 
 function sanitizeProductLinks(links: any[]): ProductLink[] {
   if (!Array.isArray(links)) return [];
-  return links.filter(
-    (l) => l && typeof l === 'object' && l.id && typeof l.name === 'string'
-  );
+  return links
+    .filter(
+      (l) =>
+        l &&
+        typeof l === 'object' &&
+        l.id &&
+        (typeof l.productName === 'string' || typeof l.name === 'string')
+    )
+    .map((l) => ({
+      id: String(l.id),
+      productId: String(l.productId || l.id),
+      productName: String(l.productName || l.name || 'Product'),
+      status: l.status === 'DISABLED' ? ('DISABLED' as const) : ('ACTIVE' as const),
+      directLink: String(l.directLink || l.websiteLink || ''),
+      websiteLink: l.websiteLink ? String(l.websiteLink) : undefined,
+      botLink: l.botLink ? String(l.botLink) : undefined,
+      customSlug: l.customSlug ? String(l.customSlug) : undefined,
+      game: l.game ? String(l.game) : undefined,
+      category: l.category ? String(l.category) : undefined,
+      createdAt: l.createdAt ? String(l.createdAt) : undefined,
+    }));
 }
 
 /**
