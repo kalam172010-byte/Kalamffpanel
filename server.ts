@@ -6,6 +6,16 @@ import { app } from './src/server/app';
 const PORT = 3000;
 
 async function startServer() {
+  // Explicitly serve assets to guarantee instant static delivery in both dev & prod with fresh updates
+  const assetsPath = path.join(process.cwd(), 'dist', 'assets');
+  app.use('/assets', express.static(assetsPath, {
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }));
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
