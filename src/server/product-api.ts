@@ -117,6 +117,15 @@ function loadProductsFromDisk(): any[] {
   return [];
 }
 
+function saveProductsToDisk(products: any[]) {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[Product API] Error saving products to disk:', e);
+  }
+}
+
 // Authentication middleware for /api/v1 endpoints
 function authenticateApiKey(requiredPermission?: 'order_keys' | 'read_products' | 'read_balance' | 'check_orders') {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -220,20 +229,39 @@ const handleBalanceCheck = (req: Request, res: Response) => {
 productApiRouter.all('/user/balance', authenticateApiKey('read_balance'), handleBalanceCheck);
 productApiRouter.all('/balance', authenticateApiKey('read_balance'), handleBalanceCheck);
 
-// 3. Products Catalog Endpoint
+// 3. Products Catalog Endpoint with full PID and Duration breakdown
 productApiRouter.all('/products', authenticateApiKey('read_products'), (req: Request, res: Response) => {
   const products = loadProductsFromDisk();
+  const host = req.headers.host || 'localhost:3000';
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const baseUrl = `${protocol}://${host}`;
+  const apiKey = (req as any).apiKeyRecord?.key || 'API_KEY';
+
   const sanitized = products.map((p: any) => {
     const pid = p.id || p.productId || p.pid;
-    const plans = (p.plans || []).map((pl: any) => ({
-      planId: pl.id || pl.planId,
-      pid: pid,
-      productId: pid,
-      duration: pl.duration || pl.name || '1 Day',
-      resellerPrice: pl.resellerPrice || pl.price || 0,
-      retailPrice: pl.retailPrice || pl.price || 0,
-      stockAvailable: typeof pl.stockCount === 'number' ? pl.stockCount : 25,
-    }));
+    const plans = (p.plans || []).map((pl: any) => {
+      const duration = pl.duration || pl.name || '1 Day';
+      return {
+        planId: pl.id || pl.planId,
+        pid: pid,
+        productId: pid,
+        duration: duration,
+        resellerPrice: pl.resellerPrice || pl.price || 0,
+        retailPrice: pl.retailPrice || pl.price || 0,
+        price: pl.retailPrice || pl.price || 0,
+        stockAvailable: typeof pl.stockCount === 'number' ? pl.stockCount : 25,
+        sampleOrderPayload: {
+          pid: pid,
+          duration: duration,
+          quantity: 1,
+          externalOrderId: `EXT_ORD_${Date.now()}`
+        },
+        sampleCurl: `curl -X POST "${baseUrl}/api/v1/order/create" -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json" -d '{"pid":"${pid}","duration":"${duration}","quantity":1}'`
+      };
+    });
+
+    const durationList = plans.map((pl: any) => pl.duration);
+
     return {
       pid: pid,
       productId: pid,
@@ -242,7 +270,8 @@ productApiRouter.all('/products', authenticateApiKey('read_products'), (req: Req
       game: p.game || 'FREEFIRE',
       category: p.category || 'All Products',
       status: p.status || 'ACTIVE',
-      availableDurations: plans.map((pl: any) => pl.duration),
+      durations: durationList,
+      availableDurations: durationList,
       plans,
     };
   });
@@ -256,25 +285,66 @@ productApiRouter.all('/products', authenticateApiKey('read_products'), (req: Req
   });
 });
 
-// 3b. Quick PID and Duration Mapping Endpoint
-productApiRouter.all('/pids', authenticateApiKey('read_products'), (req: Request, res: Response) => {
+// 3b. Dedicated Product PID and Duration Mapping Endpoint
+const handleGetPids = (req: Request, res: Response) => {
   const products = loadProductsFromDisk();
-  const pidsList = products.map((p: any) => {
+  const host = req.headers.host || 'localhost:3000';
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const baseUrl = `${protocol}://${host}`;
+  const apiKey = (req as any).apiKeyRecord?.key || 'API_KEY';
+
+  const requestedPid = req.query.pid || req.query.productId || req.params.pid;
+  
+  let targetProducts = products;
+  if (requestedPid) {
+    targetProducts = products.filter((p: any) => (
+      p.id === requestedPid ||
+      p.productId === requestedPid ||
+      p.pid === requestedPid ||
+      (p.name && p.name.toLowerCase() === String(requestedPid).toLowerCase())
+    ));
+    if (targetProducts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Product Not Found',
+        message: `No product found matching PID "${requestedPid}".`,
+        availablePids: products.map((p: any) => p.id || p.productId || p.pid)
+      });
+    }
+  }
+
+  const pidsList = targetProducts.map((p: any) => {
     const pid = p.id || p.productId || p.pid;
-    const plans = (p.plans || []).map((pl: any) => ({
-      duration: pl.duration || pl.name || '1 Day',
-      price: pl.retailPrice || pl.price || 0,
-      resellerPrice: pl.resellerPrice || pl.price || 0,
-    }));
+    const plans = (p.plans || []).map((pl: any) => {
+      const duration = pl.duration || pl.name || '1 Day';
+      return {
+        pid: pid,
+        productId: pid,
+        planId: pl.id || pl.planId,
+        duration: duration,
+        price: pl.retailPrice || pl.price || 0,
+        resellerPrice: pl.resellerPrice || pl.price || 0,
+        sampleOrderPayload: {
+          pid: pid,
+          duration: duration,
+          quantity: 1,
+          externalOrderId: `EXT_ORD_${Date.now()}`
+        },
+        sampleCurl: `curl -X POST "${baseUrl}/api/v1/order/create" -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json" -d '{"pid":"${pid}","duration":"${duration}","quantity":1}'`
+      };
+    });
+
+    const durationList = plans.map((pl: any) => pl.duration);
+
     return {
       pid: pid,
       productId: pid,
       name: p.name || p.title,
       game: p.game || 'FREEFIRE',
       status: p.status || 'ACTIVE',
-      durations: plans.map((pl: any) => pl.duration),
+      durations: durationList,
       plans,
-      sampleCurl: `curl -X POST "${req.protocol}://${req.headers.host || 'localhost:3000'}/api/v1/order/create" -H "Authorization: Bearer ${(req as any).apiKeyRecord?.key || 'API_KEY'}" -H "Content-Type: application/json" -d '{"pid":"${pid}","duration":"${plans[0]?.duration || '1 Day'}","quantity":1}'`
+      sampleCurl: plans[0]?.sampleCurl || `curl -X POST "${baseUrl}/api/v1/order/create" -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json" -d '{"pid":"${pid}","duration":"1 Day","quantity":1}'`
     };
   });
 
@@ -283,9 +353,17 @@ productApiRouter.all('/pids', authenticateApiKey('read_products'), (req: Request
     status: 'success',
     count: pidsList.length,
     pids: pidsList,
+    message: "Use product 'pid' and 'duration' in POST /api/v1/order/create to instantly buy and receive keys.",
     timestamp: Math.floor(Date.now() / 1000),
   });
-});
+};
+
+productApiRouter.all('/pids', authenticateApiKey('read_products'), handleGetPids);
+productApiRouter.all('/products/pids', authenticateApiKey('read_products'), handleGetPids);
+productApiRouter.all('/pids-and-durations', authenticateApiKey('read_products'), handleGetPids);
+productApiRouter.all('/durations', authenticateApiKey('read_products'), handleGetPids);
+productApiRouter.all('/pids/:pid', authenticateApiKey('read_products'), handleGetPids);
+productApiRouter.all('/products/:pid/durations', authenticateApiKey('read_products'), handleGetPids);
 
 // Helper to generate realistic Free Fire license key
 function generateLicenseKey(prefix = 'KALAM'): string {
@@ -305,7 +383,7 @@ const handleCreateOrder = async (req: Request, res: Response) => {
     // Support both 'pid' and 'productId' (and 'product_id', 'id')
     const rawPid = body.pid ?? body.productId ?? body.product_id ?? body.id ?? query.pid ?? query.productId ?? query.product_id;
     // Support 'duration' (and 'plan', 'planDuration', 'plan_duration', 'time', 'days')
-    const rawDuration = body.duration ?? body.plan ?? body.planDuration ?? body.plan_duration ?? body.time ?? body.days ?? query.duration ?? query.plan ?? '1 day';
+    const rawDuration = body.duration ?? body.plan ?? body.planDuration ?? body.plan_duration ?? body.time ?? body.days ?? query.duration ?? query.plan;
     const rawQty = body.quantity ?? body.qty ?? query.quantity ?? query.qty ?? 1;
     const externalOrderId = body.externalOrderId ?? body.external_order_id ?? body.custom_order_id ?? query.externalOrderId;
 
@@ -313,11 +391,11 @@ const handleCreateOrder = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Missing required field: pid (or productId)',
-        message: "API request must include product 'pid' (e.g. 'prod-1788620078944') and 'duration' (e.g. '1 day', '7 days', '30 days').",
+        message: "API request must include product 'pid' (e.g. 'prod-1788620078944') and 'duration' (e.g. '1 hours', '3 hours', '1 day', '7 days').",
         acceptedFields: {
           pid: "Required (string). Product unique identifier (e.g. 'prod-1788620078944')",
           productId: "Alias for pid",
-          duration: "Optional (string, default: '1 day'). License duration/plan (e.g. '1 day', '7 days', '30 days')",
+          duration: "Optional (string, defaults to first product plan). License duration/plan (e.g. '1 hours', '3 hours', '1 day')",
           quantity: "Optional (integer, default: 1). Quantity of keys to deliver (1-50)",
           externalOrderId: "Optional (string). Custom transaction identifier from client site/bot"
         },
@@ -331,7 +409,6 @@ const handleCreateOrder = async (req: Request, res: Response) => {
     }
 
     const pid = String(rawPid).trim();
-    const duration = String(rawDuration).trim();
     const qty = Math.max(1, Math.min(Number(rawQty) || 1, 50));
     const products = loadProductsFromDisk();
     const product = products.find((p: any) => (
@@ -345,23 +422,64 @@ const handleCreateOrder = async (req: Request, res: Response) => {
     
     // Check if matched plan exists for duration
     let unitPrice = 99;
-    let matchedDuration = duration;
+    let matchedPlan: any = null;
+    let matchedDuration = rawDuration ? String(rawDuration).trim() : '1 day';
+
     if (product && Array.isArray(product.plans) && product.plans.length > 0) {
-      const plan = product.plans.find((pl: any) => {
-        const d = (pl.duration || pl.name || '').toLowerCase().trim();
-        const target = duration.toLowerCase().trim();
-        return d === target || d.startsWith(target) || target.startsWith(d) || pl.id === duration;
-      });
-      if (plan) {
-        unitPrice = plan.resellerPrice || plan.price || 99;
-        matchedDuration = plan.duration || duration;
+      if (rawDuration) {
+        const target = String(rawDuration).toLowerCase().trim();
+        const targetClean = target.replace(/[^a-z0-9]/g, '');
+        matchedPlan = product.plans.find((pl: any) => {
+          const d = (pl.duration || pl.name || '').toLowerCase().trim();
+          const dClean = d.replace(/[^a-z0-9]/g, '');
+          return (
+            d === target ||
+            dClean === targetClean ||
+            d.startsWith(target) ||
+            target.startsWith(d) ||
+            pl.id === rawDuration ||
+            (targetClean.endsWith('h') && dClean.startsWith(targetClean.slice(0, -1) + 'hour')) ||
+            (targetClean.endsWith('d') && dClean.startsWith(targetClean.slice(0, -1) + 'day'))
+          );
+        });
+      }
+
+      // If no direct duration match found, fall back to first plan
+      if (!matchedPlan) {
+        matchedPlan = product.plans[0];
+      }
+
+      if (matchedPlan) {
+        unitPrice = matchedPlan.resellerPrice || matchedPlan.price || 99;
+        matchedDuration = matchedPlan.duration || matchedPlan.name || matchedDuration;
       }
     }
 
+    // Check inventory stock keys if available on disk
     const keys: string[] = [];
+    const planId = matchedPlan?.id || matchedPlan?.planId;
+    let stockList: string[] = [];
+
+    if (product) {
+      if (planId && product.planKeys && Array.isArray(product.planKeys[planId]) && product.planKeys[planId].length > 0) {
+        stockList = product.planKeys[planId];
+      } else if (Array.isArray(product.keys) && product.keys.length > 0) {
+        stockList = product.keys;
+      }
+    }
+
+    let modifiedStock = false;
     for (let i = 0; i < qty; i++) {
-      const code = generateLicenseKey('KALAM');
-      keys.push(code);
+      if (stockList.length > 0) {
+        keys.push(stockList.shift()!);
+        modifiedStock = true;
+      } else {
+        keys.push(generateLicenseKey('KALAM'));
+      }
+    }
+
+    if (modifiedStock) {
+      saveProductsToDisk(products);
     }
 
     const orderId = `ORD_API_${Date.now()}_${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -424,6 +542,7 @@ const handleCreateOrder = async (req: Request, res: Response) => {
 
 productApiRouter.post('/order/create', authenticateApiKey('order_keys'), handleCreateOrder);
 productApiRouter.post('/keys/buy', authenticateApiKey('order_keys'), handleCreateOrder);
+productApiRouter.post('/buy', authenticateApiKey('order_keys'), handleCreateOrder);
 
 // 5. Order Status / Key Lookup Endpoint
 productApiRouter.all('/order/status', authenticateApiKey('check_orders'), (req: Request, res: Response) => {

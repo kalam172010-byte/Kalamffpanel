@@ -30,6 +30,8 @@ export interface TopSeller {
 
 export interface PlanPricing {
   id: string;
+  pid?: string;
+  productId?: string;
   duration: string;
   price: number;
   resellerPrice?: number;
@@ -39,6 +41,8 @@ export interface PlanPricing {
 
 export interface Product {
   id: string;
+  pid?: string;
+  productId?: string;
   name: string;
   game: string;
   description?: string;

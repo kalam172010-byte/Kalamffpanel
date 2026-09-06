@@ -702,11 +702,29 @@ app.get('/api/products', (req: Request, res: Response) => {
     }
   }
 
+  // Ensure pid and duration are fully attached
+  const sanitized = globalProductsCache.map((p: any) => {
+    const pid = p.id || p.productId || p.pid;
+    const plans = (p.plans || []).map((pl: any) => ({
+      ...pl,
+      pid: pid,
+      productId: pid,
+      duration: pl.duration || pl.name || '1 Day',
+    }));
+    return {
+      ...p,
+      pid: pid,
+      productId: pid,
+      durations: plans.map((pl: any) => pl.duration),
+      plans,
+    };
+  });
+
   res.json({
     success: true,
     initialized: isProductsInitialized,
-    products: globalProductsCache,
-    count: globalProductsCache.length,
+    products: sanitized,
+    count: sanitized.length,
     updatedAt: Date.now()
   });
 });
@@ -715,10 +733,24 @@ app.post('/api/products', (req: Request, res: Response) => {
   try {
     const { products } = req.body;
     if (Array.isArray(products)) {
-      globalProductsCache = products;
+      globalProductsCache = products.map((p: any) => {
+        const pid = p.id || p.productId || p.pid;
+        const plans = (p.plans || []).map((pl: any) => ({
+          ...pl,
+          pid: pid,
+          productId: pid,
+          duration: pl.duration || pl.name || '1 Day',
+        }));
+        return {
+          ...p,
+          pid: pid,
+          productId: pid,
+          plans,
+        };
+      });
       isProductsInitialized = true;
       // Persist to disk
-      saveProductsToDisk(products);
+      saveProductsToDisk(globalProductsCache);
       return res.json({
         success: true,
         message: 'Products catalog updated and saved to disk successfully',
@@ -2496,13 +2528,163 @@ function calculateKeyExpiryInfo(durationStr: string) {
   };
 }
 
+// Upstream API Retry Configuration & Helper
+interface UpstreamRetryConfig {
+  maxRetries?: number;
+  initialDelayMs?: number;
+  backoffFactor?: number;
+  maxDelayMs?: number;
+  timeoutMs?: number;
+  apiName?: string;
+}
+
+interface UpstreamRetryResult {
+  ok: boolean;
+  status: number;
+  textResp: string;
+  attempts: number;
+  totalTimeMs: number;
+  networkError?: Error | null;
+}
+
+function isNetworkOrTransientError(err: any): boolean {
+  if (!err) return false;
+  const msg = String(err.message || '').toLowerCase();
+  const code = String(err.code || '').toLowerCase();
+  const name = String(err.name || '').toLowerCase();
+
+  return (
+    name === 'aborterror' ||
+    name === 'timeouterror' ||
+    msg.includes('abort') ||
+    msg.includes('timeout') ||
+    msg.includes('timed out') ||
+    msg.includes('econnreset') ||
+    msg.includes('econnrefused') ||
+    msg.includes('ehostunreach') ||
+    msg.includes('enotfound') ||
+    msg.includes('fetch failed') ||
+    msg.includes('network') ||
+    msg.includes('socket hang up') ||
+    msg.includes('eai_again') ||
+    code === 'econnreset' ||
+    code === 'etimedout' ||
+    code === 'econnrefused' ||
+    code === 'enotfound' ||
+    code === 'ehostunreach' ||
+    code === 'und_err_connect_timeout' ||
+    code === 'und_err_socket'
+  );
+}
+
+function isTransientHttpStatus(status: number): boolean {
+  return (
+    status === 408 || // Request Timeout
+    status === 429 || // Too Many Requests / Rate limit
+    status === 500 || // Internal Server Error (often temporary proxy/upstream glitch)
+    status === 502 || // Bad Gateway
+    status === 503 || // Service Unavailable
+    status === 504 || // Gateway Timeout
+    (status >= 520 && status <= 525) // Cloudflare / Edge network timeouts
+  );
+}
+
+async function fetchUpstreamWithRetry(
+  url: string,
+  options: RequestInit,
+  config: UpstreamRetryConfig = {}
+): Promise<UpstreamRetryResult> {
+  const maxRetries = config.maxRetries ?? 3; // total attempts = 1 + maxRetries
+  const initialDelayMs = config.initialDelayMs ?? 1000;
+  const backoffFactor = config.backoffFactor ?? 2;
+  const maxDelayMs = config.maxDelayMs ?? 5000;
+  const timeoutMs = config.timeoutMs ?? 15000;
+  const apiName = config.apiName || 'Upstream API';
+
+  const startTime = Date.now();
+  let lastError: any = null;
+  let lastStatus = 0;
+  let lastText = '';
+
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    const isLastAttempt = attempt === maxRetries + 1;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      console.log(`[Upstream Retry] [${apiName}] Attempt ${attempt}/${maxRetries + 1} connecting to ${url}...`);
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      lastStatus = response.status;
+      lastText = await response.text();
+
+      // If status is successful or a definitive non-transient status (e.g. 200, 400, 401, 403, 404)
+      if (response.ok || !isTransientHttpStatus(response.status)) {
+        console.log(`[Upstream Retry] [${apiName}] Attempt ${attempt}/${maxRetries + 1} completed with HTTP ${response.status} (elapsed: ${Date.now() - startTime}ms)`);
+        return {
+          ok: response.ok,
+          status: response.status,
+          textResp: lastText,
+          attempts: attempt,
+          totalTimeMs: Date.now() - startTime,
+          networkError: null
+        };
+      }
+
+      // Transient HTTP status (e.g. 429, 502, 503, 504)
+      lastError = new Error(`HTTP ${response.status}: ${lastText.slice(0, 100)}`);
+      console.warn(`[Upstream Retry] [${apiName}] Attempt ${attempt}/${maxRetries + 1} received transient HTTP status ${response.status}`);
+
+      if (isLastAttempt) {
+        break;
+      }
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      lastError = err;
+      const isNetworkIssue = isNetworkOrTransientError(err);
+      console.warn(`[Upstream Retry] [${apiName}] Attempt ${attempt}/${maxRetries + 1} failed with network error: ${err.message || 'unknown error'}`);
+
+      if (!isNetworkIssue || isLastAttempt) {
+        if (!isNetworkIssue) {
+          console.warn(`[Upstream Retry] [${apiName}] Non-transient error detected, skipping further retries.`);
+        }
+        break;
+      }
+    }
+
+    // Exponential backoff with random jitter: delay = min(maxDelay, initialDelay * backoff^attempt) + jitter
+    const exponentialDelay = Math.min(maxDelayMs, initialDelayMs * Math.pow(backoffFactor, attempt - 1));
+    const jitter = Math.floor(Math.random() * (exponentialDelay * 0.25));
+    const delayMs = exponentialDelay + jitter;
+
+    console.log(`[Upstream Retry] [${apiName}] Network issue detected. Retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries + 1}) with exponential backoff...`);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  return {
+    ok: false,
+    status: lastStatus,
+    textResp: lastText,
+    attempts: maxRetries + 1,
+    totalTimeMs: Date.now() - startTime,
+    networkError: lastError
+  };
+}
+
 // Purchase / Dispatch Key Route
 app.post('/api/purchase-key', async (req: Request, res: Response) => {
   try {
     const {
-      productId,
+      productId: rawProductId,
+      pid: rawPid,
       planId,
-      planDuration = '1 Day',
+      duration: rawDuration,
+      planDuration: rawPlanDuration = '1 Day',
       quantity = 1,
       androidId = '0b9b969bc2e7997b',
       stockKeys = [],
@@ -2510,6 +2692,9 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
       productApi1,
       productApi2,
     } = req.body;
+
+    const productId = rawProductId || rawPid;
+    const planDuration = rawDuration || rawPlanDuration;
 
     const requestedQty = Math.max(1, parseInt(quantity, 10) || 1);
     const expiryInfo = calculateKeyExpiryInfo(planDuration);
@@ -2575,37 +2760,35 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
     );
 
     if (api1 && (api1.apiKey && !isPlaceholderKey(api1.apiKey))) {
-      try {
-        const targetUrl = normalizeResellerUrl(api1.apiUrl);
-        const remotePid = productApi1?.remoteProductId || productId;
-        const remoteDur = productApi1?.remoteDuration || planDuration;
-        const masterKey = api1.masterKey || 'a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8';
-        const apiKey = api1.apiKey || '';
-        const hwid = androidId || '0b9b969bc2e7997b';
+      const targetUrl = normalizeResellerUrl(api1.apiUrl);
+      const remotePid = productApi1?.remoteProductId || productId;
+      const remoteDur = productApi1?.remoteDuration || planDuration;
+      const masterKey = api1.masterKey || 'a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8';
+      const apiKey = api1.apiKey || '';
+      const hwid = androidId || '0b9b969bc2e7997b';
 
-        const payloadParams = new URLSearchParams();
-        payloadParams.append('api_key', apiKey);
-        payloadParams.append('apiKey', apiKey);
-        payloadParams.append('key', apiKey);
-        payloadParams.append('master_key', masterKey);
-        payloadParams.append('masterkey', masterKey);
-        payloadParams.append('action', 'buy');
-        payloadParams.append('product_id', remotePid);
-        payloadParams.append('productId', remotePid);
-        payloadParams.append('product', remotePid);
-        payloadParams.append('duration', remoteDur);
-        payloadParams.append('dur', remoteDur);
-        payloadParams.append('android_id', hwid);
-        payloadParams.append('device_id', hwid);
-        payloadParams.append('quantity', String(requestedQty));
-        payloadParams.append('qty', String(requestedQty));
+      const payloadParams = new URLSearchParams();
+      payloadParams.append('api_key', apiKey);
+      payloadParams.append('apiKey', apiKey);
+      payloadParams.append('key', apiKey);
+      payloadParams.append('master_key', masterKey);
+      payloadParams.append('masterkey', masterKey);
+      payloadParams.append('action', 'buy');
+      payloadParams.append('product_id', remotePid);
+      payloadParams.append('productId', remotePid);
+      payloadParams.append('product', remotePid);
+      payloadParams.append('duration', remoteDur);
+      payloadParams.append('dur', remoteDur);
+      payloadParams.append('android_id', hwid);
+      payloadParams.append('device_id', hwid);
+      payloadParams.append('quantity', String(requestedQty));
+      payloadParams.append('qty', String(requestedQty));
 
-        console.log(`[Key Dispatch] Requesting key from AdminPanels API (${targetUrl}) for product:${remotePid}, duration:${remoteDur}...`);
+      console.log(`[Key Dispatch] Requesting key from AdminPanels API (${targetUrl}) for product:${remotePid}, duration:${remoteDur} (exponential backoff retry enabled)...`);
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-        const upstreamResp = await fetch(targetUrl, {
+      const upstreamResult = await fetchUpstreamWithRetry(
+        targetUrl,
+        {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -2614,13 +2797,20 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             'Accept': 'application/json, text/plain, */*',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
           },
-          body: payloadParams.toString(),
-          signal: controller.signal
-        });
+          body: payloadParams.toString()
+        },
+        {
+          maxRetries: 3,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 4000,
+          timeoutMs: 15000,
+          apiName: 'AdminPanels API'
+        }
+      );
 
-        clearTimeout(timeoutId);
-        const textResp = await upstreamResp.text();
-        const parsed = parseUpstreamResellerResponse(textResp);
+      if (upstreamResult.textResp) {
+        const parsed = parseUpstreamResellerResponse(upstreamResult.textResp);
 
         if (parsed.isSuccess && parsed.key) {
           return res.json({
@@ -2629,29 +2819,31 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             keys: [parsed.key],
             remainingKeys: effectiveStockKeys || [],
             ...expiryInfo,
-            message: 'Key successfully generated and delivered by AdminPanels.shop API.'
+            retryAttempts: upstreamResult.attempts,
+            deliveryTimeMs: upstreamResult.totalTimeMs,
+            message: `Key successfully generated and delivered by AdminPanels.shop API (${upstreamResult.attempts} attempt${upstreamResult.attempts > 1 ? 's' : ''}).`
           });
         } else {
-          lastUpstreamError = parsed.error || parsed.message || (typeof textResp === 'string' ? textResp.slice(0, 80) : 'Invalid API Key');
+          lastUpstreamError = parsed.error || parsed.message || (typeof upstreamResult.textResp === 'string' ? upstreamResult.textResp.slice(0, 80) : 'Invalid API Key');
           console.log('[Key Dispatch] AdminPanels notice:', lastUpstreamError);
         }
-      } catch (apiErr: any) {
-        lastUpstreamError = 'Remote upstream service unavailable';
-        console.log('[Key Dispatch] AdminPanels connection note:', apiErr.message || 'unreachable');
+      } else if (upstreamResult.networkError) {
+        lastUpstreamError = `Remote upstream service unavailable after ${upstreamResult.attempts} attempts (${upstreamResult.networkError.message || 'network timeout'})`;
+        console.log('[Key Dispatch] AdminPanels connection note:', upstreamResult.networkError.message || 'unreachable');
       }
     }
 
     if (api2 && (api2.xApiToken || api2.apiKey) && !isPlaceholderToken(api2.xApiToken || api2.apiKey)) {
-      try {
-        const targetUrl = api2.apiUrl;
-        const remotePid = productApi2?.remoteProductId || productId;
-        const remoteDur = productApi2?.remoteDuration || planDuration;
-        const token = api2.xApiToken || api2.apiKey;
+      const targetUrl = api2.apiUrl;
+      const remotePid = productApi2?.remoteProductId || productId;
+      const remoteDur = productApi2?.remoteDuration || planDuration;
+      const token = api2.xApiToken || api2.apiKey;
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
+      console.log(`[Key Dispatch] Requesting key from API #2 (${targetUrl}) for product:${remotePid}, duration:${remoteDur} (exponential backoff retry enabled)...`);
 
-        const upstreamResp = await fetch(targetUrl, {
+      const upstreamResult = await fetchUpstreamWithRetry(
+        targetUrl,
+        {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2665,13 +2857,20 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             product: remotePid,
             duration: remoteDur,
             quantity: requestedQty
-          }),
-          signal: controller.signal
-        });
+          })
+        },
+        {
+          maxRetries: 3,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 4000,
+          timeoutMs: 12000,
+          apiName: 'API #2 (HK MODZ)'
+        }
+      );
 
-        clearTimeout(timeoutId);
-        const textResp = await upstreamResp.text();
-        const parsed = parseUpstreamResellerResponse(textResp);
+      if (upstreamResult.textResp) {
+        const parsed = parseUpstreamResellerResponse(upstreamResult.textResp);
 
         if (parsed.isSuccess && parsed.key) {
           return res.json({
@@ -2680,14 +2879,16 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             keys: [parsed.key],
             remainingKeys: effectiveStockKeys || [],
             ...expiryInfo,
-            message: 'Key successfully generated and delivered by Upstream API.'
+            retryAttempts: upstreamResult.attempts,
+            deliveryTimeMs: upstreamResult.totalTimeMs,
+            message: `Key successfully generated and delivered by Upstream API (${upstreamResult.attempts} attempt${upstreamResult.attempts > 1 ? 's' : ''}).`
           });
         } else {
           lastUpstreamError = parsed.error || parsed.message || lastUpstreamError;
         }
-      } catch (api2Err: any) {
-        lastUpstreamError = 'Remote provider unreachable';
-        console.log('[Key Dispatch] API #2 connection note:', api2Err.message || 'unreachable');
+      } else if (upstreamResult.networkError) {
+        lastUpstreamError = `Remote provider unreachable after ${upstreamResult.attempts} attempts (${upstreamResult.networkError.message || 'network timeout'})`;
+        console.log('[Key Dispatch] API #2 connection note:', upstreamResult.networkError.message || 'unreachable');
       }
     }
 
