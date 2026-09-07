@@ -1,0 +1,89 @@
+[
+  {
+    "userId": "kalam172010@gmail.com",
+    "email": "kalam172010@gmail.com",
+    "balance": 290011.65,
+    "lastUpdated": 1788786698641,
+    "history": [
+      {
+        "id": "WH_1788786698641_679",
+        "type": "DEDUCT",
+        "amount": 10,
+        "balanceAfter": 290011.65,
+        "timestamp": 1788786698641,
+        "reason": "Revert test balance"
+      },
+      {
+        "id": "WH_1788786691186_284",
+        "type": "DEPOSIT",
+        "amount": 10,
+        "balanceAfter": 290021.65,
+        "timestamp": 1788786691186,
+        "reason": "Test deposit verification"
+      }
+    ]
+  },
+  {
+    "userId": "test_user_1",
+    "email": "test@example.com",
+    "balance": 100,
+    "lastUpdated": 1788785415121,
+    "history": [
+      {
+        "id": "WH_1788785415121_663",
+        "type": "DEDUCT",
+        "amount": 50,
+        "balanceAfter": 100,
+        "timestamp": 1788785415121,
+        "reason": "Key Purchase"
+      },
+      {
+        "id": "WH_1788785404994_838",
+        "type": "DEPOSIT",
+        "amount": 150,
+        "balanceAfter": 150,
+        "timestamp": 1788785404994,
+        "reason": "UPI Test Deposit"
+      }
+    ]
+  },
+  {
+    "userId": "0kvtxlaj9hbe54fqpttidybppqf2",
+    "email": "vel1212@gamil.com",
+    "balance": 1,
+    "lastUpdated": 1788789054829,
+    "history": [
+      {
+        "id": "WH_1788789054829_996",
+        "type": "DEPOSIT",
+        "amount": 1,
+        "balanceAfter": 1,
+        "timestamp": 1788789054829,
+        "reason": "Deposit: ₹1 (004774894397)"
+      },
+      {
+        "id": "WH_1788789053993_815",
+        "type": "DEPOSIT",
+        "amount": 1,
+        "balanceAfter": 3,
+        "timestamp": 1788789053993,
+        "reason": "Payment verified: fg_Q9JXYR23 (UTR: 004774894397)"
+      },
+      {
+        "id": "WH_1788785854913_409",
+        "type": "DEPOSIT",
+        "amount": 1,
+        "balanceAfter": 2,
+        "timestamp": 1788785854913,
+        "reason": "Deposit: ₹1 (004772105123)"
+      }
+    ]
+  },
+  {
+    "userId": "newuser@gmail.com",
+    "email": "newuser@gmail.com",
+    "balance": 0,
+    "lastUpdated": 1788787457497,
+    "history": []
+  }
+]

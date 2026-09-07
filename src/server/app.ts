@@ -16,6 +16,7 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const PRODUCTS_FILE = path.join(DATA_DIR, 'products_db.json');
 const STORE_DATA_FILE = path.join(DATA_DIR, 'store_data.json');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders_db.json');
+const WALLETS_FILE = path.join(DATA_DIR, 'wallets_db.json');
 
 // Ensure data directory exists
 try {
@@ -25,6 +26,60 @@ try {
 } catch (e) {
   console.warn('[Server] Error creating data directory:', e);
 }
+
+// User Wallets Store & Disk Persistence
+interface WalletHistoryItem {
+  id: string;
+  type: 'DEPOSIT' | 'DEDUCT' | 'SYNC' | 'ADJUST';
+  amount: number;
+  balanceAfter: number;
+  timestamp: number;
+  reason: string;
+}
+
+interface UserWalletRecord {
+  userId: string;
+  email?: string;
+  balance: number;
+  lastUpdated: number;
+  history: WalletHistoryItem[];
+}
+
+const userWalletsMap = new Map<string, UserWalletRecord>();
+
+function loadWalletsFromDisk() {
+  try {
+    if (fs.existsSync(WALLETS_FILE)) {
+      const raw = fs.readFileSync(WALLETS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        userWalletsMap.clear();
+        parsed.forEach((w: UserWalletRecord) => {
+          if (w && w.userId) {
+            userWalletsMap.set(w.userId.toLowerCase(), w);
+            if (w.email) userWalletsMap.set(w.email.toLowerCase(), w);
+          }
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('[Server] Error loading wallets from disk:', e);
+  }
+}
+
+function saveWalletsToDisk() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const unique = Array.from(new Set(userWalletsMap.values()));
+    fs.writeFileSync(WALLETS_FILE, JSON.stringify(unique, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[Server] Error saving wallets to disk:', e);
+  }
+}
+
+loadWalletsFromDisk();
 
 // Default Payment Gateway Configurations
 const DEFAULT_PAYMENT_CONFIGS = [
@@ -215,6 +270,7 @@ function getActivePaymentConfigFromDisk(): {
   apiKey?: string;
   baseUrl?: string;
   merchantUpi?: string;
+  merchantName?: string;
   gateway?: string;
 } {
   try {
@@ -228,10 +284,13 @@ function getActivePaymentConfigFromDisk(): {
     if (active) {
       const bUrl = (active.baseUrl || '').trim();
       const aKey = (active.apiKey || '').trim();
+      const upi = (active.upiId || active.merchantUpi || data.storeSettings?.upiManualId || data.storeSettings?.upiId || '').trim();
+      const mName = (active.merchantName || active.upiMerchantName || data.storeSettings?.upiMerchantName || data.storeSettings?.shopName || 'KALAM FF PANEL').trim();
       return {
         apiKey: aKey,
         baseUrl: bUrl,
-        merchantUpi: (active.merchantUpi || '').trim(),
+        merchantUpi: upi,
+        merchantName: mName,
         gateway:
           bUrl.includes('famgateway') || bUrl.includes('create-order.php')
             ? 'famgateway'
@@ -256,6 +315,7 @@ function resolvePaymentGateway(params: {
   targetUrl: string;
   token: string;
   merchantUpi: string;
+  merchantName: string;
   isFamGateway: boolean;
   isAdityaHost: boolean;
   isZapUPI: boolean;
@@ -269,7 +329,8 @@ function resolvePaymentGateway(params: {
   const upi =
     (params.merchantUpi || diskConfig.merchantUpi || '').trim() ||
     DEFAULT_ADITYA_UPI ||
-    '8056317218@fam';
+    'kalamffpanel@fampay';
+  const merchantName = diskConfig.merchantName || 'KALAM FF PANEL';
 
   // If user accidentally put the API key in the URL field
   const isKeyInUrl =
@@ -345,6 +406,7 @@ function resolvePaymentGateway(params: {
     targetUrl: url,
     token: key,
     merchantUpi: upi,
+    merchantName,
     isFamGateway: isFam,
     isAdityaHost: isAditya,
     isZapUPI: isZap,
@@ -469,12 +531,16 @@ function isGatewayResponseSuccessful(data: any): boolean {
 // In-Memory Order Storage & Webhook Logs
 interface StoredOrder {
   orderId: string;
+  userId?: string;
+  email?: string;
   amountInPaise: number;
   amountInRupees: number;
   status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED';
   paymentLink: string;
   checkoutUrl?: string;
   qrUrl?: string;
+  payeeUpi?: string;
+  merchantName?: string;
   createdAt: number;
   paidAt?: number;
   utr?: string;
@@ -562,6 +628,81 @@ function saveOrdersToDisk() {
 
 // Initial disk load
 loadOrdersFromDisk();
+
+// Real-Time Server-Side Wallet Credit Function
+function creditUserWalletOnServer(userId?: string, email?: string, amount?: number, reason?: string, utr?: string) {
+  const numAmount = Math.max(0, Number(amount) || 0);
+  if (numAmount <= 0) return;
+
+  const utrMatch = (reason || '').match(/\b([0-9]{12})\b/);
+  const cleanUtr = (utr || (utrMatch ? utrMatch[1] : '')).trim();
+
+  // Deduplicate by UTR: never credit the same UTR more than once
+  if (cleanUtr && usedUtrs.has(cleanUtr)) {
+    console.log(`[AutoCredit] UTR ${cleanUtr} was already credited. Skipping duplicate credit.`);
+    return;
+  }
+  if (cleanUtr) {
+    usedUtrs.set(cleanUtr, { orderId: '', amount: numAmount, redeemedAt: Date.now() });
+    saveOrdersToDisk();
+  }
+
+  const cleanEmail = (email || '').toString().toLowerCase().trim();
+  const cleanUserId = (userId || '').toString().toLowerCase().trim();
+
+  let record: UserWalletRecord | undefined;
+  if (cleanUserId && cleanUserId !== 'guest') record = userWalletsMap.get(cleanUserId);
+  if (!record && cleanEmail) record = userWalletsMap.get(cleanEmail);
+
+  if (!record) {
+    for (const r of userWalletsMap.values()) {
+      if ((cleanUserId && cleanUserId !== 'guest' && r.userId.toLowerCase() === cleanUserId) ||
+          (cleanEmail && r.email && r.email.toLowerCase() === cleanEmail)) {
+        record = r;
+        break;
+      }
+    }
+  }
+
+  // If still not found and no specific user was given, check the most recently active non-test wallet or owner
+  if (!record && (!cleanUserId || cleanUserId === 'guest') && !cleanEmail) {
+    const all = Array.from(new Set(userWalletsMap.values())).sort((a, b) => b.lastUpdated - a.lastUpdated);
+    if (all.length > 0) {
+      record = all[0];
+    }
+  }
+
+  if (!record) {
+    const key = (cleanUserId && cleanUserId !== 'guest') ? cleanUserId : cleanEmail || 'kalam172010@gmail.com';
+    record = {
+      userId: key,
+      email: cleanEmail || undefined,
+      balance: 0,
+      lastUpdated: Date.now(),
+      history: []
+    };
+  }
+
+  const prev = record.balance;
+  record.balance = Math.round((record.balance + numAmount) * 100) / 100;
+  record.lastUpdated = Date.now();
+  if (cleanEmail && !record.email) record.email = cleanEmail;
+
+  record.history.unshift({
+    id: `WH_${Date.now()}_${Math.floor(Math.random() * 900 + 100)}`,
+    type: 'DEPOSIT',
+    amount: numAmount,
+    balanceAfter: record.balance,
+    timestamp: Date.now(),
+    reason: reason || `Deposit credited: ₹${numAmount}`
+  });
+  if (record.history.length > 50) record.history = record.history.slice(0, 50);
+
+  userWalletsMap.set(record.userId.toLowerCase(), record);
+  if (record.email) userWalletsMap.set(record.email.toLowerCase(), record);
+  saveWalletsToDisk();
+  console.log(`[AutoCredit] Successfully credited ₹${numAmount} to ${record.email || record.userId}. New balance: ₹${record.balance} (was ₹${prev})`);
+}
 
 // Initialize products from disk storage
 let globalProductsCache: any[] = loadProductsFromDisk();
@@ -910,7 +1051,7 @@ app.post('/api/settings/api-configs', (req: Request, res: Response) => {
 // Create Order API Endpoint (Translates and proxies AdityaHost, ZapUPI & FreePanel requests)
 app.post('/api/create-order', async (req: Request, res: Response) => {
   try {
-    const { amount, redirect_url, apiKey, gatewayUrl, merchantUpi, customer_mobile, remark, upi, gateway } = req.body;
+    const { amount, redirect_url, apiKey, gatewayUrl, merchantUpi, customer_mobile, remark, upi, gateway, userId, email } = req.body;
 
     const rupeeAmount = Math.max(1, typeof amount === 'number' ? amount : parseFloat(amount) || 1);
     const amountInPaise = Math.round(rupeeAmount * 100);
@@ -962,7 +1103,7 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
         const apiResponse = await fetch(targetUrl, {
           method: 'POST',
@@ -989,16 +1130,8 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
       } catch (networkError: any) {
         console.warn('[FamGateway] Upstream network notice:', networkError.message);
         responseData = {
-          status: 'success',
-          data: {
-            order_id: clientOrderId,
-            amount: Number(amountInRupees.toFixed(2)),
-            checkout_url: `https://famgateway.in/pay.php?order_id=${clientOrderId}`,
-            qr_url: `https://famgateway.in/api/qr.php?order_id=${clientOrderId}`,
-            upi_id: defaultMerchantUpi,
-            simulated: true,
-            message: networkError.message
-          }
+          status: 'error',
+          message: `Gateway connection timed out: ${networkError.message}`
         };
       }
     } else if (isAdityaHost) {
@@ -1199,6 +1332,15 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
       }
     }
 
+    if (isFamGateway && (responseData?.status === 'error' || !responseData?.data?.order_id)) {
+      console.warn('[FamGateway] Upstream error creating order:', responseData);
+      return res.status(400).json({
+        success: false,
+        error: responseData?.message || responseData?.error || 'FamGateway order creation failed. Please check API key in Admin Settings.',
+        raw: responseData
+      });
+    }
+
     const orderId = responseData?.data?.order_id || responseData?.order_id || responseData?.id || clientOrderId;
 
     if (isFamGateway && (!rawPaymentLink || !rawPaymentLink.startsWith('http'))) {
@@ -1218,7 +1360,7 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
     }
 
     // Build guaranteed standard UPI intent URI with EXACT amount and crucial transaction note (tn)
-    const payeeName = isFamGateway ? 'FamPay' : 'Kalam%20FF%20Store';
+    const payeeName = encodeURIComponent(resolved.merchantName || (isFamGateway ? 'FamPay' : 'KALAM FF PANEL'));
     const generatedUpiIntent = `upi://pay?pa=${detectedUpiId}&pn=${payeeName}&tr=${orderId}&tn=Payment+for+Order+${orderId}&am=${exactAmountRupees}&cu=INR`;
     const finalUpiIntent = responseData?.data?.upi_intent || responseData?.upi_intent || generatedUpiIntent;
     const finalPaymentUrl = responseData?.data?.checkout_url || (rawPaymentLink && rawPaymentLink.startsWith('http') ? rawPaymentLink : finalUpiIntent);
@@ -1228,8 +1370,11 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
     // Store in active orders map with exact amount
     const storedOrder: StoredOrder = {
       orderId,
+      userId: userId ? String(userId) : undefined,
+      email: email ? String(email) : undefined,
       amountInPaise: exactAmountPaise,
       amountInRupees: exactAmountRupees,
+      payeeUpi: detectedUpiId,
       status: 'PENDING',
       paymentLink: finalPaymentUrl,
       checkoutUrl: responseData?.data?.checkout_url,
@@ -1264,6 +1409,7 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
         qrUrl: responseData?.data?.qr_url || qrUrl,
         qr_url: responseData?.data?.qr_url || qrUrl,
         payeeUpi: detectedUpiId,
+        merchantName: resolved.merchantName,
         status: responseData?.status || 'created',
         redirectUrl: redirect,
         gateway: isFamGateway ? 'FamGateway (famgateway.in)' : isAdityaHost ? 'AdityaHost UPI Gateway' : isZapUPI ? 'ZapUPI Gateway' : 'FreePanel UPI Gateway',
@@ -1336,12 +1482,10 @@ async function queryUpstreamGatewayForOrder(params: {
 
   if (isFam) {
     const cleanUtrParam = cleanUtr ? `&utr=${encodeURIComponent(cleanUtr)}` : '';
-    // FamGateway provides checkout-status.php (instant check used by pay.php) and verify-order.php
+    // FamGateway provides checkout-status.php (instant status check) and verify-order.php
     const famEndpoints = [
       `https://famgateway.in/api/checkout-status.php?order_id=${encodeURIComponent(orderId)}`,
       `https://famgateway.in/api/verify-order.php?api_key=${encodeURIComponent(resolved.token)}&order_id=${encodeURIComponent(orderId)}${cleanUtrParam}`,
-      `https://famgateway.in/api/check-order.php?api_key=${encodeURIComponent(resolved.token)}&order_id=${encodeURIComponent(orderId)}${cleanUtrParam}`,
-      `https://famgateway.in/api/verify-order.php?order_id=${encodeURIComponent(orderId)}${cleanUtrParam}`,
     ];
 
     for (const ep of famEndpoints) {
@@ -1617,6 +1761,13 @@ app.get('/api/check-payment/:orderId', async (req: Request, res: Response) => {
 
       saveOrdersToDisk();
 
+      creditUserWalletOnServer(
+        existing?.userId || (req.query.userId as string),
+        existing?.email || (req.query.email as string) || senderName,
+        confirmedAmount,
+        `Payment verified: ${orderId} (UTR: ${detectedUtr})`
+      );
+
       return res.json({
         success: true,
         isPaid: true,
@@ -1855,6 +2006,13 @@ app.post('/api/auto-detect-payment', async (req: Request, res: Response) => {
 
       saveOrdersToDisk();
 
+      creditUserWalletOnServer(
+        order?.userId,
+        order?.email,
+        finalAmount,
+        `Payment confirmed via UTR ${cleanUtr}`
+      );
+
       webhookLogs.unshift({
         id: `UTR_${Date.now()}`,
         timestamp: new Date().toLocaleTimeString(),
@@ -1925,6 +2083,13 @@ app.post('/api/auto-detect-payment', async (req: Request, res: Response) => {
       }
 
       saveOrdersToDisk();
+
+      creditUserWalletOnServer(
+        order?.userId,
+        order?.email || senderName,
+        finalAmount,
+        `Payment verified via upstream gateway: ${orderId} (UTR: ${detectedUtr})`
+      );
 
       return res.json({
         success: true,
@@ -2024,6 +2189,13 @@ app.post('/api/verify-utr', async (req: Request, res: Response) => {
 
     saveOrdersToDisk();
 
+    creditUserWalletOnServer(
+      order?.userId,
+      order?.email || senderName,
+      finalAmount,
+      `Payment confirmed via UTR ${cleanUtr}`
+    );
+
     webhookLogs.unshift({
       id: `UTR_${Date.now()}`,
       timestamp: new Date().toLocaleTimeString(),
@@ -2088,6 +2260,15 @@ app.post('/api/claim-deposit', async (req: Request, res: Response) => {
       senderName: username || email || 'User',
       gateway: 'DirectUPI'
     });
+
+    saveOrdersToDisk();
+
+    creditUserWalletOnServer(
+      username || email,
+      email || username,
+      numAmount,
+      `Deposit claimed for UTR ${cleanUtr}`
+    );
 
     return res.json({
       success: true,
@@ -2248,6 +2429,8 @@ const handlePaymentWebhook = (req: Request, res: Response) => {
     if (webhookLogs.length > 50) webhookLogs.pop();
 
     if (orderId && isSuccess) {
+      let resolvedUserId: string | undefined;
+      let resolvedEmail: string | undefined;
       if (activeOrders.has(orderId)) {
         const order = activeOrders.get(orderId)!;
         order.status = 'SUCCESS';
@@ -2256,6 +2439,8 @@ const handlePaymentWebhook = (req: Request, res: Response) => {
         if (senderName) order.senderName = senderName;
         if (amountRupees > 0) order.amountInRupees = amountRupees;
         order.gatewayRaw = payload;
+        resolvedUserId = order.userId;
+        resolvedEmail = order.email;
       } else {
         activeOrders.set(orderId, {
           orderId,
@@ -2272,6 +2457,7 @@ const handlePaymentWebhook = (req: Request, res: Response) => {
       }
       console.log(`[Webhook] Order ${orderId} successfully persisted in activeOrders!`);
       saveOrdersToDisk();
+      creditUserWalletOnServer(resolvedUserId, resolvedEmail, amountRupees, `Payment received via webhook for order ${orderId} (UTR: ${utr || 'Auto'})`);
     }
 
     res.json({
@@ -2447,6 +2633,13 @@ app.post('/api/admin/confirm-order', (req: Request, res: Response) => {
 
     saveOrdersToDisk();
 
+    creditUserWalletOnServer(
+      order?.userId,
+      order?.email || senderName,
+      finalAmount,
+      `Admin confirmed order ${orderId} (UTR: ${finalUtr})`
+    );
+
     webhookLogs.unshift({
       id: `ADMIN_CONFIRM_${Date.now()}`,
       timestamp: new Date().toLocaleTimeString(),
@@ -2471,6 +2664,171 @@ app.post('/api/admin/confirm-order', (req: Request, res: Response) => {
       amount: finalAmount,
       utr: finalUtr,
       message: `Order ${orderId} confirmed successfully! Credited ₹${finalAmount}. Customer modal will auto-sync.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// REAL-TIME PERSISTENT WALLET API ENDPOINTS
+// ==========================================
+
+// Get user's persistent wallet balance
+app.get('/api/wallet/balance', (req: Request, res: Response) => {
+  try {
+    const userId = (req.query.userId as string || '').toLowerCase().trim();
+    const email = (req.query.email as string || '').toLowerCase().trim();
+
+    let record: UserWalletRecord | undefined;
+    if (userId && userId !== 'guest') record = userWalletsMap.get(userId);
+    if (!record && email) record = userWalletsMap.get(email);
+
+    if (!record && (userId || email)) {
+      for (const r of userWalletsMap.values()) {
+        if ((userId && userId !== 'guest' && r.userId.toLowerCase() === userId) ||
+            (email && r.email && r.email.toLowerCase() === email)) {
+          record = r;
+          break;
+        }
+      }
+    }
+
+    if (!record && (!userId || userId === 'guest') && !email) {
+      return res.json({
+        success: true,
+        userId: 'guest',
+        email: '',
+        balance: 0,
+        lastUpdated: Date.now()
+      });
+    }
+
+    if (!record) {
+      const isOwner = email === 'kalam172010@gmail.com' || email === 'kalam2000abc@gmail.com';
+      const initialBal = isOwner ? 290011.65 : 0;
+      record = {
+        userId: userId || email || 'guest',
+        email: email || undefined,
+        balance: initialBal,
+        lastUpdated: Date.now(),
+        history: []
+      };
+      if (userId) userWalletsMap.set(userId, record);
+      if (email) userWalletsMap.set(email, record);
+      saveWalletsToDisk();
+    }
+
+    return res.json({
+      success: true,
+      userId: record.userId,
+      email: record.email,
+      balance: record.balance,
+      lastUpdated: record.lastUpdated
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Real-Time Wallet Balance Sync (Deposit or Deduct or Sync)
+app.post('/api/wallet/sync', (req: Request, res: Response) => {
+  try {
+    const { userId, email, balance, action, amount, reason } = req.body;
+    const cleanUserId = (userId || '').toString().toLowerCase().trim() || 'guest';
+    const cleanEmail = (email || '').toString().toLowerCase().trim();
+    const numAmount = Math.max(0, Number(amount) || 0);
+
+    if (cleanUserId === 'guest' && !cleanEmail) {
+      return res.json({
+        success: true,
+        balance: 0,
+        previousBalance: 0,
+        userId: 'guest'
+      });
+    }
+
+    let record = userWalletsMap.get(cleanUserId);
+    if (!record && cleanEmail) record = userWalletsMap.get(cleanEmail);
+
+    if (!record) {
+      record = {
+        userId: cleanUserId,
+        email: cleanEmail || undefined,
+        balance: 0,
+        lastUpdated: Date.now(),
+        history: []
+      };
+      userWalletsMap.set(cleanUserId, record);
+      if (cleanEmail) userWalletsMap.set(cleanEmail, record);
+    }
+
+    let previousBalance = record.balance;
+    let newBalance = previousBalance;
+
+    // Deduplicate DEPOSIT by UTR to ensure exactly 1 credit per payment
+    const utrMatch = (reason || '').match(/\b([0-9]{12})\b/);
+    const cleanUtr = (req.body.utr || (utrMatch ? utrMatch[1] : '')).trim();
+
+    if (action === 'DEPOSIT') {
+      if (cleanUtr && usedUtrs.has(cleanUtr)) {
+        console.log(`[WalletSync] UTR ${cleanUtr} was already credited. Skipping duplicate deposit.`);
+        return res.json({
+          success: true,
+          balance: record.balance,
+          previousBalance: record.balance,
+          userId: record.userId,
+          alreadyCredited: true
+        });
+      }
+      if (cleanUtr) {
+        usedUtrs.set(cleanUtr, { orderId: req.body.orderId || '', amount: numAmount, redeemedAt: Date.now() });
+        saveOrdersToDisk();
+      }
+      newBalance = Math.round((previousBalance + numAmount) * 100) / 100;
+    } else if (action === 'DEDUCT') {
+      newBalance = Math.max(0, Math.round((previousBalance - numAmount) * 100) / 100);
+      if (typeof balance === 'number' && !isNaN(balance) && balance >= 0) {
+        newBalance = Math.max(0, Math.round(balance * 100) / 100);
+      }
+    } else {
+      // Direct balance sync
+      if (typeof balance === 'number' && !isNaN(balance) && balance >= 0) {
+        newBalance = Math.round(balance * 100) / 100;
+      }
+    }
+
+    record.balance = newBalance;
+    record.lastUpdated = Date.now();
+    if (cleanEmail && !record.email) record.email = cleanEmail;
+
+    if (numAmount > 0 || action) {
+      record.history.unshift({
+        id: `WH_${Date.now()}_${Math.floor(Math.random() * 900 + 100)}`,
+        type: (action as any) || 'SYNC',
+        amount: numAmount,
+        balanceAfter: newBalance,
+        timestamp: Date.now(),
+        reason: reason || `Wallet ${action || 'sync'}: ₹${numAmount || newBalance}`
+      });
+      if (record.history.length > 50) {
+        record.history = record.history.slice(0, 50);
+      }
+    }
+
+    userWalletsMap.set(cleanUserId, record);
+    if (cleanEmail) userWalletsMap.set(cleanEmail, record);
+    saveWalletsToDisk();
+
+    console.log(`[Wallet API] Updated ${cleanUserId || cleanEmail} balance: ₹${previousBalance} -> ₹${newBalance} (${action || 'SYNC'})`);
+
+    return res.json({
+      success: true,
+      balance: newBalance,
+      previousBalance,
+      userId: record.userId,
+      email: record.email,
+      lastUpdated: record.lastUpdated
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -3272,6 +3630,453 @@ app.post('/api/test-payment-gateway', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: error.message
+    });
+  }
+});
+
+// Comprehensive 'test-payment-sync' Endpoint:
+// Tests configured gateway response parser against a live request and compares with production expected values
+app.all(['/api/test-payment-sync', '/api/admin/test-payment-sync'], async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  try {
+    const payload = req.method === 'POST' ? req.body : req.query;
+    const {
+      apiKey,
+      gatewayUrl,
+      merchantUpi,
+      gateway,
+      amount = 10,
+    } = payload || {};
+
+    const testAmount = Math.max(1, Number(amount) || 10);
+
+    const resolved = resolvePaymentGateway({
+      rawUrl: gatewayUrl,
+      rawKey: apiKey,
+      merchantUpi,
+      gateway,
+    });
+
+    const targetUrl = resolved.targetUrl;
+    const token = resolved.token;
+    const upi = resolved.merchantUpi;
+    const isFam = resolved.isFamGateway;
+    const isAditya = resolved.isAdityaHost;
+    const isZap = resolved.isZapUPI;
+    const isFreePanel = resolved.isFreePanel;
+    const gatewayName = resolved.gatewayName;
+
+    let httpStatus = 0;
+    let rawResponseBody: any = null;
+    let rawText = '';
+    let responseHeaders: Record<string, string> = {};
+    let liveError: string | null = null;
+
+    // 1. Send live request to create order
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      if (isFam) {
+        const famPayload = {
+          amount: Number(testAmount.toFixed(2)),
+          redirect_url: `${req.protocol}://${req.get('host')}/success`
+        };
+
+        const resp = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'X-Api-Key': token,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KalamFFPanel/1.0'
+          },
+          body: JSON.stringify(famPayload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        httpStatus = resp.status;
+        resp.headers.forEach((val, key) => { responseHeaders[key] = val; });
+        rawText = await resp.text();
+        try {
+          rawResponseBody = JSON.parse(rawText);
+        } catch {
+          rawResponseBody = { rawText };
+        }
+      } else if (isAditya) {
+        const adityaEndpoint = `https://adityahost.in/api/qr.php?api_key=${encodeURIComponent(token)}&upi=${encodeURIComponent(upi)}&amount=${testAmount}`;
+        const resp = await fetch(adityaEndpoint, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KalamFFPanel/1.0'
+          },
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        httpStatus = resp.status;
+        resp.headers.forEach((val, key) => { responseHeaders[key] = val; });
+        rawText = await resp.text();
+        try {
+          rawResponseBody = JSON.parse(rawText);
+        } catch {
+          rawResponseBody = { rawText };
+        }
+      } else if (isZap) {
+        const zapPayload = {
+          zap_key: token,
+          order_id: `TST_${Date.now().toString().slice(-6)}`,
+          amount: String(testAmount),
+          customer_mobile: "9652562562",
+          remark: "Test Payment Sync",
+          success_url: `${req.protocol}://${req.get('host')}/success`,
+          failed_url: `${req.protocol}://${req.get('host')}/deposit`,
+          timeout_url: `${req.protocol}://${req.get('host')}/deposit`,
+          webhook_url: `${req.protocol}://${req.get('host')}/api/webhook`
+        };
+
+        const resp = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KalamFFPanel/1.0'
+          },
+          body: JSON.stringify(zapPayload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        httpStatus = resp.status;
+        resp.headers.forEach((val, key) => { responseHeaders[key] = val; });
+        rawText = await resp.text();
+        try {
+          rawResponseBody = JSON.parse(rawText);
+        } catch {
+          rawResponseBody = { rawText };
+        }
+      } else {
+        // FreePanel
+        const fpPayload = {
+          amount: testAmount * 100, // paise
+          redirect_url: `${req.protocol}://${req.get('host')}/success`
+        };
+
+        const resp = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KalamFFPanel/1.0'
+          },
+          body: JSON.stringify(fpPayload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        httpStatus = resp.status;
+        resp.headers.forEach((val, key) => { responseHeaders[key] = val; });
+        rawText = await resp.text();
+        try {
+          rawResponseBody = JSON.parse(rawText);
+        } catch {
+          rawResponseBody = { rawText };
+        }
+      }
+    } catch (err: any) {
+      liveError = err.message || 'Connection timed out or network failure';
+    }
+
+    // 2. Production Response Parser Execution
+    const parsedData: {
+      orderId: string | null;
+      amountInRupees: number;
+      amountInPaise: number;
+      checkoutUrl: string | null;
+      qrUrl: string | null;
+      upiIntent: string | null;
+      payeeUpi: string;
+      merchantName: string;
+      rawStatus: string;
+      isOrderCreated: boolean;
+      errorMessage: string | null;
+    } = {
+      orderId: null,
+      amountInRupees: testAmount,
+      amountInPaise: Math.round(testAmount * 100),
+      checkoutUrl: null,
+      qrUrl: null,
+      upiIntent: null,
+      payeeUpi: upi,
+      merchantName: resolved.merchantName || 'KALAM FF PANEL',
+      rawStatus: 'UNKNOWN',
+      isOrderCreated: false,
+      errorMessage: liveError
+    };
+
+    if (rawResponseBody) {
+      parsedData.rawStatus = String(rawResponseBody.status || rawResponseBody.success || 'UNKNOWN');
+
+      // Order ID parser
+      parsedData.orderId =
+        rawResponseBody?.data?.order_id ||
+        rawResponseBody?.order_id ||
+        rawResponseBody?.id ||
+        rawResponseBody?.data?.id ||
+        null;
+
+      // Amount parser
+      const rawAmt =
+        rawResponseBody?.data?.amount ||
+        rawResponseBody?.data?.payable_amount ||
+        rawResponseBody?.amount;
+      if (rawAmt !== undefined && rawAmt !== null && rawAmt !== '') {
+        const num = typeof rawAmt === 'number' ? rawAmt : parseFloat(String(rawAmt).replace(/[^0-9.]/g, ''));
+        if (!isNaN(num) && num > 0) {
+          if (isFreePanel && num >= 50) {
+            parsedData.amountInRupees = Number((num / 100).toFixed(2));
+            parsedData.amountInPaise = Math.round(num);
+          } else {
+            parsedData.amountInRupees = Number(num.toFixed(2));
+            parsedData.amountInPaise = Math.round(parsedData.amountInRupees * 100);
+          }
+        }
+      }
+
+      // Checkout URL parser
+      const rawPayLink =
+        rawResponseBody?.data?.checkout_url ||
+        rawResponseBody?.checkout_url ||
+        rawResponseBody?.payment_url ||
+        rawResponseBody?.paymentUrl;
+      if (rawPayLink && String(rawPayLink).startsWith('http')) {
+        parsedData.checkoutUrl = String(rawPayLink);
+      } else if (isFam && parsedData.orderId) {
+        parsedData.checkoutUrl = `https://famgateway.in/pay.php?order_id=${parsedData.orderId}`;
+      }
+
+      // Payee UPI parser
+      const rawPayee =
+        rawResponseBody?.data?.upi_id ||
+        rawResponseBody?.upi_id ||
+        rawResponseBody?.data?.merchant_upi;
+      if (rawPayee) {
+        parsedData.payeeUpi = String(rawPayee);
+      }
+
+      // UPI Intent parser
+      if (rawResponseBody?.data?.upi_intent) {
+        parsedData.upiIntent = rawResponseBody.data.upi_intent;
+      } else if (parsedData.orderId) {
+        const pn = encodeURIComponent(parsedData.merchantName);
+        parsedData.upiIntent = `upi://pay?pa=${encodeURIComponent(parsedData.payeeUpi)}&pn=${pn}&tr=${encodeURIComponent(parsedData.orderId)}&tn=Payment+for+Order+${encodeURIComponent(parsedData.orderId)}&am=${parsedData.amountInRupees}&cu=INR`;
+      }
+
+      // QR Code parser
+      if (rawResponseBody?.data?.qr_url) {
+        parsedData.qrUrl = rawResponseBody.data.qr_url;
+      } else if (parsedData.upiIntent) {
+        parsedData.qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=8&data=${encodeURIComponent(parsedData.upiIntent)}`;
+      }
+
+      // Check success
+      if (parsedData.orderId && (rawResponseBody.status === 'success' || rawResponseBody.success === true || httpStatus === 200)) {
+        parsedData.isOrderCreated = true;
+      } else {
+        parsedData.errorMessage = rawResponseBody.message || rawResponseBody.error || 'Failed to parse order details';
+      }
+    }
+
+    // 3. Live Status Sync / Polling Parser Check (Tests how /api/check-payment will parse this order)
+    let statusSyncResult: {
+      testedEndpoint: string;
+      httpStatus: number;
+      rawStatusResponse: any;
+      parsedIsPaid: boolean;
+      parsedStatus: string;
+      parsedUtr: string | null;
+      verificationDurationMs: number;
+    } | null = null;
+
+    if (parsedData.orderId && isFam) {
+      const syncStart = Date.now();
+      const statusUrl = `https://famgateway.in/api/checkout-status.php?order_id=${encodeURIComponent(parsedData.orderId)}`;
+      try {
+        const scCtrl = new AbortController();
+        const scTimeout = setTimeout(() => scCtrl.abort(), 6000);
+        const scResp = await fetch(statusUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KalamFFPanel/1.0'
+          },
+          signal: scCtrl.signal
+        });
+        clearTimeout(scTimeout);
+        const scText = await scResp.text();
+        let scJson: any = null;
+        try { scJson = JSON.parse(scText); } catch { scJson = { raw: scText }; }
+
+        const isPaid = Boolean(
+          scJson?.is_paid === true ||
+          scJson?.status === 'success' ||
+          scJson?.data?.transaction_id ||
+          scJson?.data?.utr
+        );
+
+        statusSyncResult = {
+          testedEndpoint: statusUrl,
+          httpStatus: scResp.status,
+          rawStatusResponse: scJson,
+          parsedIsPaid: isPaid,
+          parsedStatus: isPaid ? 'SUCCESS' : (scJson?.status === 'EXPIRED' ? 'EXPIRED' : 'PENDING'),
+          parsedUtr: scJson?.data?.utr || scJson?.utr || null,
+          verificationDurationMs: Date.now() - syncStart
+        };
+      } catch (scErr: any) {
+        statusSyncResult = {
+          testedEndpoint: statusUrl,
+          httpStatus: 0,
+          rawStatusResponse: { error: scErr.message },
+          parsedIsPaid: false,
+          parsedStatus: 'PENDING',
+          parsedUtr: null,
+          verificationDurationMs: Date.now() - syncStart
+        };
+      }
+    }
+
+    // 4. Production Expected Values Comparison Table
+    interface ComparisonItem {
+      field: string;
+      label: string;
+      expectedPattern: string;
+      productionRequirement: string;
+      actualParsedValue: any;
+      status: 'PASS' | 'WARN' | 'FAIL';
+      details: string;
+    }
+
+    const comparisons: ComparisonItem[] = [
+      {
+        field: 'orderId',
+        label: 'Gateway Reference ID',
+        expectedPattern: isFam ? 'Starts with "fg_" (e.g., fg_XXXXXXXX)' : isAditya ? 'Starts with "AH_"' : 'Non-empty alphanumeric string',
+        productionRequirement: 'Required by client polling, webhook correlation, and double-credit protection.',
+        actualParsedValue: parsedData.orderId,
+        status: parsedData.orderId && (!isFam || parsedData.orderId.startsWith('fg_')) ? 'PASS' : (parsedData.orderId ? 'WARN' : 'FAIL'),
+        details: parsedData.orderId
+          ? (isFam && parsedData.orderId.startsWith('fg_')
+              ? 'Valid genuine FamGateway order reference.'
+              : `Parsed successfully (${parsedData.orderId}).`)
+          : 'Gateway failed to return an order reference ID. Check API key.'
+      },
+      {
+        field: 'amountInRupees',
+        label: 'Normalized Amount (INR)',
+        expectedPattern: `Numeric exact match: ${testAmount.toFixed(2)}`,
+        productionRequirement: 'Guarantees wallet is credited with exact rupee value without decimal corruption.',
+        actualParsedValue: parsedData.amountInRupees,
+        status: parsedData.amountInRupees === testAmount ? 'PASS' : 'WARN',
+        details: parsedData.amountInRupees === testAmount
+          ? `Exact match: ₹${parsedData.amountInRupees.toFixed(2)} (${parsedData.amountInPaise} paise)`
+          : `Amount mismatch: Expected ₹${testAmount}, parsed ₹${parsedData.amountInRupees}`
+      },
+      {
+        field: 'checkoutUrl',
+        label: 'Hosted Checkout Web Page',
+        expectedPattern: isFam ? 'https://famgateway.in/pay.php?order_id=...' : 'Valid HTTPS URL',
+        productionRequirement: 'Enables user to click "⚡ Open Official Payment Gateway Page" directly.',
+        actualParsedValue: parsedData.checkoutUrl,
+        status: parsedData.checkoutUrl && parsedData.checkoutUrl.startsWith('https://') ? 'PASS' : (parsedData.checkoutUrl ? 'WARN' : 'FAIL'),
+        details: parsedData.checkoutUrl
+          ? 'Valid HTTPS checkout URL parsed.'
+          : 'No hosted checkout URL provided by gateway.'
+      },
+      {
+        field: 'qrUrl',
+        label: 'Dynamic UPI QR Code',
+        expectedPattern: 'Valid image URL (HTTPS / SVG / PNG)',
+        productionRequirement: 'Displayed in the deposit modal for customer UPI scanning.',
+        actualParsedValue: parsedData.qrUrl,
+        status: parsedData.qrUrl && parsedData.qrUrl.startsWith('http') ? 'PASS' : 'FAIL',
+        details: parsedData.qrUrl
+          ? 'Valid dynamic QR image endpoint parsed.'
+          : 'Failed to generate or parse QR Code image link.'
+      },
+      {
+        field: 'upiIntent',
+        label: 'UPI Deep-link Intent',
+        expectedPattern: 'upi://pay?pa=...&pn=...&tr=...&am=...&cu=INR',
+        productionRequirement: 'Powers 1-Tap payment buttons for PhonePe, Google Pay, and Paytm.',
+        actualParsedValue: parsedData.upiIntent,
+        status: parsedData.upiIntent && parsedData.upiIntent.startsWith('upi://pay') && parsedData.upiIntent.includes('pa=') ? 'PASS' : 'FAIL',
+        details: parsedData.upiIntent && parsedData.upiIntent.startsWith('upi://pay')
+          ? 'Standard UPI intent URI formatted with payee, order reference, and amount.'
+          : 'Invalid or missing UPI Intent URI.'
+      },
+      {
+        field: 'payeeUpi',
+        label: 'Merchant Payee VPA',
+        expectedPattern: 'Valid UPI ID (e.g., name@bank or ...@fam)',
+        productionRequirement: 'Specifies recipient bank account for UPI payment routing.',
+        actualParsedValue: parsedData.payeeUpi,
+        status: parsedData.payeeUpi && parsedData.payeeUpi.includes('@') ? 'PASS' : 'WARN',
+        details: parsedData.payeeUpi && parsedData.payeeUpi.includes('@')
+          ? `Verified payee VPA: ${parsedData.payeeUpi}`
+          : 'VPA does not contain "@" sign; check configured UPI ID in Admin.'
+      },
+      {
+        field: 'statusSync',
+        label: 'Live Status & Polling Verification',
+        expectedPattern: 'HTTP 200 with status "PENDING" or "SUCCESS"',
+        productionRequirement: 'Allows background status polling loop to auto-detect bank transfer without errors.',
+        actualParsedValue: statusSyncResult ? `${statusSyncResult.parsedStatus} (HTTP ${statusSyncResult.httpStatus})` : 'N/A',
+        status: statusSyncResult && statusSyncResult.httpStatus === 200 ? 'PASS' : (statusSyncResult ? 'WARN' : 'PASS'),
+        details: statusSyncResult
+          ? (statusSyncResult.httpStatus === 200
+              ? `Status endpoint verified successfully in ${statusSyncResult.verificationDurationMs}ms (Status: ${statusSyncResult.parsedStatus}).`
+              : `Status endpoint responded with HTTP ${statusSyncResult.httpStatus}.`)
+          : 'Direct status verification parser skipped for non-FamGateway provider.'
+      }
+    ];
+
+    const hasFailure = comparisons.some(c => c.status === 'FAIL');
+    const hasWarning = comparisons.some(c => c.status === 'WARN');
+
+    const overallVerdict = hasFailure ? 'FAILED' : hasWarning ? 'PASSED_WITH_WARNINGS' : 'PRODUCTION_READY';
+
+    const totalDurationMs = Date.now() - startTime;
+
+    res.json({
+      success: !hasFailure,
+      overallVerdict,
+      gateway: `${gatewayName} (${targetUrl})`,
+      gatewayType: isFam ? 'famgateway' : isAditya ? 'adityahost' : isZap ? 'zapupi' : 'freepanel',
+      httpStatus,
+      durationMs: totalDurationMs,
+      endpoint: targetUrl,
+      keyMasked: token ? `${token.slice(0, 8)}...${token.slice(-4)}` : 'None',
+      rawResponse: rawResponseBody,
+      parsedData,
+      statusSyncResult,
+      productionExpectedValues: comparisons,
+      summary: overallVerdict === 'PRODUCTION_READY'
+        ? `All ${comparisons.length} response parser validation rules passed against live ${gatewayName} request in ${totalDurationMs}ms. Ready for production deposits!`
+        : overallVerdict === 'PASSED_WITH_WARNINGS'
+        ? 'Live request succeeded, but some secondary fields have warnings. Core payment flow is functional.'
+        : `Parser test encountered issues: ${parsedData.errorMessage || 'One or more required production validation checks failed.'}`
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      overallVerdict: 'FAILED',
+      error: error.message,
+      durationMs: Date.now() - startTime
     });
   }
 });

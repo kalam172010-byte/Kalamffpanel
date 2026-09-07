@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && node scripts/inject-product-api-ui.cjs && node scripts/fix-scroll-to-top-circle.cjs && node scripts/fix-firestore-offline-error.cjs && node scripts/fix-deposit-amount-input.cjs && node scripts/fix-buy-key-button.cjs && node scripts/fix-purchase-retry.cjs && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && node scripts/inject-product-api-ui.cjs && node scripts/fix-scroll-to-top-circle.cjs && node scripts/fix-firestore-offline-error.cjs && node scripts/fix-deposit-amount-input.cjs && node scripts/fix-buy-key-button.cjs && node scripts/fix-purchase-retry.cjs && node scripts/fix-deposit-admin-sync.cjs && node scripts/inject-test-payment-sync-ui.cjs && node scripts/patch_qr.cjs && node scripts/fix-realtime-wallet-sync.cjs && node scripts/sync-html-bundle.cjs && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "lint": "tsc --noEmit"
   },
