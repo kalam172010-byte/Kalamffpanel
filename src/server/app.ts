@@ -22,21 +22,40 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// File persistence paths
-const DATA_DIR = path.join(process.cwd(), 'data');
-const PRODUCTS_FILE = path.join(DATA_DIR, 'products_db.json');
-const STORE_DATA_FILE = path.join(DATA_DIR, 'store_data.json');
-const ORDERS_FILE = path.join(DATA_DIR, 'orders_db.json');
-const WALLETS_FILE = path.join(DATA_DIR, 'wallets_db.json');
-
-// Ensure data directory exists
+// File persistence paths with fallback for serverless/read-only runtimes (e.g. Netlify/AWS Lambda)
+let DATA_DIR = path.join(process.cwd(), 'data');
 try {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+  const testFile = path.join(DATA_DIR, '.write_test');
+  fs.writeFileSync(testFile, '1');
+  fs.unlinkSync(testFile);
 } catch (e) {
-  console.warn('[Server] Error creating data directory:', e);
+  DATA_DIR = path.join('/tmp', 'kalam_data');
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const origData = path.join(process.cwd(), 'data');
+    if (fs.existsSync(origData)) {
+      for (const f of fs.readdirSync(origData)) {
+        const src = path.join(origData, f);
+        const dst = path.join(DATA_DIR, f);
+        if (!fs.existsSync(dst) && fs.statSync(src).isFile()) {
+          try { fs.copyFileSync(src, dst); } catch {}
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Server] Could not initialize fallback data dir:', err);
+  }
 }
+
+const PRODUCTS_FILE = path.join(DATA_DIR, 'products_db.json');
+const STORE_DATA_FILE = path.join(DATA_DIR, 'store_data.json');
+const ORDERS_FILE = path.join(DATA_DIR, 'orders_db.json');
+const WALLETS_FILE = path.join(DATA_DIR, 'wallets_db.json');
 
 // User Wallets Store & Disk Persistence
 interface WalletHistoryItem {
@@ -223,7 +242,6 @@ function saveProductsToDisk(products: any[]) {
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.header('X-Content-Type-Options', 'nosniff');
   res.header('X-XSS-Protection', '1; mode=block');
-  res.header('X-Frame-Options', 'SAMEORIGIN');
   res.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
 });
@@ -668,17 +686,6 @@ function creditUserWalletOnServer(
   const cleanOrderId = (orderId || '').trim();
   const creditKey = cleanUtr ? `utr_${cleanUtr}` : (cleanOrderId ? `ord_${cleanOrderId}` : '');
 
-  // Check if this payment was ALREADY credited to a wallet to prevent duplicate credit
-  if (creditKey && creditedPayments.has(creditKey)) {
-    console.log(`[AutoCredit] Payment ${creditKey} was ALREADY credited. Skipping duplicate.`);
-    let existingBal = 0;
-    const cleanEmail = (email || '').toString().toLowerCase().trim();
-    const cleanUserId = (userId || '').toString().toLowerCase().trim();
-    const rec = (cleanUserId && cleanUserId !== 'guest' && userWalletsMap.get(cleanUserId)) || (cleanEmail && userWalletsMap.get(cleanEmail));
-    if (rec) existingBal = rec.balance;
-    return { success: true, credited: false, balance: existingBal, user: rec?.userId || cleanUserId };
-  }
-
   const cleanEmail = (email || '').toString().toLowerCase().trim();
   const cleanUserId = (userId || '').toString().toLowerCase().trim();
 
@@ -696,16 +703,13 @@ function creditUserWalletOnServer(
     }
   }
 
-  // If still not found and no specific user was given, check the most recently active non-test wallet or owner
+  // If still not found, check guest wallet if applicable
   if (!record && (!cleanUserId || cleanUserId === 'guest') && !cleanEmail) {
-    const all = Array.from(new Set(userWalletsMap.values())).sort((a, b) => b.lastUpdated - a.lastUpdated);
-    if (all.length > 0) {
-      record = all[0];
-    }
+    record = userWalletsMap.get('guest');
   }
 
   if (!record) {
-    const key = (cleanUserId && cleanUserId !== 'guest') ? cleanUserId : cleanEmail || 'kalam172010@gmail.com';
+    const key = (cleanUserId && cleanUserId !== 'guest') ? cleanUserId : (cleanEmail || 'guest');
     record = {
       userId: key,
       email: cleanEmail || undefined,
@@ -713,6 +717,19 @@ function creditUserWalletOnServer(
       lastUpdated: Date.now(),
       history: []
     };
+    userWalletsMap.set(key.toLowerCase(), record);
+    if (cleanEmail) userWalletsMap.set(cleanEmail.toLowerCase(), record);
+  }
+
+  // Check if this payment was ALREADY credited to THIS specific wallet record's history
+  const isAlreadyCredited = record.history.some(h =>
+    (cleanUtr && h.reason && h.reason.includes(cleanUtr)) ||
+    (cleanOrderId && h.reason && h.reason.includes(cleanOrderId))
+  );
+
+  if (isAlreadyCredited) {
+    console.log(`[AutoCredit] Payment ${creditKey} was ALREADY credited to ${record.userId}. Balance: ₹${record.balance}`);
+    return { success: true, credited: false, balance: record.balance, user: record.userId };
   }
 
   const prev = record.balance;
@@ -1799,11 +1816,13 @@ app.get('/api/check-payment/:orderId', async (req: Request, res: Response) => {
 
       saveOrdersToDisk();
 
-      creditUserWalletOnServer(
+      const creditResult = creditUserWalletOnServer(
         existing?.userId || (req.query.userId as string),
         existing?.email || (req.query.email as string) || senderName,
         confirmedAmount,
-        `Payment verified: ${orderId} (UTR: ${detectedUtr})`
+        `Payment verified: ${orderId} (UTR: ${detectedUtr})`,
+        detectedUtr,
+        orderId
       );
 
       return res.json({
@@ -1812,6 +1831,7 @@ app.get('/api/check-payment/:orderId', async (req: Request, res: Response) => {
         status: 'SUCCESS',
         orderId,
         amount: confirmedAmount,
+        balance: creditResult.balance,
         utr: detectedUtr,
         senderName,
         paidAt: Date.now(),
@@ -2304,11 +2324,13 @@ app.post('/api/claim-deposit', async (req: Request, res: Response) => {
 
     saveOrdersToDisk();
 
-    creditUserWalletOnServer(
-      username || email,
-      email || username,
+    const creditResult = creditUserWalletOnServer(
+      req.body.userId || username || email,
+      req.body.email || email || username,
       numAmount,
-      `Deposit claimed for UTR ${cleanUtr}`
+      `Deposit claimed for UTR ${cleanUtr}`,
+      cleanUtr,
+      orderId
     );
 
     return res.json({
@@ -2317,6 +2339,7 @@ app.post('/api/claim-deposit', async (req: Request, res: Response) => {
       status: 'SUCCESS',
       orderId,
       amount: numAmount,
+      balance: creditResult.balance,
       utr: cleanUtr,
       message: `UTR ${cleanUtr} confirmed! ₹${numAmount} credited to wallet.`
     });
@@ -2722,12 +2745,12 @@ app.get('/api/wallet/balance', (req: Request, res: Response) => {
     const email = (req.query.email as string || '').toLowerCase().trim();
 
     let record: UserWalletRecord | undefined;
-    if (userId && userId !== 'guest') record = userWalletsMap.get(userId);
+    if (userId) record = userWalletsMap.get(userId);
     if (!record && email) record = userWalletsMap.get(email);
 
     if (!record && (userId || email)) {
       for (const r of userWalletsMap.values()) {
-        if ((userId && userId !== 'guest' && r.userId.toLowerCase() === userId) ||
+        if ((userId && r.userId.toLowerCase() === userId) ||
             (email && r.email && r.email.toLowerCase() === email)) {
           record = r;
           break;
@@ -2780,11 +2803,11 @@ app.post('/api/wallet/sync', (req: Request, res: Response) => {
     const cleanEmail = (email || '').toString().toLowerCase().trim();
     const numAmount = Math.max(0, Number(amount) || 0);
 
-    let record = (cleanUserId !== 'guest' && userWalletsMap.get(cleanUserId)) || (cleanEmail && userWalletsMap.get(cleanEmail));
+    let record = (cleanUserId && userWalletsMap.get(cleanUserId)) || (cleanEmail && userWalletsMap.get(cleanEmail));
 
     if (!record) {
       for (const r of userWalletsMap.values()) {
-        if ((cleanUserId && cleanUserId !== 'guest' && r.userId.toLowerCase() === cleanUserId) ||
+        if ((cleanUserId && r.userId.toLowerCase() === cleanUserId) ||
             (cleanEmail && r.email && r.email.toLowerCase() === cleanEmail)) {
           record = r;
           break;
@@ -2807,15 +2830,19 @@ app.post('/api/wallet/sync', (req: Request, res: Response) => {
     let previousBalance = record.balance;
     let newBalance = previousBalance;
 
-    // Deduplicate DEPOSIT by UTR / orderId to ensure exactly 1 credit per payment
+    // Deduplicate DEPOSIT by checking if THIS record was already credited
     const utrMatch = (reason || '').match(/\b([0-9]{12})\b/);
     const cleanUtr = (utr || req.body.utr || (utrMatch ? utrMatch[1] : '')).trim();
     const cleanOrderId = (orderId || req.body.orderId || '').trim();
     const creditKey = cleanUtr ? `utr_${cleanUtr}` : (cleanOrderId ? `ord_${cleanOrderId}` : '');
 
     if (action === 'DEPOSIT') {
-      if (creditKey && creditedPayments.has(creditKey)) {
-        console.log(`[WalletSync] Payment ${creditKey} was ALREADY credited. Returning current balance: ₹${record.balance}`);
+      const isAlreadyInRecord = record.history.some(h =>
+        (cleanUtr && h.reason && h.reason.includes(cleanUtr)) ||
+        (cleanOrderId && h.reason && h.reason.includes(cleanOrderId))
+      );
+      if (isAlreadyInRecord) {
+        console.log(`[WalletSync] Payment ${creditKey} was ALREADY credited to ${record.userId}. Returning current balance: ₹${record.balance}`);
         return res.json({
           success: true,
           balance: record.balance,

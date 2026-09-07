@@ -602,6 +602,68 @@
       "paidAt": 1788789053992,
       "utr": "004774894397",
       "senderName": "KALAM GOVINDARASAN"
+    },
+    {
+      "orderId": "fg_BLPJ5DV4",
+      "userId": "test_user_2",
+      "email": "user2@test.com",
+      "amountInPaise": 5000,
+      "amountInRupees": 50,
+      "payeeUpi": "8056317218@fam",
+      "status": "SUCCESS",
+      "paymentLink": "https://famgateway.in/pay.php?order_id=fg_BLPJ5DV4",
+      "checkoutUrl": "https://famgateway.in/pay.php?order_id=fg_BLPJ5DV4",
+      "qrUrl": "https://famgateway.in/api/qr-image.php?order_id=fg_BLPJ5DV4",
+      "gateway": "FamGateway",
+      "apiKey": "fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e",
+      "createdAt": 1788794524756,
+      "gatewayRaw": {
+        "status": "success",
+        "data": {
+          "order_id": "fg_BLPJ5DV4",
+          "qr_url": "https://famgateway.in/api/qr-image.php?order_id=fg_BLPJ5DV4",
+          "checkout_url": "https://famgateway.in/pay.php?order_id=fg_BLPJ5DV4",
+          "upi_id": "8056317218@fam",
+          "amount": "50",
+          "payable_amount": "50",
+          "upi_intent": "upi://pay?pa=8056317218%40fam&pn=FamPay&tr=fg_BLPJ5DV4&tn=Payment+for+Order+fg_BLPJ5DV4&am=50&cu=INR",
+          "created_at_ist": "07-09-2026 20:52:04",
+          "expires_at_ist": "07-09-2026 20:57:04"
+        }
+      },
+      "paidAt": 1788794529509,
+      "utr": "999988887777"
+    },
+    {
+      "orderId": "fg_BLPJ5DV4",
+      "userId": "test_user_2",
+      "email": "user2@test.com",
+      "amountInPaise": 5000,
+      "amountInRupees": 50,
+      "payeeUpi": "8056317218@fam",
+      "status": "SUCCESS",
+      "paymentLink": "https://famgateway.in/pay.php?order_id=fg_BLPJ5DV4",
+      "checkoutUrl": "https://famgateway.in/pay.php?order_id=fg_BLPJ5DV4",
+      "qrUrl": "https://famgateway.in/api/qr-image.php?order_id=fg_BLPJ5DV4",
+      "gateway": "FamGateway",
+      "apiKey": "fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e",
+      "createdAt": 1788794524756,
+      "gatewayRaw": {
+        "status": "success",
+        "data": {
+          "order_id": "fg_BLPJ5DV4",
+          "qr_url": "https://famgateway.in/api/qr-image.php?order_id=fg_BLPJ5DV4",
+          "checkout_url": "https://famgateway.in/pay.php?order_id=fg_BLPJ5DV4",
+          "upi_id": "8056317218@fam",
+          "amount": "50",
+          "payable_amount": "50",
+          "upi_intent": "upi://pay?pa=8056317218%40fam&pn=FamPay&tr=fg_BLPJ5DV4&tn=Payment+for+Order+fg_BLPJ5DV4&am=50&cu=INR",
+          "created_at_ist": "07-09-2026 20:52:04",
+          "expires_at_ist": "07-09-2026 20:57:04"
+        }
+      },
+      "paidAt": 1788794529509,
+      "utr": "999988887777"
     }
   ],
   "usedUtrs": [
@@ -616,8 +678,33 @@
       "orderId": "",
       "amount": 1,
       "redeemedAt": 1788789367484
+    },
+    {
+      "utr": "999988887777",
+      "orderId": "fg_BLPJ5DV4",
+      "amount": 50,
+      "redeemedAt": 1788794529509
     }
   ],
-  "webhookLogs": [],
-  "updatedAt": 1788789367484
+  "creditedPayments": [
+    "utr_111122223333",
+    "utr_999988887777",
+    "utr_UTR_TEST_1001",
+    "utr_UTR_TEST_1002"
+  ],
+  "webhookLogs": [
+    {
+      "id": "UTR_1788794529511",
+      "timestamp": "3:22:09 PM",
+      "vendor": "FreePanel",
+      "payload": {
+        "order_id": "fg_BLPJ5DV4",
+        "utr": "999988887777",
+        "amount": 50,
+        "status": "SUCCESS"
+      },
+      "status": "SUCCESS"
+    }
+  ],
+  "updatedAt": 1788795171900
 }

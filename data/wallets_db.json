@@ -85,5 +85,60 @@
     "balance": 0,
     "lastUpdated": 1788787457497,
     "history": []
+  },
+  {
+    "userId": "test_user",
+    "balance": 100,
+    "lastUpdated": 1788794511209,
+    "history": [
+      {
+        "id": "WH_1788794511209_739",
+        "type": "DEPOSIT",
+        "amount": 100,
+        "balanceAfter": 100,
+        "timestamp": 1788794511209,
+        "reason": "Deposit: ₹100 (111122223333)"
+      }
+    ]
+  },
+  {
+    "userId": "test_user_2",
+    "email": "user2@test.com",
+    "balance": 50,
+    "lastUpdated": 1788794529511,
+    "history": [
+      {
+        "id": "WH_1788794529511_663",
+        "type": "DEPOSIT",
+        "amount": 50,
+        "balanceAfter": 50,
+        "timestamp": 1788794529511,
+        "reason": "Payment confirmed via UTR 999988887777"
+      }
+    ]
+  },
+  {
+    "userId": "test_user_sync_1",
+    "email": "test1@kalam.com",
+    "balance": 100,
+    "lastUpdated": 1788795171901,
+    "history": [
+      {
+        "id": "WH_1788795171901_643",
+        "type": "DEPOSIT",
+        "amount": 50,
+        "balanceAfter": 100,
+        "timestamp": 1788795171901,
+        "reason": "Deposit: ₹50"
+      },
+      {
+        "id": "WH_1788795163614_963",
+        "type": "DEPOSIT",
+        "amount": 50,
+        "balanceAfter": 50,
+        "timestamp": 1788795163614,
+        "reason": "Deposit: ₹50"
+      }
+    ]
   }
 ]
