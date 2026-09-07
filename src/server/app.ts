@@ -609,6 +609,11 @@ function loadOrdersFromDisk() {
             webhookLogs.push(lg);
           }
         }
+        if (Array.isArray(parsed.creditedPayments)) {
+          for (const key of parsed.creditedPayments) {
+            if (key) creditedPayments.add(String(key));
+          }
+        }
         console.log(`[Server] Persistent orders loaded from disk: ${activeOrders.size} orders, ${usedUtrs.size} UTR records.`);
       }
     }
@@ -616,6 +621,9 @@ function loadOrdersFromDisk() {
     console.warn('[Server] Error loading orders from disk:', e);
   }
 }
+
+// Track payments that have already credited money to a wallet (keyed by utr or orderId)
+const creditedPayments = new Set<string>();
 
 // Helper to save persistent orders & UTRs to disk
 function saveOrdersToDisk() {
@@ -628,6 +636,7 @@ function saveOrdersToDisk() {
     const payload = {
       orders: ordersList,
       usedUtrs: utrsList,
+      creditedPayments: Array.from(creditedPayments).slice(-200),
       webhookLogs: webhookLogs.slice(0, 50),
       updatedAt: Date.now()
     };
@@ -641,21 +650,33 @@ function saveOrdersToDisk() {
 loadOrdersFromDisk();
 
 // Real-Time Server-Side Wallet Credit Function
-function creditUserWalletOnServer(userId?: string, email?: string, amount?: number, reason?: string, utr?: string) {
+function creditUserWalletOnServer(
+  userId?: string,
+  email?: string,
+  amount?: number,
+  reason?: string,
+  utr?: string,
+  orderId?: string
+): { success: boolean; credited: boolean; balance: number; user: string } {
   const numAmount = Math.max(0, Number(amount) || 0);
-  if (numAmount <= 0) return;
+  if (numAmount <= 0) {
+    return { success: false, credited: false, balance: 0, user: '' };
+  }
 
   const utrMatch = (reason || '').match(/\b([0-9]{12})\b/);
   const cleanUtr = (utr || (utrMatch ? utrMatch[1] : '')).trim();
+  const cleanOrderId = (orderId || '').trim();
+  const creditKey = cleanUtr ? `utr_${cleanUtr}` : (cleanOrderId ? `ord_${cleanOrderId}` : '');
 
-  // Deduplicate by UTR: never credit the same UTR more than once
-  if (cleanUtr && usedUtrs.has(cleanUtr)) {
-    console.log(`[AutoCredit] UTR ${cleanUtr} was already credited. Skipping duplicate credit.`);
-    return;
-  }
-  if (cleanUtr) {
-    usedUtrs.set(cleanUtr, { orderId: '', amount: numAmount, redeemedAt: Date.now() });
-    saveOrdersToDisk();
+  // Check if this payment was ALREADY credited to a wallet to prevent duplicate credit
+  if (creditKey && creditedPayments.has(creditKey)) {
+    console.log(`[AutoCredit] Payment ${creditKey} was ALREADY credited. Skipping duplicate.`);
+    let existingBal = 0;
+    const cleanEmail = (email || '').toString().toLowerCase().trim();
+    const cleanUserId = (userId || '').toString().toLowerCase().trim();
+    const rec = (cleanUserId && cleanUserId !== 'guest' && userWalletsMap.get(cleanUserId)) || (cleanEmail && userWalletsMap.get(cleanEmail));
+    if (rec) existingBal = rec.balance;
+    return { success: true, credited: false, balance: existingBal, user: rec?.userId || cleanUserId };
   }
 
   const cleanEmail = (email || '').toString().toLowerCase().trim();
@@ -705,14 +726,20 @@ function creditUserWalletOnServer(userId?: string, email?: string, amount?: numb
     amount: numAmount,
     balanceAfter: record.balance,
     timestamp: Date.now(),
-    reason: reason || `Deposit credited: ₹${numAmount}`
+    reason: reason || `Deposit credited: ₹${numAmount}${cleanUtr ? ' (UTR: ' + cleanUtr + ')' : ''}`
   });
   if (record.history.length > 50) record.history = record.history.slice(0, 50);
+
+  if (creditKey) {
+    creditedPayments.add(creditKey);
+  }
 
   userWalletsMap.set(record.userId.toLowerCase(), record);
   if (record.email) userWalletsMap.set(record.email.toLowerCase(), record);
   saveWalletsToDisk();
-  console.log(`[AutoCredit] Successfully credited ₹${numAmount} to ${record.email || record.userId}. New balance: ₹${record.balance} (was ₹${prev})`);
+
+  console.log(`[AutoCredit] ✅ Successfully credited ₹${numAmount} to ${record.email || record.userId}. New balance: ₹${record.balance} (was ₹${prev})`);
+  return { success: true, credited: true, balance: record.balance, user: record.userId };
 }
 
 // Initialize products from disk storage
@@ -2200,11 +2227,13 @@ app.post('/api/verify-utr', async (req: Request, res: Response) => {
 
     saveOrdersToDisk();
 
-    creditUserWalletOnServer(
-      order?.userId,
-      order?.email || senderName,
+    const creditResult = creditUserWalletOnServer(
+      order?.userId || req.body.userId || (req.query.userId as string),
+      order?.email || req.body.email || (req.query.email as string) || senderName,
       finalAmount,
-      `Payment confirmed via UTR ${cleanUtr}`
+      `Payment confirmed via UTR ${cleanUtr}`,
+      cleanUtr,
+      effectiveOrderId
     );
 
     webhookLogs.unshift({
@@ -2221,6 +2250,7 @@ app.post('/api/verify-utr', async (req: Request, res: Response) => {
       status: 'SUCCESS',
       orderId: effectiveOrderId,
       amount: finalAmount,
+      balance: creditResult.balance,
       utr: cleanUtr,
       senderName,
       message: `Payment of ₹${finalAmount} confirmed via UPI UTR (${cleanUtr})! Wallet balance credited.`
@@ -2745,22 +2775,22 @@ app.get('/api/wallet/balance', (req: Request, res: Response) => {
 // Real-Time Wallet Balance Sync (Deposit or Deduct or Sync)
 app.post('/api/wallet/sync', (req: Request, res: Response) => {
   try {
-    const { userId, email, balance, action, amount, reason } = req.body;
+    const { userId, email, balance, action, amount, reason, orderId, utr } = req.body;
     const cleanUserId = (userId || '').toString().toLowerCase().trim() || 'guest';
     const cleanEmail = (email || '').toString().toLowerCase().trim();
     const numAmount = Math.max(0, Number(amount) || 0);
 
-    if (cleanUserId === 'guest' && !cleanEmail) {
-      return res.json({
-        success: true,
-        balance: 0,
-        previousBalance: 0,
-        userId: 'guest'
-      });
-    }
+    let record = (cleanUserId !== 'guest' && userWalletsMap.get(cleanUserId)) || (cleanEmail && userWalletsMap.get(cleanEmail));
 
-    let record = userWalletsMap.get(cleanUserId);
-    if (!record && cleanEmail) record = userWalletsMap.get(cleanEmail);
+    if (!record) {
+      for (const r of userWalletsMap.values()) {
+        if ((cleanUserId && cleanUserId !== 'guest' && r.userId.toLowerCase() === cleanUserId) ||
+            (cleanEmail && r.email && r.email.toLowerCase() === cleanEmail)) {
+          record = r;
+          break;
+        }
+      }
+    }
 
     if (!record) {
       record = {
@@ -2777,13 +2807,15 @@ app.post('/api/wallet/sync', (req: Request, res: Response) => {
     let previousBalance = record.balance;
     let newBalance = previousBalance;
 
-    // Deduplicate DEPOSIT by UTR to ensure exactly 1 credit per payment
+    // Deduplicate DEPOSIT by UTR / orderId to ensure exactly 1 credit per payment
     const utrMatch = (reason || '').match(/\b([0-9]{12})\b/);
-    const cleanUtr = (req.body.utr || (utrMatch ? utrMatch[1] : '')).trim();
+    const cleanUtr = (utr || req.body.utr || (utrMatch ? utrMatch[1] : '')).trim();
+    const cleanOrderId = (orderId || req.body.orderId || '').trim();
+    const creditKey = cleanUtr ? `utr_${cleanUtr}` : (cleanOrderId ? `ord_${cleanOrderId}` : '');
 
     if (action === 'DEPOSIT') {
-      if (cleanUtr && usedUtrs.has(cleanUtr)) {
-        console.log(`[WalletSync] UTR ${cleanUtr} was already credited. Skipping duplicate deposit.`);
+      if (creditKey && creditedPayments.has(creditKey)) {
+        console.log(`[WalletSync] Payment ${creditKey} was ALREADY credited. Returning current balance: ₹${record.balance}`);
         return res.json({
           success: true,
           balance: record.balance,
@@ -2792,8 +2824,8 @@ app.post('/api/wallet/sync', (req: Request, res: Response) => {
           alreadyCredited: true
         });
       }
-      if (cleanUtr) {
-        usedUtrs.set(cleanUtr, { orderId: req.body.orderId || '', amount: numAmount, redeemedAt: Date.now() });
+      if (creditKey) {
+        creditedPayments.add(creditKey);
         saveOrdersToDisk();
       }
       newBalance = Math.round((previousBalance + numAmount) * 100) / 100;
