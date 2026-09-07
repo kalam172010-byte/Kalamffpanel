@@ -26,6 +26,65 @@ try {
   console.warn('[Server] Error creating data directory:', e);
 }
 
+// Default Payment Gateway Configurations
+const DEFAULT_PAYMENT_CONFIGS = [
+  {
+    id: "famgateway-gw",
+    name: "FamGateway (famgateway.in)",
+    isActive: true,
+    apiKey: process.env.FAMGATEWAY_API_KEY || "fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e",
+    apiKey2: "",
+    baseUrl: process.env.FAMGATEWAY_GATEWAY_URL || "https://famgateway.in/api/create-order.php",
+    isLockedUrl: false,
+    upiId: "kalamffpanel@fampay",
+    merchantName: "KALAM FF PANEL"
+  },
+  {
+    id: "adityahost-gw",
+    name: "AdityaHost UPI Gateway (adityahost.in)",
+    isActive: false,
+    apiKey: process.env.ADITYAHOST_API_KEY || "AH_LIVE_sk_89218a091c4920b78",
+    apiKey2: "",
+    baseUrl: process.env.ADITYAHOST_GATEWAY_URL || "https://adityahost.in/api/qr.php",
+    isLockedUrl: false,
+    upiId: process.env.ADITYAHOST_UPI || "kalamffpanel@fampay",
+    merchantName: "KALAM FF PANEL"
+  },
+  {
+    id: "zapupi-gw",
+    name: "ZapUPI Gateway (pay.zapupi.com)",
+    isActive: false,
+    apiKey: process.env.ZAPUPI_KEY || "zap9616e75062c85cc1995818322ae0d1d5",
+    apiKey2: "",
+    baseUrl: process.env.ZAPUPI_GATEWAY_URL || "https://pay.zapupi.com/api/create-order",
+    isLockedUrl: false,
+    upiId: "kalamffpanel@fampay",
+    merchantName: "KALAM FF PANEL"
+  },
+  {
+    id: "fampay-gw",
+    name: "FreePanel UPI Gateway (py.freepanel.in)",
+    isActive: false,
+    apiKey: process.env.FAMPAY_API_KEY || "fam_201277f4313d5f176512809e8b8d5c639b91c8ea",
+    apiKey2: "",
+    baseUrl: process.env.FAMPAY_GATEWAY_URL || "https://py.freepanel.in/api/v1/orders",
+    isLockedUrl: false,
+    upiId: "kalamffpanel@fampay",
+    merchantName: "KALAM FF PANEL"
+  },
+  {
+    id: "paytm-gw",
+    name: "Paytm Gateway (Business UPI)",
+    isActive: false,
+    apiKey: "PTM_99218274619472619A",
+    apiKey2: "SEC_KEY_PTM_0918284",
+    baseUrl: "https://securegw.paytm.in/theia/api/v1/initiateTransaction",
+    isLockedUrl: true,
+    upiId: "paytmqr.kalam@paytm",
+    merchantName: "KALAM PAYTM MERCHANT"
+  }
+];
+
 // Helper to load store settings & configs from disk
 function loadStoreDataFromDisk(): { storeSettings?: any; paymentConfigs?: any[]; apiConfigs?: any[] } {
   try {
@@ -33,13 +92,23 @@ function loadStoreDataFromDisk(): { storeSettings?: any; paymentConfigs?: any[];
       const raw = fs.readFileSync(STORE_DATA_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
+        if (!Array.isArray(parsed.paymentConfigs) || parsed.paymentConfigs.length === 0) {
+          parsed.paymentConfigs = DEFAULT_PAYMENT_CONFIGS;
+        }
         return parsed;
       }
     }
   } catch (e) {
     console.warn('[Server] Error loading store data from disk:', e);
   }
-  return {};
+  return {
+    paymentConfigs: DEFAULT_PAYMENT_CONFIGS,
+    storeSettings: {
+      shopName: "KALAM FF PANEL",
+      tagline: "Powered by KALAM",
+      supportUsername: "@kd_123_1_3"
+    }
+  };
 }
 
 // Helper to save store data to disk
@@ -132,7 +201,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // FamGateway, FreePanel, ZapUPI & AdityaHost Payment Gateway Configuration
 const DEFAULT_FAMGATEWAY_URL = process.env.FAMGATEWAY_GATEWAY_URL || process.env.FAMGATEWAY_URL || 'https://famgateway.in/api/create-order.php';
-const DEFAULT_FAMGATEWAY_KEY = process.env.FAMGATEWAY_API_KEY || '';
+const DEFAULT_FAMGATEWAY_KEY = process.env.FAMGATEWAY_API_KEY || 'fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e';
 const DEFAULT_GATEWAY_URL = process.env.FAMPAY_GATEWAY_URL || 'https://py.freepanel.in/api/v1/orders';
 const DEFAULT_API_KEY = process.env.FAMPAY_API_KEY || 'fam_201277f4313d5f176512809e8b8d5c639b91c8ea';
 const DEFAULT_ZAP_KEY = process.env.ZAPUPI_KEY || 'zap9616e75062c85cc1995818322ae0d1d5';
@@ -793,7 +862,7 @@ app.get('/api/settings/payment', (req: Request, res: Response) => {
   const data = loadStoreDataFromDisk();
   res.json({
     success: true,
-    configs: data.paymentConfigs || [],
+    configs: (data.paymentConfigs && data.paymentConfigs.length > 0) ? data.paymentConfigs : DEFAULT_PAYMENT_CONFIGS,
   });
 });
 
@@ -1621,6 +1690,101 @@ app.get('/api/check-payment/:orderId', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: error.message
+    });
+  }
+});
+
+// Real-Time Payment Status Poller for Deposit Window
+app.post('/api/check-order-status', async (req: Request, res: Response) => {
+  try {
+    const { orderId, amount, apiKey, gateway, utr } = req.body;
+    if (!orderId) {
+      return res.json({
+        success: true,
+        isPaid: false,
+        status: 'PENDING',
+        message: 'Waiting for payment initiation'
+      });
+    }
+
+    const existing = activeOrders.get(orderId);
+    if (existing && existing.status === 'SUCCESS') {
+      return res.json({
+        success: true,
+        isPaid: true,
+        status: 'SUCCESS',
+        orderId,
+        amount: existing.amountInRupees,
+        paidAt: existing.paidAt,
+        utr: existing.utr,
+        message: 'Payment confirmed & verified!'
+      });
+    }
+
+    const verification = await queryUpstreamGatewayForOrder({
+      orderId,
+      rawKey: apiKey,
+      gateway,
+      utr: utr || undefined,
+    });
+
+    if (verification.isPaid) {
+      const confirmedAmount =
+        existing?.amountInRupees ||
+        verification.amount ||
+        Number(amount) ||
+        10;
+      const detectedUtr = verification.utr || existing?.utr || `UTR_${Date.now()}`;
+      const senderName = verification.senderName || existing?.senderName;
+
+      if (existing) {
+        existing.status = 'SUCCESS';
+        existing.paidAt = Date.now();
+        existing.utr = detectedUtr;
+        if (senderName) existing.senderName = senderName;
+      } else {
+        activeOrders.set(orderId, {
+          orderId,
+          amountInPaise: Math.round(confirmedAmount * 100),
+          amountInRupees: confirmedAmount,
+          status: 'SUCCESS',
+          paymentLink: '',
+          createdAt: Date.now(),
+          paidAt: Date.now(),
+          utr: detectedUtr,
+          senderName,
+          gateway: verification.gatewayName,
+          gatewayRaw: verification.raw
+        });
+      }
+      saveOrdersToDisk();
+
+      return res.json({
+        success: true,
+        isPaid: true,
+        status: 'SUCCESS',
+        orderId,
+        amount: confirmedAmount,
+        utr: detectedUtr,
+        senderName,
+        paidAt: Date.now(),
+        message: 'Payment received successfully!'
+      });
+    }
+
+    return res.json({
+      success: true,
+      isPaid: false,
+      status: 'PENDING',
+      orderId,
+      message: 'Waiting for UPI transfer confirmation'
+    });
+  } catch (error: any) {
+    res.json({
+      success: true,
+      isPaid: false,
+      status: 'PENDING',
+      message: 'Status check in progress'
     });
   }
 });

@@ -1,0 +1,74 @@
+{
+  "storeSettings": {
+    "shopName": "KALAM FF PANEL",
+    "tagline": "Powered by KALAM",
+    "logoUrl": "/logo.svg",
+    "supportUsername": "@kd_123_1_3",
+    "paymentProofChannel": "https://t.me/yourchannel",
+    "howToUseBotLink": "https://t.me/yourchannel/3",
+    "minDeposit": 1,
+    "depositBonusPercent": 0,
+    "referralBonusPercent": 10,
+    "currencySymbol": "₹",
+    "enableUtrInput": true,
+    "adminEmail": "kalam172010@gmail.com"
+  },
+  "paymentConfigs": [
+    {
+      "id": "famgateway-gw",
+      "name": "FamGateway (famgateway.in)",
+      "isActive": true,
+      "apiKey": "fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e",
+      "apiKey2": "",
+      "baseUrl": "https://famgateway.in/api/create-order.php",
+      "isLockedUrl": false,
+      "upiId": "kalamffpanel@fampay",
+      "merchantName": "KALAM FF PANEL"
+    },
+    {
+      "id": "adityahost-gw",
+      "name": "AdityaHost UPI Gateway (adityahost.in)",
+      "isActive": false,
+      "apiKey": "AH_LIVE_sk_89218a091c4920b78",
+      "apiKey2": "",
+      "baseUrl": "https://adityahost.in/api/qr.php",
+      "isLockedUrl": false,
+      "upiId": "kalamffpanel@fampay",
+      "merchantName": "KALAM FF PANEL"
+    },
+    {
+      "id": "zapupi-gw",
+      "name": "ZapUPI Gateway (pay.zapupi.com)",
+      "isActive": false,
+      "apiKey": "zap9616e75062c85cc1995818322ae0d1d5",
+      "apiKey2": "",
+      "baseUrl": "https://pay.zapupi.com/api/create-order",
+      "isLockedUrl": false,
+      "upiId": "kalamffpanel@fampay",
+      "merchantName": "KALAM FF PANEL"
+    },
+    {
+      "id": "fampay-gw",
+      "name": "FreePanel UPI Gateway (py.freepanel.in)",
+      "isActive": false,
+      "apiKey": "fam_201277f4313d5f176512809e8b8d5c639b91c8ea",
+      "apiKey2": "",
+      "baseUrl": "https://py.freepanel.in/api/v1/orders",
+      "isLockedUrl": false,
+      "upiId": "kalamffpanel@fampay",
+      "merchantName": "KALAM FF PANEL"
+    },
+    {
+      "id": "paytm-gw",
+      "name": "Paytm Gateway (Business UPI)",
+      "isActive": false,
+      "apiKey": "PTM_99218274619472619A",
+      "apiKey2": "SEC_KEY_PTM_0918284",
+      "baseUrl": "https://securegw.paytm.in/theia/api/v1/initiateTransaction",
+      "isLockedUrl": true,
+      "upiId": "paytmqr.kalam@paytm",
+      "merchantName": "KALAM PAYTM MERCHANT"
+    }
+  ],
+  "updatedAt": 1788690000000
+}

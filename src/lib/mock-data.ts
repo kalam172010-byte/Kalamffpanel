@@ -58,8 +58,8 @@ export const INITIAL_PAYMENT_CONFIGS: PaymentGatewayConfig[] = [
   {
     id: "famgateway-gw",
     name: "FamGateway (famgateway.in)",
-    isActive: false,
-    apiKey: "YOUR_API_KEY",
+    isActive: true,
+    apiKey: "fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e",
     apiKey2: "",
     baseUrl: "https://famgateway.in/api/create-order.php",
     isLockedUrl: false,
@@ -69,7 +69,7 @@ export const INITIAL_PAYMENT_CONFIGS: PaymentGatewayConfig[] = [
   {
     id: "adityahost-gw",
     name: "AdityaHost UPI Gateway (adityahost.in)",
-    isActive: true,
+    isActive: false,
     apiKey: "AH_LIVE_sk_89218a091c4920b78",
     apiKey2: "",
     baseUrl: "https://adityahost.in/api/qr.php",
