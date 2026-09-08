@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const version = '20260907-wallet-sync-v10';
+const version = '20260908-url-routes-v11';
 
 function cleanHtml(filePath) {
   if (!fs.existsSync(filePath)) return;

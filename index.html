@@ -41,7 +41,7 @@
         };
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-BvHT743v.js?v=20260907-gateway-live-v8"></script>
+    <script type="module" crossorigin src="/assets/index-BvHT743v.js?v=20260908-url-routes-v11"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-DqT5Etc-.css">
     <style>
       /* Compact, sleek mobile app scaling */
@@ -74,6 +74,63 @@
     </style>
   </head>
   <body class="bg-[#0a0a0f] text-white font-sans antialiased selection:bg-[#ff0080]/30 selection:text-white min-h-screen">
+    <div id="kalam-live-route-bar" class="w-full bg-[#080811] border-b border-[#00e5ff]/25 px-3 py-1.5 flex items-center justify-between gap-2 text-[11px] font-mono z-50 select-none">
+      <div class="flex items-center gap-1.5 truncate text-gray-300">
+        <span class="w-2 h-2 rounded-full bg-[#00e5ff] animate-pulse shrink-0"></span>
+        <span class="text-gray-400 shrink-0">URL:</span>
+        <span id="kalam-current-route" class="text-[#00e5ff] font-bold truncate">/dashboard</span>
+      </div>
+      <div class="flex items-center gap-1 shrink-0">
+        <button id="kalam-copy-route-btn" type="button" class="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[10px] transition-colors cursor-pointer" title="Copy Route URL">Copy</button>
+        <a id="kalam-newtab-route-btn" target="_blank" rel="noopener noreferrer" href="/dashboard" class="px-2 py-0.5 rounded bg-[#00e5ff]/15 hover:bg-[#00e5ff]/25 text-[#00e5ff] border border-[#00e5ff]/40 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer" title="Open this route in a new real browser tab">Open ↗</a>
+      </div>
+    </div>
     <div id="root"></div>
+    <script>
+      (function() {
+        function updateRouteBar() {
+          var p = window.location.pathname || '/dashboard';
+          var s = window.location.search || '';
+          var full = p + s;
+          if (full === '/' || full === '/index.html') full = '/dashboard';
+          var el = document.getElementById('kalam-current-route');
+          var link = document.getElementById('kalam-newtab-route-btn');
+          if (el) el.textContent = full;
+          if (link) link.href = window.location.origin + full;
+        }
+        window.addEventListener('popstate', updateRouteBar);
+        window.addEventListener('hashchange', updateRouteBar);
+        window.addEventListener('kalam_route_changed', function(e) {
+          if (e && e.detail && e.detail.path) {
+            var el = document.getElementById('kalam-current-route');
+            var link = document.getElementById('kalam-newtab-route-btn');
+            if (el) el.textContent = e.detail.path;
+            if (link) link.href = window.location.origin + e.detail.path;
+          } else {
+            updateRouteBar();
+          }
+        });
+        var copyBtn = document.getElementById('kalam-copy-route-btn');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', function() {
+            var el = document.getElementById('kalam-current-route');
+            var route = el ? el.textContent : '/dashboard';
+            var fullUrl = window.location.origin + route;
+            if (navigator.clipboard) {
+              navigator.clipboard.writeText(fullUrl).then(function() {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1800);
+              });
+            }
+          });
+        }
+        // Run on load
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', updateRouteBar);
+        } else {
+          updateRouteBar();
+        }
+      })();
+    </script>
   </body>
 </html>
