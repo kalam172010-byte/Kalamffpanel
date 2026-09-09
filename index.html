@@ -1,6 +1,59 @@
 <!doctype html>
 <html lang="en" class="dark">
   <head>
+    <!-- KALAM Automatic 6-Hour Session Expiration Protection -->
+    <script>
+      (function() {
+        try {
+          var MAX_SESSION_MS = 6 * 60 * 60 * 1000; // 6 hours
+          var authUser = localStorage.getItem('kalam_auth_user');
+          var loginTime = localStorage.getItem('kalam_session_login_time');
+          if (authUser) {
+            if (!loginTime) {
+              localStorage.setItem('kalam_session_login_time', Date.now().toString());
+            } else {
+              var elapsed = Date.now() - Number(loginTime);
+              if (elapsed >= MAX_SESSION_MS || isNaN(elapsed) || elapsed < 0) {
+                console.log('[Auth] 6-hour session duration exceeded. Removing active session...');
+                localStorage.removeItem('kalam_auth_user');
+                localStorage.removeItem('kalam_session_login_time');
+                localStorage.removeItem('kalam_wallet_balance');
+                sessionStorage.setItem('kalam_session_expired_toast', '1');
+              }
+            }
+          }
+
+          // Hook Storage.prototype to auto-track session start on any login
+          var _setItem = Storage.prototype.setItem;
+          Storage.prototype.setItem = function(k, v) {
+            if (k === 'kalam_auth_user' && v) {
+              try {
+                var curLogin = localStorage.getItem('kalam_session_login_time');
+                var oldUser = localStorage.getItem('kalam_auth_user');
+                var oldId = oldUser ? JSON.parse(oldUser).id : null;
+                var newId = JSON.parse(v).id;
+                if (!curLogin || (oldId && newId && oldId !== newId)) {
+                  _setItem.call(this, 'kalam_session_login_time', Date.now().toString());
+                }
+              } catch(e) {}
+            }
+            return _setItem.apply(this, arguments);
+          };
+
+          var _remItem = Storage.prototype.removeItem;
+          Storage.prototype.removeItem = function(k) {
+            if (k === 'kalam_auth_user') {
+              try {
+                _remItem.call(this, 'kalam_session_login_time');
+                _remItem.call(this, 'kalam_session_last_active');
+              } catch(e) {}
+            }
+            return _remItem.apply(this, arguments);
+          };
+        } catch(err) {}
+      })();
+    </script>
+
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -41,7 +94,7 @@
         };
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-BvHT743v.js?v=20260908-url-routes-v11"></script>
+    <script type="module" crossorigin src="/assets/index-BvHT743v.js?v=20260908-clean-v12"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-DqT5Etc-.css">
     <style>
       /* Compact, sleek mobile app scaling */
@@ -71,66 +124,187 @@
         padding: 0 !important;
         overflow: hidden !important;
       }
+    
+      /* Animated Pink Equalizer Wave Page Loader (matching user video) */
+      @keyframes eq-pulse {
+        0%, 100% {
+          transform: scaleY(0.25);
+          opacity: 0.45;
+        }
+        50% {
+          transform: scaleY(1.35);
+          opacity: 1;
+        }
+      }
+      .eq-bar {
+        display: inline-block;
+        width: 5px;
+        height: 30px;
+        border-radius: 9999px;
+        background: linear-gradient(to top, #ff0080, #ff4081);
+        box-shadow: 0 0 14px rgba(255, 0, 128, 0.75);
+        transform-origin: center;
+        animation: eq-pulse 0.7s ease-in-out infinite;
+      }
+      .eq-bar:nth-child(1) { animation-delay: 0s; }
+      .eq-bar:nth-child(2) { animation-delay: 0.14s; }
+      .eq-bar:nth-child(3) { animation-delay: 0.28s; }
+      .eq-bar:nth-child(4) { animation-delay: 0.42s; }
+      .eq-bar:nth-child(5) { animation-delay: 0.56s; }
+
+    
+    /* Fullscreen Equalizer Wave Page Loader (matching user video) */
+    .kalam-page-loader {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      background: #0a0a0f !important;
+      z-index: 2147483647 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: center !important;
+      pointer-events: none !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      transition: opacity 0.16s ease-out, visibility 0.16s ease-out !important;
+      user-select: none !important;
+    }
+    .kalam-page-loader.active {
+      opacity: 1 !important;
+      visibility: visible !important;
+      pointer-events: all !important;
+    }
+    .kalam-loader-topbar {
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      height: 2px !important;
+      background: linear-gradient(90deg, transparent, #ff0080, #00e5ff, transparent) !important;
+      box-shadow: 0 0 14px rgba(255, 0, 128, 0.85) !important;
+    }
+    .kalam-equalizer-container {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 6px !important;
+      height: 52px !important;
+    }
+    @keyframes kalam-eq-pulse {
+      0%, 100% {
+        transform: scaleY(0.25);
+        opacity: 0.4;
+      }
+      50% {
+        transform: scaleY(1.35);
+        opacity: 1;
+        box-shadow: 0 0 22px rgba(255, 0, 128, 1);
+      }
+    }
+    .kalam-eq-bar {
+      display: inline-block !important;
+      width: 5.5px !important;
+      height: 32px !important;
+      border-radius: 9999px !important;
+      background: linear-gradient(180deg, #ff0080, #e11d48, #ff4081) !important;
+      box-shadow: 0 0 16px rgba(255, 0, 128, 0.85) !important;
+      transform-origin: center center !important;
+      animation: kalam-eq-pulse 0.72s ease-in-out infinite !important;
+    }
+    .kalam-eq-bar:nth-child(1) { animation-delay: 0s !important; }
+    .kalam-eq-bar:nth-child(2) { animation-delay: 0.13s !important; }
+    .kalam-eq-bar:nth-child(3) { animation-delay: 0.26s !important; }
+    .kalam-eq-bar:nth-child(4) { animation-delay: 0.39s !important; }
+    .kalam-eq-bar:nth-child(5) { animation-delay: 0.52s !important; }
+
     </style>
   </head>
   <body class="bg-[#0a0a0f] text-white font-sans antialiased selection:bg-[#ff0080]/30 selection:text-white min-h-screen">
-    <div id="kalam-live-route-bar" class="w-full bg-[#080811] border-b border-[#00e5ff]/25 px-3 py-1.5 flex items-center justify-between gap-2 text-[11px] font-mono z-50 select-none">
-      <div class="flex items-center gap-1.5 truncate text-gray-300">
-        <span class="w-2 h-2 rounded-full bg-[#00e5ff] animate-pulse shrink-0"></span>
-        <span class="text-gray-400 shrink-0">URL:</span>
-        <span id="kalam-current-route" class="text-[#00e5ff] font-bold truncate">/dashboard</span>
-      </div>
-      <div class="flex items-center gap-1 shrink-0">
-        <button id="kalam-copy-route-btn" type="button" class="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[10px] transition-colors cursor-pointer" title="Copy Route URL">Copy</button>
-        <a id="kalam-newtab-route-btn" target="_blank" rel="noopener noreferrer" href="/dashboard" class="px-2 py-0.5 rounded bg-[#00e5ff]/15 hover:bg-[#00e5ff]/25 text-[#00e5ff] border border-[#00e5ff]/40 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer" title="Open this route in a new real browser tab">Open ↗</a>
+    
+    <!-- Dedicated Equalizer Wave Page Loader Overlay -->
+    <div id="kalam-page-loader" class="kalam-page-loader active" aria-hidden="true">
+      <div class="kalam-loader-topbar"></div>
+      <div class="kalam-equalizer-container">
+        <div class="kalam-eq-bar"></div>
+        <div class="kalam-eq-bar"></div>
+        <div class="kalam-eq-bar"></div>
+        <div class="kalam-eq-bar"></div>
+        <div class="kalam-eq-bar"></div>
       </div>
     </div>
+
     <div id="root"></div>
+  
     <script>
       (function() {
-        function updateRouteBar() {
-          var p = window.location.pathname || '/dashboard';
-          var s = window.location.search || '';
-          var full = p + s;
-          if (full === '/' || full === '/index.html') full = '/dashboard';
-          var el = document.getElementById('kalam-current-route');
-          var link = document.getElementById('kalam-newtab-route-btn');
-          if (el) el.textContent = full;
-          if (link) link.href = window.location.origin + full;
-        }
-        window.addEventListener('popstate', updateRouteBar);
-        window.addEventListener('hashchange', updateRouteBar);
-        window.addEventListener('kalam_route_changed', function(e) {
-          if (e && e.detail && e.detail.path) {
-            var el = document.getElementById('kalam-current-route');
-            var link = document.getElementById('kalam-newtab-route-btn');
-            if (el) el.textContent = e.detail.path;
-            if (link) link.href = window.location.origin + e.detail.path;
-          } else {
-            updateRouteBar();
-          }
+        var loader = document.getElementById('kalam-page-loader');
+        var timer = null;
+
+        window.showPageLoader = function(ms) {
+          if (!loader) loader = document.getElementById('kalam-page-loader');
+          if (!loader) return;
+          if (timer) clearTimeout(timer);
+          loader.classList.add('active');
+          var duration = typeof ms === 'number' ? ms : 450;
+          timer = setTimeout(function() {
+            if (loader) loader.classList.remove('active');
+          }, duration);
+        };
+
+        window.hidePageLoader = function() {
+          if (!loader) loader = document.getElementById('kalam-page-loader');
+          if (!loader) return;
+          if (timer) clearTimeout(timer);
+          loader.classList.remove('active');
+        };
+
+        // Auto-hide initial page load once bundle loads
+        setTimeout(function() {
+          if (loader) loader.classList.remove('active');
+        }, 550);
+
+        // Global listeners for popstate & hashchange
+        window.addEventListener('popstate', function() {
+          window.showPageLoader(450);
         });
-        var copyBtn = document.getElementById('kalam-copy-route-btn');
-        if (copyBtn) {
-          copyBtn.addEventListener('click', function() {
-            var el = document.getElementById('kalam-current-route');
-            var route = el ? el.textContent : '/dashboard';
-            var fullUrl = window.location.origin + route;
-            if (navigator.clipboard) {
-              navigator.clipboard.writeText(fullUrl).then(function() {
-                copyBtn.textContent = 'Copied!';
-                setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1800);
-              });
-            }
-          });
-        }
-        // Run on load
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', updateRouteBar);
-        } else {
-          updateRouteBar();
-        }
+        window.addEventListener('hashchange', function() {
+          window.showPageLoader(450);
+        });
+
+        // Intercept navigation clicks across the whole platform
+        document.addEventListener('click', function(e) {
+          var target = e.target;
+          var btn = target ? target.closest('button, a, [role="button"]') : null;
+          if (!btn) return;
+          var text = (btn.textContent || '').trim().toLowerCase();
+          var href = btn.getAttribute('href') || '';
+          if (
+            text.includes('dashboard') ||
+            text.includes('deposit') ||
+            text.includes('buy keys') ||
+            text.includes('my keys') ||
+            text.includes('history') ||
+            text.includes('refer') ||
+            text.includes('profile') ||
+            text.includes('tickets') ||
+            text.includes('admin') ||
+            text.includes('users') ||
+            text.includes('products') ||
+            text.includes('stock') ||
+            text.includes('gateways') ||
+            text.includes('settings') ||
+            (href && href.startsWith('/'))
+          ) {
+            window.showPageLoader(450);
+          }
+        }, true);
       })();
     </script>
+
   </body>
 </html>

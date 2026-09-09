@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const version = '20260908-url-routes-v11';
+const version = '20260908-clean-v13';
 
 function cleanHtml(filePath) {
   if (!fs.existsSync(filePath)) return;

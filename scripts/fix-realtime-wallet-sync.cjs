@@ -127,15 +127,6 @@ function patchRealtimeWalletSync(filePath) {
     console.log('[12] Ensured vs handler adds user to user list if not already present');
   }
 
-  // 13. In User Management (vne): Add "Switch User" button on each user row so Admin can test/impersonate
-  const oldViewProfileBtn = 'title:"View Full User Profile & Purchase History",children:r.jsx(Yc,{className:"w-4 h-4 text-cyan-400"})})';
-  const newViewProfileBtn = 'title:"View Full User Profile & Purchase History",children:r.jsx(Yc,{className:"w-4 h-4 text-cyan-400"})}),!Et&&r.jsx("button",{onClick:()=>{try{localStorage.setItem("kalam_auth_user",JSON.stringify(he));localStorage.setItem("kalam_wallet_balance",String(he.walletBalance||0));localStorage.setItem("kalam_app_mode","user");window.location.reload()}catch{}},className:"px-2 py-1 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition-all",title:`Switch into ${he.name}\'s account (Balance: ₹${he.walletBalance||0})`,children:"Switch User"})';
-  if (code.includes(oldViewProfileBtn) && !code.includes('title:`Switch into ${he.name}\'s account')) {
-    code = code.replace(oldViewProfileBtn, newViewProfileBtn);
-    changed = true;
-    console.log('[13] Added "Switch User" impersonation button in User Management (vne)');
-  }
-
   if (changed) {
     fs.writeFileSync(filePath, code, 'utf8');
     console.log('Successfully patched:', filePath);

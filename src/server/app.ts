@@ -3291,6 +3291,17 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
     const requestedQty = Math.max(1, parseInt(quantity, 10) || 1);
     const expiryInfo = calculateKeyExpiryInfo(planDuration);
 
+    // Guard: Prevent purchase if product is currently in MAINTENANCE mode
+    if (Array.isArray(globalProductsCache) && productId) {
+      const cachedProd = globalProductsCache.find((p: any) => p.id === productId || p.productId === productId);
+      if (cachedProd && cachedProd.status === 'MAINTENANCE') {
+        return res.status(400).json({
+          success: false,
+          error: `Product "${cachedProd.name || productId}" is currently under maintenance. Purchases are temporarily paused.`
+        });
+      }
+    }
+
     // 1. Check if real manual keys exist in passed stockKeys
     let effectiveStockKeys = Array.isArray(stockKeys) && stockKeys.length > 0 ? stockKeys : [];
 
