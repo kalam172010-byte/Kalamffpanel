@@ -17,6 +17,7 @@ const scriptsToRun = [
   'add-auto-logout-session.cjs',
   'apply-equalizer-loader.cjs',
   'add-url-routing.cjs',
+  'add-telegram-apk-admin-ui.cjs',
   'sync-html-bundle.cjs'
 ];
 

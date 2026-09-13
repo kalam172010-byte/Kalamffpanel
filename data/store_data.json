@@ -6,12 +6,16 @@
     "supportUsername": "@kd_123_1_3",
     "paymentProofChannel": "https://t.me/yourchannel",
     "howToUseBotLink": "https://t.me/yourchannel/3",
+    "apkDownloadUrl": "https://t.me/kalamffpanel",
     "minDeposit": 1,
     "depositBonusPercent": 0,
     "referralBonusPercent": 10,
     "currencySymbol": "₹",
     "enableUtrInput": true,
-    "adminEmail": "kalam172010@gmail.com"
+    "adminEmail": "kalam172010@gmail.com",
+    "telegramBotToken": "8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8",
+    "telegramChatId": "7768975239",
+    "telegramBotUsername": "@KALAMFFPANELWEBSITE_BOT"
   },
   "paymentConfigs": [
     {
@@ -70,5 +74,18 @@
       "merchantName": "KALAM PAYTM MERCHANT"
     }
   ],
-  "updatedAt": 1788690000000
+  "updatedAt": 1789314840955,
+  "apiConfigs": [
+    {
+      "id": "api-1",
+      "apiUrl": "https://bantibhaiya.com/api/reseller_v1.php",
+      "name": "Primary Reseller API (AdminPanels.shop)",
+      "type": "adminpanels",
+      "masterKey": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "apiKey": "87224c074a021676364829b5b3f0686e",
+      "xApiToken": "",
+      "status": "CONNECTED",
+      "lastTested": "Just now"
+    }
+  ]
 }

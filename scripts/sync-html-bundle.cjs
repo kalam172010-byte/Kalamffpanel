@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const version = '20260908-clean-v13';
+const version = '20260913-clean-v16';
 
 function cleanHtml(filePath) {
   if (!fs.existsSync(filePath)) return;

@@ -2,9 +2,33 @@
   {
     "userId": "kalam172010@gmail.com",
     "email": "kalam172010@gmail.com",
-    "balance": 290011.65,
-    "lastUpdated": 1788786698641,
+    "balance": 290112.65,
+    "lastUpdated": 1789307383980,
     "history": [
+      {
+        "id": "WH_1789307383980_684",
+        "type": "DEPOSIT",
+        "amount": 150,
+        "balanceAfter": 290112.65,
+        "timestamp": 1789307383980,
+        "reason": "Deposit claimed for UTR 998877665544"
+      },
+      {
+        "id": "WH_1789306977798_904",
+        "type": "DEDUCT",
+        "amount": 50,
+        "balanceAfter": 289962.65,
+        "timestamp": 1789306977798,
+        "reason": "Purchase: DRIPCLIENT FF NONROOT APKMOD"
+      },
+      {
+        "id": "WH_1789306787951_564",
+        "type": "DEDUCT",
+        "amount": 50,
+        "balanceAfter": 289962.65,
+        "timestamp": 1789306787951,
+        "reason": "Purchase: DRIPCLIENT FF NONROOT APKMOD"
+      },
       {
         "id": "WH_1788786698641_679",
         "type": "DEDUCT",

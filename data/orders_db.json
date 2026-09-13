@@ -635,35 +635,126 @@
       "utr": "999988887777"
     },
     {
-      "orderId": "fg_BLPJ5DV4",
-      "userId": "test_user_2",
-      "email": "user2@test.com",
-      "amountInPaise": 5000,
-      "amountInRupees": 50,
-      "payeeUpi": "8056317218@fam",
+      "orderId": "CLAIM_1789307383979_794",
+      "amountInPaise": 15000,
+      "amountInRupees": 150,
       "status": "SUCCESS",
-      "paymentLink": "https://famgateway.in/pay.php?order_id=fg_BLPJ5DV4",
-      "checkoutUrl": "https://famgateway.in/pay.php?order_id=fg_BLPJ5DV4",
-      "qrUrl": "https://famgateway.in/api/qr-image.php?order_id=fg_BLPJ5DV4",
+      "paymentLink": "",
+      "createdAt": 1789307383979,
+      "paidAt": 1789307383979,
+      "utr": "998877665544",
+      "senderName": "kalam_test_user",
+      "gateway": "DirectUPI"
+    },
+    {
+      "orderId": "fg_90GW8XAQ",
+      "amountInPaise": 1000,
+      "amountInRupees": 10,
+      "payeeUpi": "8056317218@fam",
+      "status": "PENDING",
+      "paymentLink": "https://famgateway.in/pay.php?order_id=fg_90GW8XAQ",
+      "checkoutUrl": "https://famgateway.in/pay.php?order_id=fg_90GW8XAQ",
+      "qrUrl": "https://famgateway.in/api/qr-image.php?order_id=fg_90GW8XAQ",
       "gateway": "FamGateway",
       "apiKey": "fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e",
-      "createdAt": 1788794524756,
+      "createdAt": 1789308094237,
       "gatewayRaw": {
         "status": "success",
         "data": {
-          "order_id": "fg_BLPJ5DV4",
-          "qr_url": "https://famgateway.in/api/qr-image.php?order_id=fg_BLPJ5DV4",
-          "checkout_url": "https://famgateway.in/pay.php?order_id=fg_BLPJ5DV4",
+          "order_id": "fg_90GW8XAQ",
+          "qr_url": "https://famgateway.in/api/qr-image.php?order_id=fg_90GW8XAQ",
+          "checkout_url": "https://famgateway.in/pay.php?order_id=fg_90GW8XAQ",
           "upi_id": "8056317218@fam",
-          "amount": "50",
-          "payable_amount": "50",
-          "upi_intent": "upi://pay?pa=8056317218%40fam&pn=FamPay&tr=fg_BLPJ5DV4&tn=Payment+for+Order+fg_BLPJ5DV4&am=50&cu=INR",
-          "created_at_ist": "07-09-2026 20:52:04",
-          "expires_at_ist": "07-09-2026 20:57:04"
+          "amount": "10",
+          "payable_amount": "10",
+          "upi_intent": "upi://pay?pa=8056317218%40fam&pn=FamPay&tr=fg_90GW8XAQ&tn=fg_90GW8XAQ&am=10&cu=INR",
+          "created_at_ist": "13-09-2026 19:31:33",
+          "expires_at_ist": "13-09-2026 19:36:33"
         }
-      },
-      "paidAt": 1788794529509,
-      "utr": "999988887777"
+      }
+    },
+    {
+      "orderId": "fg_90GW8XAQ",
+      "amountInPaise": 1000,
+      "amountInRupees": 10,
+      "payeeUpi": "8056317218@fam",
+      "status": "PENDING",
+      "paymentLink": "https://famgateway.in/pay.php?order_id=fg_90GW8XAQ",
+      "checkoutUrl": "https://famgateway.in/pay.php?order_id=fg_90GW8XAQ",
+      "qrUrl": "https://famgateway.in/api/qr-image.php?order_id=fg_90GW8XAQ",
+      "gateway": "FamGateway",
+      "apiKey": "fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e",
+      "createdAt": 1789308094237,
+      "gatewayRaw": {
+        "status": "success",
+        "data": {
+          "order_id": "fg_90GW8XAQ",
+          "qr_url": "https://famgateway.in/api/qr-image.php?order_id=fg_90GW8XAQ",
+          "checkout_url": "https://famgateway.in/pay.php?order_id=fg_90GW8XAQ",
+          "upi_id": "8056317218@fam",
+          "amount": "10",
+          "payable_amount": "10",
+          "upi_intent": "upi://pay?pa=8056317218%40fam&pn=FamPay&tr=fg_90GW8XAQ&tn=fg_90GW8XAQ&am=10&cu=INR",
+          "created_at_ist": "13-09-2026 19:31:33",
+          "expires_at_ist": "13-09-2026 19:36:33"
+        }
+      }
+    },
+    {
+      "orderId": "fg_YOUNH7AV",
+      "userId": "7768975239",
+      "amountInPaise": 2000,
+      "amountInRupees": 20,
+      "payeeUpi": "8056317218@fam",
+      "status": "PENDING",
+      "paymentLink": "https://famgateway.in/pay.php?order_id=fg_YOUNH7AV",
+      "checkoutUrl": "https://famgateway.in/pay.php?order_id=fg_YOUNH7AV",
+      "qrUrl": "https://famgateway.in/api/qr-image.php?order_id=fg_YOUNH7AV",
+      "gateway": "FamGateway",
+      "apiKey": "fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e",
+      "createdAt": 1789308208211,
+      "gatewayRaw": {
+        "status": "success",
+        "data": {
+          "order_id": "fg_YOUNH7AV",
+          "qr_url": "https://famgateway.in/api/qr-image.php?order_id=fg_YOUNH7AV",
+          "checkout_url": "https://famgateway.in/pay.php?order_id=fg_YOUNH7AV",
+          "upi_id": "8056317218@fam",
+          "amount": "20",
+          "payable_amount": "20",
+          "upi_intent": "upi://pay?pa=8056317218%40fam&pn=FamPay&tr=fg_YOUNH7AV&tn=fg_YOUNH7AV&am=20&cu=INR",
+          "created_at_ist": "13-09-2026 19:33:26",
+          "expires_at_ist": "13-09-2026 19:38:26"
+        }
+      }
+    },
+    {
+      "orderId": "fg_YOUNH7AV",
+      "userId": "7768975239",
+      "amountInPaise": 2000,
+      "amountInRupees": 20,
+      "payeeUpi": "8056317218@fam",
+      "status": "PENDING",
+      "paymentLink": "https://famgateway.in/pay.php?order_id=fg_YOUNH7AV",
+      "checkoutUrl": "https://famgateway.in/pay.php?order_id=fg_YOUNH7AV",
+      "qrUrl": "https://famgateway.in/api/qr-image.php?order_id=fg_YOUNH7AV",
+      "gateway": "FamGateway",
+      "apiKey": "fam_a9527c6c2dd4d26ad5223cfc3c4c5fa9289b574e",
+      "createdAt": 1789308208211,
+      "gatewayRaw": {
+        "status": "success",
+        "data": {
+          "order_id": "fg_YOUNH7AV",
+          "qr_url": "https://famgateway.in/api/qr-image.php?order_id=fg_YOUNH7AV",
+          "checkout_url": "https://famgateway.in/pay.php?order_id=fg_YOUNH7AV",
+          "upi_id": "8056317218@fam",
+          "amount": "20",
+          "payable_amount": "20",
+          "upi_intent": "upi://pay?pa=8056317218%40fam&pn=FamPay&tr=fg_YOUNH7AV&tn=fg_YOUNH7AV&am=20&cu=INR",
+          "created_at_ist": "13-09-2026 19:33:26",
+          "expires_at_ist": "13-09-2026 19:38:26"
+        }
+      }
     }
   ],
   "usedUtrs": [
@@ -684,6 +775,12 @@
       "orderId": "fg_BLPJ5DV4",
       "amount": 50,
       "redeemedAt": 1788794529509
+    },
+    {
+      "utr": "998877665544",
+      "orderId": "CLAIM_1789307383979_794",
+      "amount": 150,
+      "redeemedAt": 1789307383979
     }
   ],
   "creditedPayments": [
@@ -706,5 +803,5 @@
       "status": "SUCCESS"
     }
   ],
-  "updatedAt": 1788795171900
+  "updatedAt": 1789308208211
 }
