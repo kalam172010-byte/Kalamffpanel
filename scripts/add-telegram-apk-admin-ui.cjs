@@ -31,10 +31,9 @@ function patchFile(targetPath) {
 
   // 3. Add useState variables for Telegram Bot & Proof Bot in tne
   const targetState = '[be,we]=q.useState(n.howToUseBotLink||"https://t.me/yourchannel/3"),[apkLink,setApkLink]=q.useState(n.apkDownloadUrl||"https://t.me/kalamffpanel"),';
-  const newTgStates = '[be,we]=q.useState(n.howToUseBotLink||"https://t.me/yourchannel/3"),[apkLink,setApkLink]=q.useState(n.apkDownloadUrl||"https://t.me/kalamffpanel"),[tgBotToken,setTgBotToken]=q.useState(n.telegramBotToken||"8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8"),[tgChatId,setTgChatId]=q.useState(n.telegramChatId||"7768975239"),[tgBotUsername,setTgBotUsername]=q.useState(n.telegramBotUsername||"@kalam_store_bot"),[tgWelcomeMsg,setTgWelcomeMsg]=q.useState(n.telegramWelcomeMsg||"🔥 Welcome to KALAM STORE Bot! Instant Key Delivery & Automated UPI Wallet."),[tgProofToken,setTgProofToken]=q.useState(n.proofBotToken||""),[tgProofChatId,setTgProofChatId]=q.useState(n.proofChatId||""),[tgAutoProof,setTgAutoProof]=q.useState(n.enableAutoProof!==!1),[tgProofChannelLink,setTgProofChannelLink]=q.useState(n.proofChannelLink||n.paymentProofChannel||""),[showTgToken,setShowTgToken]=q.useState(!1),[showProofToken,setShowProofToken]=q.useState(!1),[tgTesting,setTgTesting]=q.useState(!1),[tgTestStatus,setTgTestStatus]=q.useState(null),[tgProofTesting,setTgProofTesting]=q.useState(!1),[tgProofTestStatus,setTgProofTestStatus]=q.useState(null),[tgSaving,setTgSaving]=q.useState(!1),[tgSaved,setTgSaved]=q.useState(!1),[tgLiveUpdating,setTgLiveUpdating]=q.useState(!1),[tgLiveStatus,setTgLiveStatus]=q.useState(null),[tgDetecting,setTgDetecting]=q.useState(!1),[tgDetectHint,setTgDetectHint]=q.useState(null),[tgUsers,setTgUsers]=q.useState([]),[tgUsersLoading,setTgUsersLoading]=q.useState(!1),[tgUserSearch,setTgUserSearch]=q.useState(""),[tgCreditUser,setTgCreditUser]=q.useState(null),[tgCreditAmt,setTgCreditAmt]=q.useState(""),[tgCreditReason,setTgCreditReason]=q.useState(""),[tgCreditMsg,setTgCreditMsg]=q.useState(null),[tgCrediting,setTgCrediting]=q.useState(!1),';
-  if (code.includes(targetState) && !code.includes('[tgProofToken,setTgProofToken]')) {
+  const newTgStates = '[be,we]=q.useState(n.howToUseBotLink||"https://t.me/yourchannel/3"),[apkLink,setApkLink]=q.useState(n.apkDownloadUrl||"https://t.me/kalamffpanel"),[tgBotToken,setTgBotToken]=q.useState(n.telegramBotToken||"8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8"),[tgChatId,setTgChatId]=q.useState(n.telegramChatId||"7768975239"),[tgBotUsername,setTgBotUsername]=q.useState(n.telegramBotUsername||"@kalam_store_bot"),[tgWelcomeMsg,setTgWelcomeMsg]=q.useState(n.telegramWelcomeMsg||"🔥 Welcome to KALAM STORE Bot! Instant Key Delivery & Automated UPI Wallet."),[tgProofToken,setTgProofToken]=q.useState(n.proofBotToken||""),[tgProofChatId,setTgProofChatId]=q.useState(n.proofChatId||""),[tgAutoProof,setTgAutoProof]=q.useState(n.enableAutoProof!==!1),[tgProofChannelLink,setTgProofChannelLink]=q.useState(n.proofChannelLink||n.paymentProofChannel||""),[showTgToken,setShowTgToken]=q.useState(!1),[showProofToken,setShowProofToken]=q.useState(!1),[tgTesting,setTgTesting]=q.useState(!1),[tgTestStatus,setTgTestStatus]=q.useState(null),[tgProofTesting,setTgProofTesting]=q.useState(!1),[tgProofTestStatus,setTgProofTestStatus]=q.useState(null),[tgProofDetecting,setTgProofDetecting]=q.useState(!1),[tgProofDetectHint,setTgProofDetectHint]=q.useState(null),[tgSaving,setTgSaving]=q.useState(!1),[tgSaved,setTgSaved]=q.useState(!1),[tgLiveUpdating,setTgLiveUpdating]=q.useState(!1),[tgLiveStatus,setTgLiveStatus]=q.useState(null),[tgDetecting,setTgDetecting]=q.useState(!1),[tgDetectHint,setTgDetectHint]=q.useState(null),[tgUsers,setTgUsers]=q.useState([]),[tgUsersLoading,setTgUsersLoading]=q.useState(!1),[tgUserSearch,setTgUserSearch]=q.useState(""),[tgCreditUser,setTgCreditUser]=q.useState(null),[tgCreditAmt,setTgCreditAmt]=q.useState(""),[tgCreditReason,setTgCreditReason]=q.useState(""),[tgCreditMsg,setTgCreditMsg]=q.useState(null),[tgCrediting,setTgCrediting]=q.useState(!1),';
+  if (code.includes(targetState) && !code.includes('[tgProofDetecting,setTgProofDetecting]')) {
     if (code.includes('[tgBotToken,setTgBotToken]')) {
-      // Replace existing tgBotToken block with extended one
       const oldStateBlockStart = code.indexOf('[tgBotToken,setTgBotToken]=');
       const oldStateBlockEnd = code.indexOf('[tgCrediting,setTgCrediting]=q.useState(!1),') + '[tgCrediting,setTgCrediting]=q.useState(!1),'.length;
       if (oldStateBlockStart !== -1 && oldStateBlockEnd !== -1) {
@@ -98,7 +97,7 @@ function patchFile(targetPath) {
 
   // 8. Add to admin search keywords
   const targetKeywordsStore = '{id:"store_settings",label:"🎨 Store UI/UX Editor",keywords:';
-  const newKeywordsStore = '{id:"telegram_bot",label:"🤖 Telegram Bot",keywords:["telegram","bot","token","chatid","apk","update","telegram bot","webhook","proof","proofs","payment proof"]},{id:"store_settings",label:"🎨 Store UI/UX Editor",keywords:';
+  const newKeywordsStore = '{id:"telegram_bot",label:"🤖 Telegram Bot",keywords:["telegram","bot","token","chatid","apk","update","telegram bot","webhook","proof","proofs","payment proof","group"]},{id:"store_settings",label:"🎨 Store UI/UX Editor",keywords:';
   if (code.includes(targetKeywordsStore) && !code.includes('id:"telegram_bot",label:"🤖 Telegram Bot",keywords:')) {
     code = code.replace(targetKeywordsStore, newKeywordsStore);
     changed = true;
@@ -134,7 +133,7 @@ function patchFile(targetPath) {
             'r.jsx("span",{children:"🤖 Telegram Bot & APK Control Center"}),' +
             'r.jsx("span",{className:"text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse",children:"● LIVE ENGINE ACTIVE"})' +
           ']}),' +
-          'r.jsx("p",{className:"text-xs text-gray-400",children:"Edit your bot token, admin chat alerts, payment proofs forwarder, APK download channel, tutorials, and welcome messages in real-time."})' +
+          'r.jsx("p",{className:"text-xs text-gray-400",children:"Edit your bot token, admin chat alerts, group & channel payment proofs forwarder, APK download channel, tutorials, and welcome messages in real-time."})' +
         ']})' +
       ']}),' +
       'r.jsxs("div",{className:"flex flex-wrap items-center gap-2",children:[' +
@@ -159,7 +158,7 @@ function patchFile(targetPath) {
           'setTgSaving(!0);' +
           'try{' +
             'await fetch("/api/telegram-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({botToken:tgBotToken,chatId:tgChatId,botUsername:tgBotUsername,apkDownloadUrl:apkLink,howToUseBotLink:be,paymentProofChannel:J,welcomeMessage:tgWelcomeMsg,proofBotToken:tgProofToken,proofChatId:tgProofChatId,enableAutoProof:tgAutoProof,proofChannelLink:tgProofChannelLink})});' +
-            'Fs("Telegram Bot & Payment Proof settings saved and synchronized!");' +
+            'Fs("Telegram Bot & Group Proof settings saved and synchronized!");' +
             'setTgSaved(!0);setTimeout(()=>setTgSaved(!1),2500);' +
           '}catch(He){console.error(He);}' +
           'finally{setTgSaving(!1);}' +
@@ -220,7 +219,7 @@ function patchFile(targetPath) {
               'if(data.success&&data.chats&&data.chats.length>0){' +
                 'const topChat=data.chats[0];' +
                 'setTgChatId(topChat.chatId);' +
-                'setTgDetectHint({ok:!0,msg:`✅ Auto-detected Chat ID: ${topChat.chatId} (${topChat.username||topChat.firstName||"User"})`});' +
+                'setTgDetectHint({ok:!0,msg:`✅ Auto-detected Chat ID: ${topChat.chatId} (${topChat.title||topChat.username||topChat.firstName||"Chat"})`});' +
               '}else{' +
                 'setTgDetectHint({ok:!1,msg:`⚠️ No recent chats. Send /start or /myid to @${(tgBotUsername||"bot").replace("@","")} in Telegram, then click Auto-Detect again!`});' +
               '}' +
@@ -231,7 +230,7 @@ function patchFile(targetPath) {
             'r.jsx("span",{children:tgDetecting?"Detecting...":"Auto-Detect ID"})' +
           ']})' +
         ']}),' +
-        'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Your numeric Telegram ID. Tip: Send /myid to the bot or click Auto-Detect ID to fill this automatically."})' +
+        'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Your numeric Telegram ID or Admin group ID. Tip: Send /myid to the bot or click Auto-Detect ID to fill this automatically."})' +
       ']})' +
     ']}),' +
 
@@ -265,17 +264,17 @@ function patchFile(targetPath) {
       ']})' +
     ']}),' +
 
-    // Dedicated Section: Secondary Bot & Public Payment Proofs Dispatcher
+    // Dedicated Section: Secondary Bot & Public Payment Proofs Dispatcher (Works for Channels & Groups)
     'r.jsxs("div",{className:"bg-gradient-to-r from-purple-950/40 via-blue-950/30 to-indigo-950/40 border border-purple-500/40 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl shadow-purple-950/25",children:[' +
       'r.jsxs("div",{className:"flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-purple-500/20 pb-3",children:[' +
         'r.jsxs("div",{className:"flex items-center gap-3",children:[' +
           'r.jsx("div",{className:"w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0 shadow-[0_0_12px_rgba(168,85,247,0.25)]",children:r.jsx(Rp,{className:"w-5 h-5"})}),' +
           'r.jsxs("div",{children:[' +
             'r.jsxs("h4",{className:"text-sm sm:text-base font-black text-white uppercase tracking-wider flex items-center gap-2",children:[' +
-              'r.jsx("span",{children:"📢 Secondary Telegram Bot & Public Payment Proofs"}),' +
-              'r.jsx("span",{className:"text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30",children:"AUTO-PROOF RECEIPT"})' +
+              'r.jsx("span",{children:"📢 Group & Channel Payment Proofs Forwarder"}),' +
+              'r.jsx("span",{className:"text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30",children:"AUTO-PROOF FOR GROUPS & CHANNELS"})' +
             ']}),' +
-            'r.jsx("p",{className:"text-xs text-gray-400",children:"Automatically forwards key purchase details (with keys securely masked like ABCD-****-1234) to your secondary bot or payment proof channel for public trust building."})' +
+            'r.jsx("p",{className:"text-xs text-gray-400",children:"Automatically forwards key purchase details (with keys securely masked like ABCD-****-1234) to your Telegram Group or Channel for customer trust and proof."})' +
           ']})' +
         ']}),' +
         'r.jsxs("button",{type:"button",onClick:()=>setTgAutoProof(!tgAutoProof),className:`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border ${tgAutoProof?"bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-[0_0_10px_rgba(16,185,129,0.25)]":"bg-white/5 text-gray-400 border-white/10"}`,children:[' +
@@ -290,32 +289,60 @@ function patchFile(targetPath) {
         'r.jsx("button",{onClick:()=>setTgProofTestStatus(null),className:"text-gray-400 hover:text-white text-xs font-bold px-2 py-0.5 rounded cursor-pointer",children:"✕"})' +
       ']}),' +
 
-      // Grid for Proof Bot Token & Proof Channel / Chat ID
+      // Group Detect Hint Banner
+      'tgProofDetectHint&&r.jsxs("div",{className:`p-3 rounded-xl text-xs font-medium flex items-center justify-between gap-2 border ${tgProofDetectHint.ok?"bg-cyan-500/15 border-cyan-500/40 text-cyan-300":"bg-amber-500/15 border-amber-500/40 text-amber-300"}`,children:[' +
+        'r.jsx("span",{className:"font-mono",children:tgProofDetectHint.msg}),' +
+        'r.jsx("button",{onClick:()=>setTgProofDetectHint(null),className:"text-gray-400 hover:text-white text-xs font-bold px-2 py-0.5 rounded cursor-pointer",children:"✕"})' +
+      ']}),' +
+
+      // Grid for Proof Bot Token & Proof Group/Channel Chat ID
       'r.jsxs("div",{className:"grid grid-cols-1 md:grid-cols-2 gap-4",children:[' +
         // Proof Bot Token
         'r.jsxs("div",{className:"bg-black/40 border border-purple-500/30 rounded-xl p-3.5 space-y-2",children:[' +
           'r.jsxs("div",{className:"flex items-center justify-between",children:[' +
             'r.jsxs("label",{className:"text-xs font-bold text-gray-300 flex items-center gap-1.5",children:[' +
               'r.jsx(zF,{className:"w-3.5 h-3.5 text-purple-400"}),' +
-              'r.jsx("span",{children:"Secondary Proof Bot Token (from @BotFather)"})' +
+              'r.jsx("span",{children:"Proof Bot Token (from @BotFather)"})' +
             ']}),' +
             'r.jsx("button",{type:"button",onClick:()=>setShowProofToken(!showProofToken),className:"text-[10px] text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer",children:showProofToken?r.jsxs(r.Fragment,{children:[r.jsx(rf,{className:"w-3 h-3"}),"Hide"]}):r.jsxs(r.Fragment,{children:[r.jsx(Wc,{className:"w-3 h-3"}),"Show"]})})' +
           ']}),' +
           'r.jsx("input",{type:showProofToken?"text":"password",value:tgProofToken,onChange:He=>setTgProofToken(He.target.value),placeholder:"Optional: Leave blank to use Main Bot Token",className:"w-full px-3 py-2 rounded-lg bg-black/70 border border-purple-500/30 focus:border-purple-400 focus:outline-none text-white font-mono text-xs shadow-inner"}),' +
-          'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Token of secondary bot that posts proofs. If empty, the main bot token will post the receipts automatically."})' +
+          'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Token of bot that posts proofs. If empty, the main bot token will post the receipts automatically."})' +
         ']}),' +
 
-        // Proof Channel / Chat ID
+        // Proof Group / Channel Chat ID
         'r.jsxs("div",{className:"bg-black/40 border border-purple-500/30 rounded-xl p-3.5 space-y-2",children:[' +
           'r.jsxs("label",{className:"text-xs font-bold text-gray-300 flex items-center justify-between",children:[' +
             'r.jsxs("span",{className:"flex items-center gap-1.5",children:[' +
               'r.jsx(nc,{className:"w-3.5 h-3.5 text-purple-400"}),' +
-              'r.jsx("span",{children:"Proof Channel Chat ID (e.g. -100xxxxxxxxxx or @channel)"})' +
+              'r.jsx("span",{children:"Proof Group / Channel ID (e.g. -100xxxxxxxxxx or @group)"})' +
             ']}),' +
-            'r.jsx("span",{className:"text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30",children:"TARGET CHANNEL"})' +
+            'r.jsx("span",{className:"text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30",children:"TARGET GROUP/CHANNEL"})' +
           ']}),' +
-          'r.jsx("input",{type:"text",value:tgProofChatId,onChange:He=>setTgProofChatId(He.target.value),placeholder:"-1002345678901 or @kalam_proofs",className:"w-full px-3 py-2 rounded-lg bg-black/70 border border-purple-500/30 focus:border-purple-400 focus:outline-none text-white font-mono text-xs shadow-inner"}),' +
-          'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Channel / Group ID or @public_username where receipts will be sent. Make sure the Bot is an Admin with Post Messages permission!"})' +
+          'r.jsxs("div",{className:"flex gap-2",children:[' +
+            'r.jsx("input",{type:"text",value:tgProofChatId,onChange:He=>setTgProofChatId(He.target.value),placeholder:"-1002345678901 or @kalam_proofs",className:"w-full px-3 py-2 rounded-lg bg-black/70 border border-purple-500/30 focus:border-purple-400 focus:outline-none text-white font-mono text-xs shadow-inner"}),' +
+            'r.jsxs("button",{type:"button",disabled:tgProofDetecting,onClick:async()=>{' +
+              'setTgProofDetecting(!0);setTgProofDetectHint(null);' +
+              'try{' +
+                'const tokenToUse=(tgProofToken&&tgProofToken.trim())||tgBotToken.trim();' +
+                'const res=await fetch("/api/admin/telegram/recent-chats?botToken="+encodeURIComponent(tokenToUse));' +
+                'const data=await res.json();' +
+                'if(data.success&&data.chats&&data.chats.length>0){' +
+                  'const groupChat=data.chats.find(c=>c.type==="supergroup"||c.type==="group"||c.type==="channel")||data.chats[0];' +
+                  'setTgProofChatId(groupChat.chatId);' +
+                  'const name=groupChat.title||groupChat.username||groupChat.firstName||"Chat";' +
+                  'setTgProofDetectHint({ok:!0,msg:`✅ Auto-detected ${groupChat.type==="private"?"Chat":"Group/Channel"} ID: ${groupChat.chatId} (${name})`});' +
+                '}else{' +
+                  'setTgProofDetectHint({ok:!1,msg:"⚠️ No recent messages found. Add your Bot to the Telegram Group/Channel as Admin and send a message (e.g. /test or hi) in the group, then click Auto-Detect again!"});' +
+                '}' +
+              '}catch(e){setTgProofDetectHint({ok:!1,msg:"❌ Failed to query Telegram updates"});}' +
+              'finally{setTgProofDetecting(!1);}' +
+            '},className:"px-3 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 text-xs font-bold whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50",children:[' +
+              'r.jsx(Ox,{className:`w-3 h-3 ${tgProofDetecting?"animate-spin":""}`}),' +
+              'r.jsx("span",{children:tgProofDetecting?"Detecting...":"Auto-Detect Group ID"})' +
+            ']})' +
+          ']}),' +
+          'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Group ID (e.g. -100xxxxxxxxxx) or @group_username. Make sure the Bot is added to the Group with Admin permissions!"})' +
         ']})' +
       ']}),' +
 
@@ -326,12 +353,12 @@ function patchFile(targetPath) {
             'r.jsxs("label",{className:"text-xs font-bold text-gray-300 flex items-center justify-between",children:[' +
               'r.jsxs("span",{className:"flex items-center gap-1.5",children:[' +
                 'r.jsx(Rp,{className:"w-3.5 h-3.5 text-purple-400"}),' +
-                'r.jsx("span",{children:"Public Payment Proof Channel URL (Website Link)"})' +
+                'r.jsx("span",{children:"Public Payment Proof Group / Channel Link (Website Link)"})' +
               ']}),' +
-              'tgProofChannelLink&&r.jsx("a",{href:tgProofChannelLink,target:"_blank",rel:"noopener noreferrer",className:"text-[10px] text-purple-400 hover:underline flex items-center gap-0.5",children:"Open Channel ↗"})' +
+              'tgProofChannelLink&&r.jsx("a",{href:tgProofChannelLink,target:"_blank",rel:"noopener noreferrer",className:"text-[10px] text-purple-400 hover:underline flex items-center gap-0.5",children:"Open Group ↗"})' +
             ']}),' +
-            'r.jsx("input",{type:"text",value:tgProofChannelLink,onChange:He=>setTgProofChannelLink(He.target.value),placeholder:"https://t.me/kalam_vouch_channel",className:"w-full px-3 py-2 rounded-lg bg-black/70 border border-purple-500/30 focus:border-purple-400 focus:outline-none text-white font-mono text-xs shadow-inner"}),' +
-            'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Public link shown to website and bot users to inspect payment receipts and customer reviews."})' +
+            'r.jsx("input",{type:"text",value:tgProofChannelLink,onChange:He=>setTgProofChannelLink(He.target.value),placeholder:"https://t.me/kalam_vouch_channel or https://t.me/+InviteLink",className:"w-full px-3 py-2 rounded-lg bg-black/70 border border-purple-500/30 focus:border-purple-400 focus:outline-none text-white font-mono text-xs shadow-inner"}),' +
+            'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Public or invite link of your group/channel shown to buyers so they can join and view real-time delivery receipts."})' +
           ']}),' +
           'r.jsx("div",{className:"flex items-end sm:pt-4",children:' +
             'r.jsx(Ge.button,{whileHover:{scale:1.02},whileTap:{scale:.98},disabled:tgProofTesting,onClick:async()=>{' +
@@ -341,9 +368,9 @@ function patchFile(targetPath) {
                 'const data=await res.json();' +
                 'if(data.success){' +
                   'setTgProofTestStatus({ok:!0,msg:`✅ Test Proof Sent Successfully to ${tgProofChatId} via @${data.botUsername}! (Masked Key: KALAM-****-7711)`});' +
-                  'Fs("Test payment proof sent to channel!");' +
+                  'Fs("Test payment proof sent to group/channel!");' +
                 '}else{' +
-                  'setTgProofTestStatus({ok:!1,msg:`❌ ${data.error||"Failed to send test proof to channel"}`});' +
+                  'setTgProofTestStatus({ok:!1,msg:`❌ ${data.error||"Failed to send test proof to group/channel"}`});' +
                 '}' +
               '}catch(e){setTgProofTestStatus({ok:!1,msg:"❌ Network error sending test proof"});}' +
               'finally{setTgProofTesting(!1);}' +

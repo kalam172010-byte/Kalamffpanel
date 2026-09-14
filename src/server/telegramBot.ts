@@ -228,9 +228,9 @@ export class TelegramBotService {
     let apkTutorialUrl = process.env.APK_TUTORIAL_URL || 'https://youtu.be/kalam_tutorial';
     let botUsername = process.env.TELEGRAM_BOT_USERNAME || '@KalamFFStoreBot';
 
-    let proofBotToken = process.env.TELEGRAM_PROOF_BOT_TOKEN || '';
-    let proofChatId = process.env.TELEGRAM_PROOF_CHAT_ID || '';
-    let proofChannelLink = process.env.PAYMENT_PROOF_CHANNEL || '';
+    let proofBotToken = process.env.TELEGRAM_PROOF_BOT_TOKEN || '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
+    let proofChatId = process.env.TELEGRAM_PROOF_CHAT_ID || '-1004325449752';
+    let proofChannelLink = process.env.PAYMENT_PROOF_CHANNEL || 'https://t.me/c/4325449752';
     let enableAutoProof = true;
 
     if (fs.existsSync(storeConfigFile)) {
@@ -275,6 +275,14 @@ export class TelegramBotService {
       } catch {}
     }
 
+    if (!proofChatId && fs.existsSync(storeConfigFile)) {
+      try {
+        const sd = JSON.parse(fs.readFileSync(storeConfigFile, 'utf8'));
+        if (sd.storeSettings?.proofChatId) proofChatId = sd.storeSettings.proofChatId.trim();
+        if (!proofBotToken && sd.storeSettings?.proofBotToken) proofBotToken = sd.storeSettings.proofBotToken.trim();
+      } catch {}
+    }
+
     return { botToken, defaultChatId, apkDownloadUrl, apkTutorialUrl, botUsername, proofBotToken, proofChatId, proofChannelLink, enableAutoProof };
   }
 
@@ -300,20 +308,26 @@ export class TelegramBotService {
   }): Promise<boolean> {
     try {
       const creds = this.getCredentials();
-      if (!creds.enableAutoProof) return false;
+      if (!creds.enableAutoProof) {
+        console.log('[TelegramBot] Proof dispatch skipped: enableAutoProof is false');
+        return false;
+      }
 
-      const activeToken = creds.proofBotToken || creds.botToken;
-      const targetChat = creds.proofChatId;
+      const activeToken = creds.proofBotToken || '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
+      const targetChat = creds.proofChatId || '-1004325449752';
 
       if (!activeToken || !targetChat) {
+        console.warn('[TelegramBot] Proof dispatch skipped: missing activeToken or proofChatId', { activeToken: !!activeToken, targetChat });
         return false;
       }
 
       const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
-      const maskedKeys = info.keys.map(k => `<code>${this.maskKeyForProof(k)}</code> <i>(Sent Privately to Buyer)</i>`).join('\n');
+      const maskedKeys = (info.keys && info.keys.length > 0)
+        ? info.keys.map(k => `<code>${this.maskKeyForProof(k)}</code> <i>(Sent Privately to Buyer)</i>`).join('\n')
+        : `<code>XXXX-****-YYYY</code> <i>(Sent Privately to Buyer)</i>`;
       const buyerName = info.username ? `@${info.username.replace('@', '')}` : (info.firstName || 'Verified Customer');
       const ordId = info.orderId || `TG_ORD_${Date.now()}`;
-      const botHandle = (creds.botUsername || 'kalam_store_bot').replace('@', '');
+      const botHandle = (creds.botUsername || 'KALAMFFPANEL1_12_BOT').replace('@', '');
 
       const text =
         `🎉 <b>NEW KEY PURCHASE & PAYMENT PROOF</b> 🎉\n\n` +
@@ -350,6 +364,84 @@ export class TelegramBotService {
 
       const data: any = await res.json();
       if (!data.ok) {
+        console.warn('[TelegramBot] Proof HTML send failed, trying plain fallback:', data.description);
+        const fbRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: targetChat,
+            text: text.replace(/<[^>]*>/g, '')
+          })
+        });
+        const fbData: any = await fbRes.json();
+        if (!fbData.ok) {
+          console.error('[TelegramBot] Proof plain send failed:', fbData.description);
+          return false;
+        }
+      }
+      console.log('[TelegramBot] ✅ Proof message successfully dispatched to:', targetChat);
+      return true;
+    } catch (e: any) {
+      console.warn('[TelegramBot] Proof dispatch failed:', e.message);
+      return false;
+    }
+  }
+
+  // Dispatch UPI Deposit / Balance top-up proof to secondary Proof Group
+  public async dispatchDepositProof(info: {
+    amount: number;
+    utr?: string;
+    orderId?: string;
+    chatId?: number;
+    username?: string;
+    firstName?: string;
+    paymentMethod?: string;
+  }): Promise<boolean> {
+    try {
+      const creds = this.getCredentials();
+      if (!creds.enableAutoProof) return false;
+
+      const activeToken = creds.proofBotToken || '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
+      const targetChat = creds.proofChatId || '-1004325449752';
+      if (!activeToken || !targetChat) return false;
+
+      const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+      const buyerName = info.username ? `@${info.username.replace('@', '')}` : (info.firstName || 'Verified Customer');
+      const ordId = info.orderId || `DEP_${Date.now()}`;
+      const botHandle = (creds.botUsername || 'KALAMFFPANEL1_12_BOT').replace('@', '');
+
+      const text =
+        `💳 <b>NEW UPI PAYMENT & WALLET DEPOSIT PROOF</b> 💳\n\n` +
+        `<blockquote>` +
+        `💵 <b>Amount Paid:</b> ₹${Number(info.amount).toFixed(2)}\n` +
+        `👤 <b>Customer:</b> ${buyerName}\n` +
+        (info.chatId ? `🆔 <b>User ID:</b> <code>${info.chatId}</code>\n` : '') +
+        `🔖 <b>UTR / Ref:</b> <code>${info.utr || 'Direct UPI Auto-Sync'}</code>\n` +
+        `🆔 <b>Order ID:</b> <code>${ordId}</code>\n` +
+        `🏦 <b>Gateway:</b> ${info.paymentMethod || 'Direct UPI / FamGateway'}\n` +
+        `🕒 <b>Time:</b> ${time} (IST)\n` +
+        `</blockquote>\n\n` +
+        `🛡️ <b>STATUS:</b> ✅ <b>PAYMENT VERIFIED & CREDITED</b> ⚡\n` +
+        `🛒 <b>BUY KEY INSTANTLY:</b> @${botHandle}`;
+
+      const res = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: targetChat,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle}` }]
+            ]
+          }
+        })
+      });
+
+      const data: any = await res.json();
+      if (!data.ok) {
         await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -359,9 +451,10 @@ export class TelegramBotService {
           })
         });
       }
+      console.log('[TelegramBot] ✅ Deposit proof successfully dispatched to:', targetChat);
       return true;
     } catch (e: any) {
-      console.warn('[TelegramBot] Proof dispatch failed:', e.message);
+      console.warn('[TelegramBot] Deposit proof dispatch error:', e.message);
       return false;
     }
   }
@@ -1267,6 +1360,46 @@ export class TelegramBotService {
     }
   }
 
+  public async deleteMessage(chatId: number, messageId: number): Promise<boolean> {
+    const { botToken } = this.getCredentials();
+    if (!botToken || !messageId) return false;
+
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId
+        })
+      });
+      const data: any = await res.json();
+      return !!data.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  public async removeReplyKeyboard(chatId: number): Promise<void> {
+    const { botToken } = this.getCredentials();
+    if (!botToken) return;
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: '✨',
+          reply_markup: { remove_keyboard: true }
+        })
+      });
+      const data: any = await res.json();
+      if (data.ok && data.result?.message_id) {
+        this.deleteMessage(chatId, data.result.message_id).catch(() => {});
+      }
+    } catch {}
+  }
+
   public async answerCallback(callbackQueryId: string, text?: string, showAlert: boolean = false): Promise<void> {
     const { botToken } = this.getCredentials();
     if (!botToken) return;
@@ -1320,16 +1453,22 @@ export class TelegramBotService {
         if (data.description && data.description.includes('message is not modified')) {
           return true;
         }
-        // If the original message was deleted or can't be edited, only then send a fresh message
-        if (data.description && (data.description.includes('message to edit not found') || data.description.includes('message can\'t be edited'))) {
+        // If the original message was deleted, has a photo/media, or can't be edited as text, delete old message and send fresh
+        if (data.description && (
+          data.description.includes('message to edit not found') ||
+          data.description.includes('message can\'t be edited') ||
+          data.description.includes('there is no text in the message to edit')
+        )) {
+          this.deleteMessage(chatId, messageId).catch(() => {});
           return this.sendMessage(chatId, text, replyMarkup);
         }
         console.warn('[TelegramBot] editMessageText non-fatal error:', data.description);
-        // Do NOT send a duplicate message for transient errors or duplicate clicks
-        return false;
+        // Fallback: send fresh message to ensure user is never left stuck
+        this.deleteMessage(chatId, messageId).catch(() => {});
+        return this.sendMessage(chatId, text, replyMarkup);
       } catch (err: any) {
         console.warn('[TelegramBot] editMessageText error:', err.message);
-        return false;
+        return this.sendMessage(chatId, text, replyMarkup);
       }
     }
 
@@ -3393,9 +3532,14 @@ export class TelegramBotService {
 
     const botUser = this.registerOrUpdateUser(cb.from, chatId);
 
-    if (data === 'main_menu') {
+    if (data === 'main_menu' || data === 'cancel_payment' || data === 'cancel') {
+      userStates.delete(chatId);
+      this.numpadAmounts.delete(chatId);
+      if (msgId) {
+        this.deleteMessage(chatId, msgId).catch(() => {});
+      }
       const wallet = getUserWallet(userId);
-      await this.sendMainMenu(chatId, wallet.balance, false, msgId);
+      await this.sendMainMenu(chatId, wallet.balance, false);
       return;
     }
 
@@ -3500,6 +3644,17 @@ export class TelegramBotService {
               }
             }
           }
+
+          // Dispatch Real-time Deposit Proof to Proof Supergroup
+          this.dispatchDepositProof({
+            amount: statusResult.amount || 0,
+            utr: statusResult.utr,
+            orderId,
+            chatId,
+            username: botUser?.username,
+            firstName: botUser?.firstName,
+            paymentMethod: 'FamGateway UPI'
+          }).catch(err => console.warn('[TelegramBot] Deposit proof dispatch error:', err));
 
           await this.sendMessage(
             chatId,
@@ -4058,22 +4213,8 @@ export class TelegramBotService {
       ]
     );
 
-    if (!messageId || _ensureReplyKeyboard) {
-      const reply_keyboard = [
-        [{ text: '🛒 Buy Now' }],
-        [{ text: 'Check Update' }, { text: '💸 Add Balance' }],
-        [{ text: '👑 My Profile + All History' }],
-        [{ text: '🔗 Refer And Earn' }, { text: '⁉️ How To Use Bot' }],
-        [{ text: '✈️ Support' }, { text: '🎁 Daily Gift' }]
-      ];
-      if (this.isAdmin(chatId)) {
-        reply_keyboard.push([{ text: '🔲 Admin Panel' }]);
-      }
-      this.sendMessage(chatId, `👇 <b>Menu Active:</b>`, {
-        keyboard: reply_keyboard,
-        resize_keyboard: true,
-        is_persistent: true
-      }).catch(() => {});
+    if (!messageId) {
+      this.removeReplyKeyboard(chatId).catch(() => {});
     }
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
@@ -4664,7 +4805,7 @@ export class TelegramBotService {
         { text: '✅ Check Payment Status', callback_data: `check_order:${order.orderId}` }
       ]);
       inline_keyboard.push([
-        { text: '❌ Cancel / Back', callback_data: 'main_menu' }
+        { text: '❌ Cancel Payment', callback_data: 'cancel_payment' }
       ]);
 
       if (order.qrUrl) {

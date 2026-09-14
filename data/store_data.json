@@ -1,23 +1,149 @@
 {
   "storeSettings": {
-    "shopName": "KALAM FF PANEL",
-    "tagline": "Powered by KALAM",
-    "logoUrl": "/logo.svg",
+    "spinDailyFreeCooldownHours": 24,
     "supportUsername": "@kd_123_1_3",
-    "paymentProofChannel": "https://t.me/yourchannel",
-    "howToUseBotLink": "https://t.me/yourchannel/3",
-    "apkDownloadUrl": "https://t.me/kalamffpanel",
-    "minDeposit": 1,
-    "depositBonusPercent": 0,
-    "referralBonusPercent": 10,
+    "proofChannelLink": "https://t.me/c/4325449752",
     "currencySymbol": "₹",
-    "enableUtrInput": true,
-    "adminEmail": "kalam172010@gmail.com",
-    "resellerUpgradeAmount": 500,
-    "resellerDiscountPercent": 15,
+    "enableAutoProof": true,
+    "depositBonusPercent": 0,
+    "apkDownloadUrl": "https://t.me/kalamffpanel",
+    "logoSize": "md",
+    "adminPassword": "kalam@172010",
+    "referralBonusPercent": 10,
     "telegramBotToken": "8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8",
+    "showTopSellers": true,
+    "logoShape": "rounded",
+    "whatsappSupportNumber": "+91 no number",
+    "howToUseBotLink": "https://t.me/yourchannel/3",
+    "upiId": "kalamffpanel@fampay",
+    "telegramWelcomeMsg": "🔥 Welcome to KALAM STORE Official Bot! Instant Key Delivery & Automated UPI Wallet.",
+    "logoUrl": "/logo.svg",
+    "announcementEnabled": false,
+    "merchantUpi": "KALAM FF PANEL PAYMENTS",
+    "spinRewards": [
+      {
+        "textColor": "#ffffff",
+        "type": "WALLET_CASH",
+        "value": 5,
+        "icon": "coins",
+        "label": "₹5 CASH",
+        "subLabel": "Instant Wallet",
+        "probability": 25,
+        "id": "reward-5-cash",
+        "color": "#06b6d4"
+      },
+      {
+        "color": "#8b5cf6",
+        "subLabel": "1-Day All Games",
+        "textColor": "#ffffff",
+        "value": "VIP-FREE-1D",
+        "probability": 12,
+        "label": "FREE VIP KEY",
+        "id": "reward-free-key",
+        "type": "FREE_KEY",
+        "icon": "key"
+      },
+      {
+        "type": "WALLET_CASH",
+        "icon": "wallet",
+        "label": "₹10 CASH",
+        "value": 10,
+        "textColor": "#ffffff",
+        "subLabel": "Instant Wallet",
+        "probability": 18,
+        "id": "reward-10-cash",
+        "color": "#10b981"
+      },
+      {
+        "label": "15% OFF",
+        "value": "SPIN15",
+        "probability": 15,
+        "id": "reward-discount-15",
+        "type": "DISCOUNT_COUPON",
+        "color": "#ec4899",
+        "icon": "tag",
+        "subLabel": "Code: SPIN15",
+        "textColor": "#ffffff"
+      },
+      {
+        "subLabel": "Instant Wallet",
+        "type": "WALLET_CASH",
+        "value": 25,
+        "textColor": "#ffffff",
+        "label": "₹25 CASH",
+        "icon": "coins",
+        "probability": 10,
+        "id": "reward-25-cash",
+        "color": "#f59e0b"
+      },
+      {
+        "subLabel": "Try Again",
+        "type": "NO_LUCK",
+        "value": 0,
+        "label": "BETTER LUCK",
+        "icon": "frown",
+        "id": "reward-better-luck",
+        "probability": 12,
+        "color": "#334155",
+        "textColor": "#94a3b8"
+      },
+      {
+        "textColor": "#ffffff",
+        "subLabel": "MEGA WIN!",
+        "type": "WALLET_CASH",
+        "color": "#e11d48",
+        "icon": "trophy",
+        "id": "reward-50-jackpot",
+        "value": "0.67",
+        "label": "0.76",
+        "probability": 5
+      },
+      {
+        "subLabel": "Spin Again!",
+        "color": "#3b82f6",
+        "textColor": "#ffffff",
+        "id": "reward-extra-spin",
+        "icon": "sparkles",
+        "label": "FREE RE-SPIN",
+        "value": 1,
+        "type": "EXTRA_SPIN",
+        "probability": 3
+      }
+    ],
+    "showQuickActions": true,
+    "showCatalogPreview": true,
+    "dailySpinEnabled": false,
+    "maxDeposit": 50000,
+    "spinJackpotAmount": 50,
     "telegramChatId": "7768975239",
-    "telegramBotUsername": "@KALAMFFPANELWEBSITE_BOT"
+    "resellerUpgradeAmount": 500,
+    "paymentProofChannel": "https://t.me/c/4325449752",
+    "enableUtrInput": true,
+    "telegramBotUsername": "@KALAMFFPANEL1_12_BOT",
+    "paymentGatewayMode": "DIRECT_UPI_QR",
+    "proofBotToken": "8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU",
+    "resellerDiscountPercent": 15,
+    "upiManualId": "kalamffpanel@fampay",
+    "minDeposit": 1,
+    "showHeroCard": true,
+    "paymentFeePercent": 0,
+    "upiMerchantName": "KALAM FF PANEL PAYMENTS",
+    "tagline": "Powered by KALAM",
+    "themeAccent": "cyan",
+    "spinWheelEnabled": false,
+    "announcementText": "🔥 FASTEST FREE FIRE KEY DELIVERY ACTIVE 24/7! INSTANT UPI AUTO-CREDIT.",
+    "telegramSupportUrl": "https://t.me/kd_123_1_3",
+    "spinCost": 10,
+    "shopName": "KALAM FF PANEL",
+    "storeNoticeBadge": "⚡ 100% INSTANT DIRECT CREDIT",
+    "manualPaymentInstructions": "1. Scan QR code or copy UPI ID.\n2. Pay exact amount from PhonePe, GPay, or Paytm.\n3. Copy 12-digit UTR and submit for instant wallet credit.",
+    "showDepositGuide": false,
+    "discordSupportUrl": "",
+    "adminEmail": "kalam172010@gmail.com",
+    "proofChatId": "-1004325449752",
+    "logoGlowColor": "cyan",
+    "customQrUrl": "",
+    "maintenanceMode": true
   },
   "paymentConfigs": [
     {
@@ -76,7 +202,7 @@
       "merchantName": "KALAM PAYTM MERCHANT"
     }
   ],
-  "updatedAt": 1789368567157,
+  "updatedAt": 1789401302857,
   "apiConfigs": [
     {
       "id": "api-1",
@@ -99,5 +225,6 @@
       "apiUrl": "",
       "xApiToken": ""
     }
-  ]
+  ],
+  "apkDownloadUrl": "https://t.me/kalamffpanel"
 }

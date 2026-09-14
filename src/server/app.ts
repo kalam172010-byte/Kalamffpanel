@@ -849,6 +849,15 @@ export async function sendTelegramDepositAlert(info: {
     `🕒 <b>Time:</b> ${time}\n\n` +
     `⚡ <i>Instant automated notification from KALAM STORE</i>`;
 
+  // Auto-dispatch deposit proof to secondary proof channel/group
+  sendTelegramDepositProof({
+    amount: info.amount,
+    userId: info.userId,
+    email: info.email,
+    utr: info.utr,
+    orderId: info.orderId,
+  }).catch(() => {});
+
   return sendTelegramMessage(msg);
 }
 
@@ -863,6 +872,108 @@ export function maskLicenseKey(keyStr: string): string {
     return clean.substring(0, 3) + '****' + clean.substring(clean.length - 3);
   }
   return clean.substring(0, 4) + '****' + clean.substring(clean.length - 4);
+}
+
+// Dispatch Deposit / Top-up Proof to Secondary Proof Bot / Group
+export async function sendTelegramDepositProof(info: {
+  amount: number;
+  userId?: string;
+  email?: string;
+  utr?: string;
+  orderId?: string;
+  paymentMethod?: string;
+}): Promise<boolean> {
+  try {
+    const dataDir = path.join(process.cwd(), 'data');
+    const configFile = path.join(dataDir, 'telegram_config.json');
+    const storeDataFile = path.join(dataDir, 'store_data.json');
+
+    let proofBotToken = '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
+    let proofChatId = '-1004325449752';
+    let mainBotToken = '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    let mainBotUsername = '@KALAMFFPANEL1_12_BOT';
+    let enableAutoProof = true;
+
+    if (fs.existsSync(configFile)) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+        if (saved.proofBotToken) proofBotToken = saved.proofBotToken.trim();
+        if (saved.proofChatId) proofChatId = saved.proofChatId.trim();
+        if (saved.botToken) mainBotToken = saved.botToken.trim();
+        if (saved.botUsername) mainBotUsername = saved.botUsername.trim();
+        if (typeof saved.enableAutoProof === 'boolean') enableAutoProof = saved.enableAutoProof;
+      } catch {}
+    }
+
+    if (fs.existsSync(storeDataFile)) {
+      try {
+        const sd = JSON.parse(fs.readFileSync(storeDataFile, 'utf8'));
+        if (sd.storeSettings) {
+          if (sd.storeSettings.proofBotToken) proofBotToken = sd.storeSettings.proofBotToken.trim();
+          if (sd.storeSettings.proofChatId) proofChatId = sd.storeSettings.proofChatId.trim();
+          if (typeof sd.storeSettings.enableAutoProof === 'boolean') enableAutoProof = sd.storeSettings.enableAutoProof;
+        }
+      } catch {}
+    }
+
+    if (!enableAutoProof) return false;
+
+    const effectiveToken = proofBotToken || mainBotToken;
+    const targetChatId = proofChatId;
+    if (!effectiveToken || !targetChatId) return false;
+
+    const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+    const userLabel = info.email || info.userId || 'Verified Customer';
+    const cleanOrderId = info.orderId || `DEP_${Date.now()}`;
+    const botHandle = (mainBotUsername || '@KALAMFFPANEL1_12_BOT').replace('@', '');
+
+    const proofText =
+      `💳 <b>NEW UPI PAYMENT & WALLET DEPOSIT PROOF</b> 💳\n\n` +
+      `<blockquote>` +
+      `💵 <b>Amount Paid:</b> ₹${Number(info.amount).toFixed(2)}\n` +
+      `👤 <b>Customer:</b> ${userLabel}\n` +
+      `🔖 <b>UTR / Ref:</b> <code>${info.utr || 'Direct UPI Auto-Sync'}</code>\n` +
+      `🆔 <b>Order ID:</b> <code>${cleanOrderId}</code>\n` +
+      `🏦 <b>Gateway:</b> ${info.paymentMethod || 'Direct UPI / FamGateway'}\n` +
+      `🕒 <b>Time:</b> ${time} (IST)\n` +
+      `</blockquote>\n\n` +
+      `🛡️ <b>STATUS:</b> ✅ <b>PAYMENT VERIFIED & CREDITED</b> ⚡\n` +
+      `🛒 <b>BUY KEY INSTANTLY:</b> @${botHandle}`;
+
+    const res = await fetch(`https://api.telegram.org/bot${effectiveToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: targetChatId,
+        text: proofText,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle}` }]
+          ]
+        }
+      })
+    });
+
+    const data: any = await res.json();
+    if (!data.ok) {
+      console.warn('[TelegramProof] Deposit proof HTML send failed:', data.description);
+      await fetch(`https://api.telegram.org/bot${effectiveToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: targetChatId,
+          text: proofText.replace(/<[^>]*>/g, ''),
+        })
+      });
+    }
+    console.log('[TelegramProof] ✅ Deposit proof dispatched successfully to group:', targetChatId);
+    return true;
+  } catch (err: any) {
+    console.error('[TelegramProof] Deposit proof error:', err.message);
+    return false;
+  }
 }
 
 // Dispatch Payment & Order Proof to Secondary Proof Bot / Channel
@@ -883,10 +994,10 @@ export async function sendTelegramPaymentProof(info: {
     const configFile = path.join(dataDir, 'telegram_config.json');
     const storeDataFile = path.join(dataDir, 'store_data.json');
 
-    let proofBotToken = process.env.TELEGRAM_PROOF_BOT_TOKEN || '';
-    let proofChatId = process.env.TELEGRAM_PROOF_CHAT_ID || '';
-    let mainBotToken = process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
-    let mainBotUsername = '@kalam_store_bot';
+    let proofBotToken = '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
+    let proofChatId = '-1004325449752';
+    let mainBotToken = '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    let mainBotUsername = '@KALAMFFPANEL1_12_BOT';
     let enableAutoProof = true;
 
     if (fs.existsSync(configFile)) {
@@ -904,8 +1015,8 @@ export async function sendTelegramPaymentProof(info: {
       try {
         const sd = JSON.parse(fs.readFileSync(storeDataFile, 'utf8'));
         if (sd.storeSettings) {
-          if (!proofBotToken && sd.storeSettings.proofBotToken) proofBotToken = sd.storeSettings.proofBotToken.trim();
-          if (!proofChatId && sd.storeSettings.proofChatId) proofChatId = sd.storeSettings.proofChatId.trim();
+          if (sd.storeSettings.proofBotToken) proofBotToken = sd.storeSettings.proofBotToken.trim();
+          if (sd.storeSettings.proofChatId) proofChatId = sd.storeSettings.proofChatId.trim();
           if (!proofChatId && sd.storeSettings.paymentProofChannel) {
             const raw = sd.storeSettings.paymentProofChannel.trim();
             if (raw.startsWith('@') || raw.startsWith('-100') || (!raw.includes('http') && !raw.includes('/'))) {
@@ -936,7 +1047,7 @@ export async function sendTelegramPaymentProof(info: {
       : (info.firstName || info.userId || 'Verified Customer');
 
     const cleanOrderId = info.orderId || `ORD_${Date.now()}`;
-    const botHandle = mainBotUsername ? `@${mainBotUsername.replace('@', '')}` : '@kalam_store_bot';
+    const botHandle = (mainBotUsername || '@KALAMFFPANEL1_12_BOT').replace('@', '');
 
     const proofText =
       `🎉 <b>NEW PAYMENT & KEY PURCHASE PROOF</b> 🎉\n\n` +
@@ -953,7 +1064,7 @@ export async function sendTelegramPaymentProof(info: {
       `🔐 <b>DELIVERED LICENSE KEY(S):</b>\n` +
       `${maskedKeysList}\n\n` +
       `🛡️ <b>STATUS:</b> ✅ <b>VERIFIED & DELIVERED</b> ⚡\n` +
-      `🛒 <b>BUY KEY INSTANTLY:</b> ${botHandle}`;
+      `🛒 <b>BUY KEY INSTANTLY:</b> @${botHandle}`;
 
     const res = await fetch(`https://api.telegram.org/bot${effectiveToken}/sendMessage`, {
       method: 'POST',
@@ -966,7 +1077,7 @@ export async function sendTelegramPaymentProof(info: {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle.replace('@', '')}` }
+              { text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle}` }
             ]
           ]
         }
@@ -987,6 +1098,7 @@ export async function sendTelegramPaymentProof(info: {
       const fbData: any = await fbRes.json();
       return !!fbData.ok;
     }
+    console.log('[TelegramProof] ✅ Purchase proof dispatched successfully to group:', targetChatId);
     return true;
   } catch (err: any) {
     console.error('[TelegramProof] Failed to dispatch proof:', err.message);
@@ -1860,31 +1972,23 @@ app.post('/api/admin/telegram/live-credentials', async (req: Request, res: Respo
   }
 });
 
-// Auto-Detect Recent Chats from Telegram getUpdates
+// Auto-Detect Recent Chats from Telegram getUpdates (Supports Groups, Supergroups, Channels & Private DMs)
 app.get('/api/admin/telegram/recent-chats', async (req: Request, res: Response) => {
   try {
     const dataFile = path.join(DATA_DIR, 'telegram_config.json');
     let botToken = typeof req.query.botToken === 'string' ? req.query.botToken.trim() : '';
+    let proofBotToken = typeof req.query.proofBotToken === 'string' ? req.query.proofBotToken.trim() : '';
 
-    if (!botToken && fs.existsSync(dataFile)) {
+    if (fs.existsSync(dataFile)) {
       try {
         const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-        if (saved.botToken) botToken = saved.botToken;
+        if (!botToken && saved.botToken) botToken = saved.botToken.trim();
+        if (!proofBotToken && saved.proofBotToken) proofBotToken = saved.proofBotToken.trim();
       } catch {}
     }
     botToken = botToken || process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
 
-    const updatesRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=30`);
-    const updatesData: any = await updatesRes.json();
-
-    if (!updatesData.ok) {
-      return res.json({
-        success: false,
-        error: updatesData.description || 'Failed to fetch updates from Telegram',
-        chats: []
-      });
-    }
-
+    const tokensToQuery = Array.from(new Set([botToken, proofBotToken].filter(Boolean)));
     const chats: Array<{
       chatId: string;
       type: string;
@@ -1893,26 +1997,44 @@ app.get('/api/admin/telegram/recent-chats', async (req: Request, res: Response) 
       firstName?: string;
       lastText?: string;
       date?: number;
+      botName?: string;
     }> = [];
     const seen = new Set<string>();
 
-    if (Array.isArray(updatesData.result)) {
-      const reversed = [...updatesData.result].reverse();
-      for (const update of reversed) {
-        const msg = update.message || update.channel_post || update.edited_message || update.callback_query?.message;
-        if (msg && msg.chat && !seen.has(String(msg.chat.id))) {
-          const cId = String(msg.chat.id);
-          seen.add(cId);
-          chats.push({
-            chatId: cId,
-            type: msg.chat.type || 'private',
-            title: msg.chat.title,
-            username: msg.from?.username ? '@' + msg.from.username : (msg.chat.username ? '@' + msg.chat.username : ''),
-            firstName: msg.from?.first_name || msg.chat.first_name || '',
-            lastText: msg.text || (msg.caption ? '[Photo/Media]' : '[Interaction]'),
-            date: msg.date
-          });
+    for (const tok of tokensToQuery) {
+      try {
+        const updatesRes = await fetch(`https://api.telegram.org/bot${tok}/getUpdates?limit=50`);
+        const updatesData: any = await updatesRes.json();
+
+        if (updatesData.ok && Array.isArray(updatesData.result)) {
+          const reversed = [...updatesData.result].reverse();
+          for (const update of reversed) {
+            const chatObj =
+              update.message?.chat ||
+              update.channel_post?.chat ||
+              update.my_chat_member?.chat ||
+              update.chat_member?.chat ||
+              update.edited_message?.chat ||
+              update.callback_query?.message?.chat;
+
+            if (chatObj && !seen.has(String(chatObj.id))) {
+              const cId = String(chatObj.id);
+              seen.add(cId);
+              const fromUser = update.message?.from || update.my_chat_member?.from || update.channel_post?.from;
+              chats.push({
+                chatId: cId,
+                type: chatObj.type || 'private',
+                title: chatObj.title || (chatObj.type === 'supergroup' ? 'Supergroup' : chatObj.type === 'group' ? 'Group' : undefined),
+                username: fromUser?.username ? '@' + fromUser.username : (chatObj.username ? '@' + chatObj.username : ''),
+                firstName: fromUser?.first_name || chatObj.first_name || '',
+                lastText: update.message?.text || (update.my_chat_member ? `Bot added as admin to group` : (update.message?.caption ? '[Photo/Media]' : '[Interaction]')),
+                date: update.message?.date || update.my_chat_member?.date || Date.now() / 1000
+              });
+            }
+          }
         }
+      } catch (tokErr) {
+        console.warn('[TelegramRecentChats] Error fetching updates for token:', tokErr);
       }
     }
 
@@ -1920,7 +2042,7 @@ app.get('/api/admin/telegram/recent-chats', async (req: Request, res: Response) 
       success: true,
       count: chats.length,
       chats,
-      hint: chats.length === 0 ? 'No recent messages found. Open your bot in Telegram and send /start to auto-detect your Chat ID!' : undefined
+      hint: chats.length === 0 ? 'No recent messages found. Add your Bot to the group as Admin, then send any message inside the group to auto-detect!' : undefined
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message, chats: [] });
@@ -5867,7 +5989,8 @@ export function deductWalletForTelegram(identifier: string, amount: number, reas
 export async function deliverKeyForTelegram(
   productId: string,
   planDuration: string,
-  userEmail: string
+  userEmail: string,
+  amount?: number
 ): Promise<{ success: boolean; keys?: string[]; error?: string }> {
   try {
     const products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
@@ -5877,13 +6000,16 @@ export async function deliverKeyForTelegram(
       return { success: false, error: 'Product not found in store catalog.' };
     }
 
+    const matchedPlan = (product.plans || []).find((pl: any) => pl.duration === planDuration || pl.name === planDuration || pl.id === planDuration);
+    const planPrice = amount || matchedPlan?.price || 0;
+
     // 1. Check local manual inventory keys
     let effectiveKeys: string[] = [];
     if (product.planKeys && typeof product.planKeys === 'object') {
       for (const [pId, kList] of Object.entries(product.planKeys)) {
         if (Array.isArray(kList) && kList.length > 0) {
-          const matchedPlan = (product.plans || []).find((pl: any) => pl.id === pId);
-          if (matchedPlan && (matchedPlan.duration === planDuration || matchedPlan.name === planDuration)) {
+          const mp = (product.plans || []).find((pl: any) => pl.id === pId);
+          if (mp && (mp.duration === planDuration || mp.name === planDuration)) {
             effectiveKeys = kList as string[];
             break;
           }
@@ -5912,10 +6038,11 @@ export async function deliverKeyForTelegram(
       }
       saveProductsToDisk(products);
 
-      // Trigger automatic telegram alert
+      // Trigger automatic telegram alert and proof
       sendTelegramKeyPurchaseAlert({
         productName: product.name,
         planDuration,
+        amount: planPrice,
         keys: [deliveredKey],
         userId: userEmail,
         email: userEmail
@@ -5955,6 +6082,7 @@ export async function deliverKeyForTelegram(
           sendTelegramKeyPurchaseAlert({
             productName: product.name,
             planDuration,
+            amount: planPrice,
             keys: [parsed.key],
             userId: userEmail,
             email: userEmail
@@ -5971,6 +6099,7 @@ export async function deliverKeyForTelegram(
       sendTelegramKeyPurchaseAlert({
         productName: product.name,
         planDuration,
+        amount: planPrice,
         keys: [generatedKey],
         userId: userEmail,
         email: userEmail

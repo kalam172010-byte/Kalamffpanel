@@ -1,12 +1,16 @@
 {
   "botToken": "8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8",
   "chatId": "7768975239",
-  "botUsername": "@KALAMFFPANELWEBSITE_BOT",
+  "botUsername": "@KALAMFFPANEL1_12_BOT",
+  "proofBotToken": "8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU",
+  "proofChatId": "-1004325449752",
+  "proofChannelLink": "https://t.me/c/4325449752",
+  "enableAutoProof": true,
   "apkDownloadUrl": "https://t.me/kalamffpanel",
   "howToUseBotLink": "https://t.me/yourchannel/3",
-  "paymentProofChannel": "https://t.me/yourchannel",
+  "paymentProofChannel": "https://t.me/c/4325449752",
   "resellerUpgradeAmount": 500,
   "resellerDiscountPercent": 15,
   "welcomeMessage": "🔥 Welcome to KALAM STORE Official Bot! Instant Key Delivery & Automated UPI Wallet.",
-  "updatedAt": "2026-09-13T15:54:00.955Z"
+  "updatedAt": "2026-09-14T15:55:02.857Z"
 }
