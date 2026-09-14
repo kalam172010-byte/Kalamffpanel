@@ -11,6 +11,8 @@ export const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+let detectedPublicOrigin = process.env.APP_URL || '';
+
 // Cross-Origin Resource Sharing (CORS) headers for Netlify, Vercel, and custom deployments
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -18,6 +20,14 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
+  }
+  // Track public URL dynamically from incoming requests to support 24/7 external keep-alive pinging
+  const forwardedHost = (req.headers['x-forwarded-host'] as string);
+  const host = forwardedHost || req.get('host');
+  const forwardedProto = (req.headers['x-forwarded-proto'] as string);
+  const proto = forwardedProto || req.protocol || 'https';
+  if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
+    detectedPublicOrigin = `${proto}://${host}`;
   }
   next();
 });
@@ -1702,6 +1712,9 @@ app.get('/api/admin/telegram/users', (req: Request, res: Response) => {
         lastActive: u.lastActive,
         interactionCount: u.interactionCount || 1,
         referrerId: u.referrerId || null,
+        isReseller: !!(u.isReseller || u.role === 'ADMIN' || u.role === 'RESELLER'),
+        role: u.role || (u.isReseller ? 'RESELLER' : 'USER'),
+        resellerUpgradedAt: u.resellerUpgradedAt || null,
       };
     });
 
@@ -1715,6 +1728,204 @@ app.get('/api/admin/telegram/users', (req: Request, res: Response) => {
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message, users: [] });
+  }
+});
+
+// Admin Set/Toggle Reseller Status for Telegram Bot & Website User
+app.post('/api/admin/telegram/users/set-reseller', (req: Request, res: Response) => {
+  try {
+    const { userId, chatId, identifier, isReseller } = req.body;
+    const target = identifier || userId || chatId;
+    if (target === undefined || target === null || target === '') {
+      return res.status(400).json({ success: false, error: 'User identifier, userId, or chatId is required' });
+    }
+
+    const setResellerBool = typeof isReseller === 'boolean' ? isReseller : String(isReseller).toLowerCase() === 'true';
+    const result = telegramBotService.setBotUserResellerStatus(target, setResellerBool);
+
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    res.json({
+      success: true,
+      message: `User ${result.user?.firstName || target} is now ${setResellerBool ? 'a VIP Reseller' : 'a Standard Member'}`,
+      user: result.user
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin Toggle Reseller Status
+app.post('/api/admin/telegram/users/toggle-reseller', (req: Request, res: Response) => {
+  try {
+    const { userId, chatId, identifier } = req.body;
+    const target = identifier || userId || chatId;
+    if (!target) {
+      return res.status(400).json({ success: false, error: 'User identifier is required' });
+    }
+
+    const existing = telegramBotService.findBotUser(target);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: `User "${target}" not found` });
+    }
+
+    const newStatus = !existing.isReseller;
+    const result = telegramBotService.setBotUserResellerStatus(target, newStatus);
+    res.json({
+      success: true,
+      isReseller: newStatus,
+      message: `User status changed to ${newStatus ? 'VIP Reseller' : 'Standard Member'}`,
+      user: result.user
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get Reseller Settings & Active Reseller Members
+app.get('/api/admin/reseller-settings', (req: Request, res: Response) => {
+  try {
+    const upgradeAmount = telegramBotService.getResellerUpgradeAmount();
+    const resellers = telegramBotService.getResellerUsers().map(u => {
+      const wallet = getWalletForTelegram(u.userId);
+      return {
+        chatId: u.chatId,
+        userId: u.userId,
+        username: u.username ? '@' + u.username.replace('@', '') : '',
+        firstName: u.firstName || 'Partner',
+        lastName: u.lastName || '',
+        fullName: `${u.firstName || 'Partner'}${u.lastName ? ' ' + u.lastName : ''}`.trim(),
+        balance: wallet.balance,
+        totalSpent: u.totalSpent || 0,
+        totalDeposited: u.totalDeposited || 0,
+        joinedAt: u.joinedAt,
+        lastActive: u.lastActive,
+        role: u.role || 'RESELLER',
+        isReseller: true,
+        resellerUpgradedAt: u.resellerUpgradedAt || u.joinedAt,
+      };
+    });
+
+    res.json({
+      success: true,
+      resellerUpgradeAmount: upgradeAmount,
+      totalResellers: resellers.length,
+      resellers,
+      defaultDiscountPercent: 15,
+      features: [
+        'Wholesale key prices on all catalog plans',
+        'Direct automated key dispatch via bot & web',
+        '24/7 Priority Support & Admin Announcements',
+        'Instant wallet balance reload via UPI Gateway'
+      ]
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update Reseller Settings (Upgrade Fee, Discount)
+app.post('/api/admin/reseller-settings', (req: Request, res: Response) => {
+  try {
+    const { resellerUpgradeAmount, amount } = req.body;
+    const rawAmt = resellerUpgradeAmount !== undefined ? resellerUpgradeAmount : amount;
+    const numAmt = parseFloat(rawAmt);
+
+    if (isNaN(numAmt) || numAmt < 0) {
+      return res.status(400).json({ success: false, error: 'Valid reseller upgrade amount is required' });
+    }
+
+    const saved = telegramBotService.saveResellerUpgradeAmount(numAmt);
+    res.json({
+      success: true,
+      resellerUpgradeAmount: saved,
+      message: `Reseller upgrade price updated to ₹${saved}`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Direct Resellers List & Management for Website Admin Panel
+app.get('/api/admin/resellers', (req: Request, res: Response) => {
+  try {
+    const resellers = telegramBotService.getResellerUsers().map(u => {
+      const wallet = getWalletForTelegram(u.userId);
+      return {
+        chatId: u.chatId,
+        userId: u.userId,
+        username: u.username ? '@' + u.username.replace('@', '') : '',
+        firstName: u.firstName || 'Partner',
+        lastName: u.lastName || '',
+        fullName: `${u.firstName || 'Partner'}${u.lastName ? ' ' + u.lastName : ''}`.trim(),
+        balance: wallet.balance,
+        totalSpent: u.totalSpent || 0,
+        totalDeposited: u.totalDeposited || 0,
+        joinedAt: u.joinedAt,
+        lastActive: u.lastActive,
+        role: u.role || 'RESELLER',
+        isReseller: true,
+        resellerUpgradedAt: u.resellerUpgradedAt || u.joinedAt,
+      };
+    });
+
+    res.json({
+      success: true,
+      count: resellers.length,
+      resellers,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message, resellers: [] });
+  }
+});
+
+// Admin Add Reseller by Identifier/Username/ChatId
+app.post('/api/admin/resellers/add', (req: Request, res: Response) => {
+  try {
+    const { identifier, userId, chatId, username } = req.body;
+    const target = identifier || userId || chatId || username;
+    if (!target) {
+      return res.status(400).json({ success: false, error: 'User identifier, @username, or chatId is required' });
+    }
+
+    const result = telegramBotService.setBotUserResellerStatus(target, true);
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully granted VIP Reseller status to ${result.user?.firstName || target}`,
+      user: result.user
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin Remove Reseller Status
+app.post('/api/admin/resellers/remove', (req: Request, res: Response) => {
+  try {
+    const { identifier, userId, chatId, username } = req.body;
+    const target = identifier || userId || chatId || username;
+    if (!target) {
+      return res.status(400).json({ success: false, error: 'User identifier is required' });
+    }
+
+    const result = telegramBotService.setBotUserResellerStatus(target, false);
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully removed Reseller status from ${result.user?.firstName || target}`,
+      user: result.user
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -5085,16 +5296,17 @@ app.post('/api/reseller/diagnose', async (req: Request, res: Response) => {
     payloadParams.append('quantity', '1');
     payloadParams.append('qty', '1');
 
-    console.log(`[Reseller API Diagnostic] Sending POST request to ${normalizedEndpoint} (action: ${action}, product_id: ${productId}, android_id: ${hwid})...`);
+    console.log(`[Reseller API Diagnostic] Checking upstream connectivity to ${normalizedEndpoint} (action: ${action}, product: ${productId})...`);
 
     let upstreamResponse: any = null;
     let upstreamStatus = 200;
     let rawText = '';
     let parsedKey: string | undefined = undefined;
+    let connectionVerdict = 'CONNECTED';
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const response = await fetch(normalizedEndpoint, {
         method: 'POST',
@@ -5116,15 +5328,18 @@ app.post('/api/reseller/diagnose', async (req: Request, res: Response) => {
       const parsed = parseUpstreamResellerResponse(rawText);
       upstreamResponse = parsed.parsedJson || { raw: rawText };
       parsedKey = parsed.key;
+      connectionVerdict = response.ok ? 'REACHABLE_ACTIVE' : `HTTP_${response.status}`;
     } catch (networkError: any) {
-      console.warn('[Reseller Diagnostic] Upstream connection notice:', networkError.message);
+      console.log(`[Reseller Diagnostic] Upstream ${normalizedEndpoint} unreachable: ${networkError.message || 'connection timeout'}`);
       upstreamStatus = 502;
+      connectionVerdict = 'UNREACHABLE_OR_OFFLINE';
       upstreamResponse = {
-        status: 'error',
-        message: `Upstream connection note: ${networkError.message}. Check if upstream server is active.`,
+        status: 'notice',
+        verdict: 'UNREACHABLE_OR_OFFLINE',
+        message: `Upstream endpoint (${normalizedEndpoint}) is currently offline or unreachable (${networkError.message || 'fetch failed'}). The store will automatically deliver from local stock inventory.`,
         product_id: productId,
         duration: duration,
-        network_error: networkError.message
+        network_error: networkError.message || 'fetch failed'
       };
     }
 
@@ -5135,6 +5350,7 @@ app.post('/api/reseller/diagnose', async (req: Request, res: Response) => {
       diagnostic: {
         endpoint: normalizedEndpoint,
         httpStatus: upstreamStatus,
+        connectionVerdict,
         durationMs,
         extractedKey: parsedKey || null,
         requestHeaders: {
@@ -5159,6 +5375,7 @@ app.post('/api/reseller/diagnose', async (req: Request, res: Response) => {
       diagnostic: {
         endpoint: 'https://adminpanels.shop/api/reseller_v1.php',
         httpStatus: 200,
+        connectionVerdict: 'FALLBACK_READY',
         durationMs,
         requestHeaders: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -5216,6 +5433,71 @@ app.get('/api/inventory/diagnostics', handleInventoryDiagnostics);
 app.get('/api/admin/inventory/diagnostics', handleInventoryDiagnostics);
 app.get('/api/products/inventory-diagnostics', handleInventoryDiagnostics);
 app.get('/diagnostics/inventory', handleInventoryDiagnostics);
+
+// ==========================================================
+// 6-HOUR BACKGROUND PRODUCT KEYS & PRICING SYNC SCHEDULER
+// ==========================================================
+import { productSyncScheduler } from './product-sync-scheduler';
+
+// 1. Get Scheduler Status & Next Run Time
+app.get('/api/admin/product-sync/status', (req: Request, res: Response) => {
+  try {
+    const state = productSyncScheduler.getSchedulerState();
+    const config = productSyncScheduler.getSyncConfig();
+    return res.json({
+      success: true,
+      state,
+      config,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. Get Scheduler Execution Logs & History
+app.get('/api/admin/product-sync/logs', (req: Request, res: Response) => {
+  try {
+    const logs = productSyncScheduler.getLogs();
+    return res.json({
+      success: true,
+      count: logs.length,
+      logs
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Update Sync Configuration (Interval, API URL, Auto-Sync toggles)
+app.post('/api/admin/product-sync/config', (req: Request, res: Response) => {
+  try {
+    const updated = productSyncScheduler.saveSyncConfig(req.body);
+    return res.json({
+      success: true,
+      message: `Product sync scheduler updated successfully (Interval: ${updated.syncIntervalHours}h).`,
+      config: updated,
+      state: productSyncScheduler.getSchedulerState()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Trigger Manual On-Demand Product Sync
+app.post('/api/admin/product-sync/trigger', async (req: Request, res: Response) => {
+  try {
+    console.log('[ProductSync] Admin triggered manual sync execution...');
+    const result = await productSyncScheduler.executeSync('MANUAL');
+    return res.json({
+      success: result.status === 'SUCCESS' || result.status === 'SKIPPED',
+      result,
+      state: productSyncScheduler.getSchedulerState()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // Wire Telegram Bot Interactive Shop & Purchasing Engine
 import { telegramBotService } from './telegramBot';
@@ -5548,14 +5830,318 @@ telegramBotService.startPolling(
   queryFamGatewayPaymentOrder
 );
 
-// 24/7 Background Keep-Alive & Self-Health Heartbeat
-// Prevents container idle suspension and keeps Telegram bot long-polling alive
-setInterval(() => {
+// ==========================================================
+// TELEGRAM BOT HEALTH, DIAGNOSTICS & STATUS API ROUTES
+// ==========================================================
+
+// 1. Get Live Telegram Bot Health Status
+app.get(['/api/admin/telegram-health', '/api/telegram/health', '/api/admin/telegram/status'], (req: Request, res: Response) => {
   try {
-    fetch('http://127.0.0.1:3000/api/health', {
+    const status = telegramBotService.getBotStatus();
+    return res.json({
+      success: true,
+      ...status,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 1.1 Dedicated Live Interactive HTML Diagnostics Page for Admin & Browser
+app.get(['/diagnostics/bot', '/admin/bot-health', '/bot/health'], (req: Request, res: Response) => {
+  const status = telegramBotService.getBotStatus();
+  const msSince = status.msSinceLastPoll;
+  const isHealthy = status.isHealthy && msSince < 30000;
+
+  const html = `<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KALAM FF PANEL • Telegram Bot Live Diagnostics</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #07070a; color: #f3f4f6; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8 flex items-center justify-center">
+  <div class="w-full max-w-3xl bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+    <div class="absolute -top-24 -right-24 h-56 w-56 rounded-full blur-3xl opacity-20 bg-pink-500 pointer-events-none"></div>
+
+    <!-- Header -->
+    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 pb-5">
+      <div class="flex items-center gap-3">
+        <div class="h-12 w-12 rounded-xl bg-pink-500/10 border border-pink-500/30 flex items-center justify-center text-pink-400 text-2xl font-bold">
+          🤖
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl font-bold text-white tracking-tight">Telegram Bot Real-Time Diagnostics</h1>
+            <span id="bot-username-pill" class="text-xs px-2.5 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-400 font-mono font-semibold">
+              @${(status.botUsername || 'KalamFFStoreBot').replace('@', '')}
+            </span>
+          </div>
+          <p class="text-xs text-zinc-400 mt-0.5">Live poll latency, webhook status, and 24/7 supervisor watchdog</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span id="status-pill" class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${isHealthy ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-amber-500/10 border border-amber-500/30 text-amber-400'}">
+          <span class="h-2 w-2 rounded-full ${isHealthy ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}"></span>
+          <span id="status-text">${isHealthy ? 'Operational 24/7' : 'Re-energizing'}</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Telemetry Cards -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
+      <div class="bg-zinc-900/50 border border-zinc-800/80 rounded-xl p-4">
+        <div class="text-xs text-zinc-400 font-medium">Poll Latency</div>
+        <div id="poll-latency" class="text-2xl font-bold font-mono text-emerald-400 mt-1">${(msSince / 1000).toFixed(1)}s</div>
+        <div class="text-[11px] text-zinc-500 mt-1">Target: &lt; 15s</div>
+      </div>
+
+      <div class="bg-zinc-900/50 border border-zinc-800/80 rounded-xl p-4">
+        <div class="text-xs text-zinc-400 font-medium">Delivery Mode</div>
+        <div id="delivery-mode" class="text-sm font-bold text-white mt-2">${status.isWebhookActive ? '⚡ Webhook Push' : '🔄 Long-Polling'}</div>
+        <div class="text-[11px] text-zinc-500 mt-1">24/7 Supervisor active</div>
+      </div>
+
+      <div class="bg-zinc-900/50 border border-zinc-800/80 rounded-xl p-4">
+        <div class="text-xs text-zinc-400 font-medium">Poll Cycles</div>
+        <div id="poll-cycles" class="text-2xl font-bold font-mono text-sky-300 mt-1">${status.totalPollCycles.toLocaleString()}</div>
+        <div class="text-[11px] text-zinc-500 mt-1">Errors: <span id="error-count">${status.consecutiveErrors}</span></div>
+      </div>
+
+      <div class="bg-zinc-900/50 border border-zinc-800/80 rounded-xl p-4">
+        <div class="text-xs text-zinc-400 font-medium">Bot Customers</div>
+        <div id="bot-users" class="text-2xl font-bold font-mono text-amber-300 mt-1">${status.totalUsers}</div>
+        <div class="text-[11px] text-zinc-500 mt-1">Offset: <span id="last-offset">${status.lastUpdateId}</span></div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-wrap items-center justify-between gap-3 bg-zinc-900/40 border border-zinc-800 rounded-xl p-4 mt-5">
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="ping-btn" onclick="runDiagnosticPing()" class="px-4 py-2 rounded-lg bg-gradient-to-r from-pink-500 to-purple-600 text-white font-semibold text-xs shadow-lg shadow-pink-500/20 hover:opacity-90 active:scale-95 transition-all flex items-center gap-2">
+          <span>⚡ Run Diagnostic Test Ping</span>
+        </button>
+
+        <button id="restart-btn" onclick="recycleSocket()" class="px-3.5 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-medium hover:bg-zinc-700 active:scale-95 transition-all">
+          🔄 Recycle Polling Socket
+        </button>
+
+        <a href="https://t.me/${(status.botUsername || 'KalamFFStoreBot').replace('@', '')}" target="_blank" class="px-3.5 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-sky-400 text-xs font-medium hover:bg-zinc-800 transition-all flex items-center gap-1.5">
+          <span>Open Bot</span> ↗
+        </a>
+      </div>
+
+      <div class="text-xs text-zinc-400 flex items-center gap-2">
+        <span class="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span>Auto-refreshing every 3s</span>
+      </div>
+    </div>
+
+    <!-- Ping Result Banner -->
+    <div id="ping-result-box" class="hidden mt-4 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4 transition-all">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2 text-emerald-300 text-xs font-semibold">
+          <span>✅ Telegram Gateway Responded Successfully</span>
+        </div>
+        <div class="text-xs font-mono text-emerald-400 font-bold" id="ping-latency-text">
+          ⚡ Latency: --ms
+        </div>
+      </div>
+      <div class="text-[11px] text-zinc-400 mt-2 font-mono" id="ping-details-text"></div>
+    </div>
+
+    <!-- Raw JSON Inspector -->
+    <div class="mt-4 border-t border-zinc-800/80 pt-4">
+      <details class="text-xs text-zinc-400 cursor-pointer">
+        <summary class="font-medium hover:text-zinc-200 transition-colors">🔍 Inspect Raw Telemetry Data (JSON)</summary>
+        <pre id="raw-json" class="mt-2 p-3 rounded-lg bg-zinc-900/90 border border-zinc-800 text-zinc-300 font-mono text-[11px] overflow-auto max-h-52">${JSON.stringify(status, null, 2)}</pre>
+      </details>
+    </div>
+  </div>
+
+  <script>
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/admin/telegram-health');
+        if (!res.ok) return;
+        const d = await res.json();
+        const msSince = d.msSinceLastPoll || 0;
+        const isHealthy = d.isHealthy && msSince < 30000;
+
+        document.getElementById('poll-latency').textContent = (msSince / 1000).toFixed(1) + 's';
+        document.getElementById('poll-latency').className = 'text-2xl font-bold font-mono mt-1 ' + (msSince < 15000 ? 'text-emerald-400' : msSince < 30000 ? 'text-amber-400' : 'text-rose-400');
+        document.getElementById('delivery-mode').textContent = d.isWebhookActive ? '⚡ Webhook Push' : '🔄 Long-Polling';
+        document.getElementById('poll-cycles').textContent = (d.totalPollCycles || 0).toLocaleString();
+        document.getElementById('error-count').textContent = d.consecutiveErrors || 0;
+        document.getElementById('bot-users').textContent = d.totalUsers || 0;
+        document.getElementById('last-offset').textContent = d.lastUpdateId || 0;
+        document.getElementById('raw-json').textContent = JSON.stringify(d, null, 2);
+
+        const statusPill = document.getElementById('status-pill');
+        const statusText = document.getElementById('status-text');
+        if (isHealthy) {
+          statusPill.className = 'inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
+          statusText.textContent = 'Operational 24/7';
+        } else {
+          statusPill.className = 'inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-amber-500/10 border border-amber-500/30 text-amber-400';
+          statusText.textContent = 'Re-energizing';
+        }
+      } catch(e) {}
+    }
+
+    async function runDiagnosticPing() {
+      const btn = document.getElementById('ping-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Testing Latency...';
+      try {
+        const res = await fetch('/api/admin/telegram-ping', { method: 'POST' });
+        const data = await res.json();
+        const box = document.getElementById('ping-result-box');
+        box.classList.remove('hidden');
+        document.getElementById('ping-latency-text').textContent = '⚡ Latency: ' + data.latencyMs + 'ms';
+        document.getElementById('ping-details-text').textContent = 'Bot ID: ' + (data.botDetails?.id || 'Connected') + ' • Name: ' + (data.botDetails?.first_name || 'Bot') + ' • Webhook: ' + (data.webhookInfo?.url || 'None (Direct Socket)');
+        fetchStatus();
+      } catch(e) {
+        alert('Diagnostic ping error: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⚡ Run Diagnostic Test Ping';
+      }
+    }
+
+    async function recycleSocket() {
+      const btn = document.getElementById('restart-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Recycling...';
+      try {
+        await fetch('/api/admin/telegram-restart', { method: 'POST' });
+        await fetchStatus();
+      } catch(e) {}
+      finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Recycle Polling Socket';
+      }
+    }
+
+    setInterval(fetchStatus, 3000);
+  </script>
+</body>
+</html>`;
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.send(html);
+});
+
+// 2. Perform Active Round-Trip Diagnostic Test Ping to Telegram API
+app.post(['/api/admin/telegram-ping', '/api/telegram/ping', '/api/admin/telegram/diagnostic-ping'], async (req: Request, res: Response) => {
+  try {
+    const result = await telegramBotService.pingDiagnostic();
+    return res.json({
+      ...result,
+      serverTime: new Date().toISOString()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Restart Telegram Polling Service On-Demand
+app.post(['/api/admin/telegram-restart', '/api/telegram/restart'], (req: Request, res: Response) => {
+  try {
+    console.log('[Admin] Manual restart requested for Telegram Bot polling engine...');
+    telegramBotService.stopPolling();
+    telegramBotService.startPolling(
+      () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+      getWalletForTelegram,
+      deductWalletForTelegram,
+      (identifier: string, amount: number, reason: string) => creditUserWalletOnServer(identifier, identifier, amount, reason),
+      deliverKeyForTelegram,
+      createFamGatewayPaymentOrder,
+      queryFamGatewayPaymentOrder
+    );
+    const status = telegramBotService.getBotStatus();
+    return res.json({
+      success: true,
+      message: 'Telegram bot long-polling engine recycled successfully.',
+      status,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Initialize 6-Hour Background Product Keys & Pricing Scheduler
+productSyncScheduler.init(
+  () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+  (updatedProducts: any[]) => {
+    globalProductsCache = updatedProducts;
+    isProductsInitialized = true;
+    saveProductsToDisk(updatedProducts);
+  },
+  () => loadStoreDataFromDisk()
+);
+
+// 24/7 Background Keep-Alive & Continuous Heartbeat
+// Prevents Cloud Run container idle suspension, maintains active TCP connection to Telegram,
+// and ensures the bot responds instantly even after hours of zero user activity.
+const KNOWN_CLOUD_ORIGINS = [
+  'https://ais-dev-gwn7e34dd4vbugmipzzvvo-128464619421.asia-east1.run.app',
+  'https://ais-pre-gwn7e34dd4vbugmipzzvvo-128464619421.asia-east1.run.app'
+];
+
+setInterval(async () => {
+  try {
+    // 1. Internal loopback ping (keeps Node event-loop hot)
+    const currentPort = Number(process.env.PORT) || 3000;
+    fetch(`http://127.0.0.1:${currentPort}/api/health`, {
       signal: AbortSignal.timeout(4000)
     }).catch(() => {});
-  } catch {}
-}, 180000); // Every 3 minutes
+
+    // 2. External public ingress ping (prevents Cloud Run 15-20 min CPU throttling / idle suspension)
+    const originsToPing = new Set<string>();
+    if (detectedPublicOrigin && detectedPublicOrigin.startsWith('http')) {
+      originsToPing.add(detectedPublicOrigin);
+    }
+    for (const ko of KNOWN_CLOUD_ORIGINS) {
+      originsToPing.add(ko);
+    }
+
+    for (const origin of originsToPing) {
+      fetch(`${origin}/api/health`, {
+        signal: AbortSignal.timeout(5000),
+        headers: { 'X-Heartbeat': 'kalam-24-7-keepalive' }
+      }).catch(() => {});
+    }
+
+    // 3. Proactive Bot Health Self-Inspection & Socket Refresh
+    const status = telegramBotService.getBotStatus();
+    if (!status.isWebhookActive) {
+      if (!status.isHealthy || status.msSinceLastPoll > 35000) {
+        console.warn(`[Server KeepAlive] Re-energizing Telegram Bot polling (${Math.round(status.msSinceLastPoll / 1000)}s since last poll cycle)...`);
+        telegramBotService.stopPolling();
+        telegramBotService.startPolling(
+          () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+          getWalletForTelegram,
+          deductWalletForTelegram,
+          (identifier: string, amount: number, reason: string) => creditUserWalletOnServer(identifier, identifier, amount, reason),
+          deliverKeyForTelegram,
+          createFamGatewayPaymentOrder,
+          queryFamGatewayPaymentOrder
+        );
+      }
+    }
+  } catch (err: any) {
+    // Non-fatal keep-alive error
+  }
+}, 25000); // Runs every 25 seconds for uninterrupted 24/7 uptime!
 
 

@@ -5,6 +5,8 @@
   "apkDownloadUrl": "https://t.me/kalamffpanel",
   "howToUseBotLink": "https://t.me/yourchannel/3",
   "paymentProofChannel": "https://t.me/yourchannel",
+  "resellerUpgradeAmount": 500,
+  "resellerDiscountPercent": 15,
   "welcomeMessage": "🔥 Welcome to KALAM STORE Official Bot! Instant Key Delivery & Automated UPI Wallet.",
   "updatedAt": "2026-09-13T15:54:00.955Z"
 }

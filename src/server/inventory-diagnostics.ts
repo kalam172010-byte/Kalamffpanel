@@ -172,7 +172,39 @@ export async function generateInventoryDiagnostics(
         tested: true,
         ok: false,
         latencyMs: Date.now() - tStart,
-        message: e.message || 'Connection error'
+        message: e.name === 'AbortError' ? 'Connection timed out (6s)' : (e.message || 'Host offline or unreachable')
+      };
+    }
+  }
+
+  if (testUpstream && rawApi2?.apiUrl && !rawApi2.apiUrl.includes('hkmodz.site')) {
+    const tStart2 = Date.now();
+    try {
+      const controller2 = new AbortController();
+      const timer2 = setTimeout(() => controller2.abort(), 6000);
+      const res2 = await fetch(rawApi2.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Kalam-Inventory-Diagnostic/1.0'
+        },
+        body: JSON.stringify({ action: 'ping' }),
+        signal: controller2.signal
+      });
+      clearTimeout(timer2);
+      api2Ping = {
+        tested: true,
+        httpStatus: res2.status,
+        ok: res2.ok,
+        latencyMs: Date.now() - tStart2,
+        message: `HTTP ${res2.status} ${res2.statusText}`
+      };
+    } catch (e: any) {
+      api2Ping = {
+        tested: true,
+        ok: false,
+        latencyMs: Date.now() - tStart2,
+        message: e.name === 'AbortError' ? 'Connection timed out (6s)' : (e.message || 'Host offline or unreachable')
       };
     }
   }

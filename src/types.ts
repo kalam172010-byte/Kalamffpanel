@@ -107,6 +107,29 @@ export interface StoreSettings {
   enableUtrInput: boolean;
   adminEmail: string;
   adminPassword?: string;
+  resellerUpgradeAmount?: number;
+  resellerDiscountPercent?: number;
+  apkDownloadUrl?: string;
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  telegramBotUsername?: string;
+}
+
+export interface BotUser {
+  chatId: number;
+  userId: string;
+  username?: string;
+  firstName: string;
+  lastName?: string;
+  joinedAt: number;
+  lastActive: number;
+  referrerId?: string;
+  totalSpent: number;
+  totalDeposited: number;
+  interactionCount?: number;
+  isReseller?: boolean;
+  role?: Role;
+  resellerUpgradedAt?: number;
 }
 
 export interface ResellerUser {
@@ -206,4 +229,48 @@ export interface UpstreamWebsiteConfig {
   lastPingStatus?: 'ONLINE' | 'OFFLINE' | 'UNTESTED';
   lastPingTime?: string;
   balance?: number;
+}
+
+export interface TelegramBotHealthStatus {
+  success?: boolean;
+  isHealthy: boolean;
+  isPolling: boolean;
+  isWebhookActive: boolean;
+  activeWebhookUrl?: string;
+  botUsername?: string;
+  msSinceLastPoll: number;
+  lastPollAttempt: string;
+  lastSuccessfulPoll: string;
+  consecutiveErrors: number;
+  totalPollCycles: number;
+  totalUsers: number;
+  mode: 'WEBHOOK_ACTIVE' | 'LONG_POLLING_ACTIVE' | 'STANDBY';
+  lastUpdateId: number;
+  memoryDedupeKeys: number;
+  timestamp?: string;
+}
+
+export interface TelegramDiagnosticResult {
+  success: boolean;
+  latencyMs: number;
+  botDetails?: {
+    id: number;
+    is_bot: boolean;
+    first_name: string;
+    username: string;
+    can_join_groups?: boolean;
+    can_read_all_group_messages?: boolean;
+    supports_inline_queries?: boolean;
+  };
+  webhookInfo?: {
+    url?: string;
+    has_custom_certificate?: boolean;
+    pending_update_count?: number;
+    last_error_date?: number;
+    last_error_message?: string;
+  };
+  status: TelegramBotHealthStatus;
+  error?: string;
+  timestamp: string;
+  serverTime?: string;
 }

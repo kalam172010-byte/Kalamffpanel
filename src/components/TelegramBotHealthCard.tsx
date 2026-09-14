@@ -1,0 +1,428 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Activity,
+  Bot,
+  Zap,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Radio,
+  ExternalLink,
+  ShieldCheck,
+  Server,
+  Users,
+  Clock,
+  Code2,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  Copy,
+  Wifi,
+  WifiOff
+} from 'lucide-react';
+import type { TelegramBotHealthStatus, TelegramDiagnosticResult } from '../types';
+
+interface TelegramBotHealthCardProps {
+  className?: string;
+  autoRefreshIntervalMs?: number;
+  onStatusChange?: (status: TelegramBotHealthStatus) => void;
+}
+
+export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
+  className = '',
+  autoRefreshIntervalMs = 5000,
+  onStatusChange,
+}) => {
+  const [status, setStatus] = useState<TelegramBotHealthStatus | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isPinging, setIsPinging] = useState<boolean>(false);
+  const [isRecycling, setIsRecycling] = useState<boolean>(false);
+  const [lastPingResult, setLastPingResult] = useState<TelegramDiagnosticResult | null>(null);
+  const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState<boolean>(true);
+  const [showRawDetails, setShowRawDetails] = useState<boolean>(false);
+  const [copied, setCopied] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
+
+  // Fetch bot health telemetry from backend
+  const fetchHealthStatus = useCallback(async (isManual = false) => {
+    if (isManual) setIsRefreshing(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/admin/telegram-health');
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+      const data: TelegramBotHealthStatus = await res.json();
+      setStatus(data);
+      setLastRefreshedAt(new Date());
+      if (onStatusChange) {
+        onStatusChange(data);
+      }
+    } catch (err: any) {
+      console.error('[TelegramBotHealthCard] Error fetching status:', err);
+      setErrorMessage(err.message || 'Failed to fetch Telegram bot health');
+    } finally {
+      setIsLoading(false);
+      if (isManual) setIsRefreshing(false);
+    }
+  }, [onStatusChange]);
+
+  // Initial fetch and auto-refresh timer
+  useEffect(() => {
+    fetchHealthStatus(false);
+
+    if (!isAutoRefreshEnabled) return;
+    const interval = setInterval(() => {
+      fetchHealthStatus(false);
+    }, autoRefreshIntervalMs);
+
+    return () => clearInterval(interval);
+  }, [fetchHealthStatus, isAutoRefreshEnabled, autoRefreshIntervalMs]);
+
+  // Execute diagnostic test ping
+  const handleDiagnosticPing = async () => {
+    setIsPinging(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/admin/telegram-ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data: TelegramDiagnosticResult = await res.json();
+      setLastPingResult(data);
+      if (data.status) {
+        setStatus(data.status);
+      }
+      setLastRefreshedAt(new Date());
+    } catch (err: any) {
+      console.error('[TelegramBotHealthCard] Ping error:', err);
+      setErrorMessage(err.message || 'Diagnostic ping failed');
+    } finally {
+      setIsPinging(false);
+    }
+  };
+
+  // Recycle and restart polling socket
+  const handleRecyclePolling = async () => {
+    setIsRecycling(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/admin/telegram-restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (data.status) {
+        setStatus(data.status);
+      }
+      await fetchHealthStatus(false);
+    } catch (err: any) {
+      console.error('[TelegramBotHealthCard] Restart error:', err);
+      setErrorMessage(err.message || 'Failed to restart polling engine');
+    } finally {
+      setIsRecycling(false);
+    }
+  };
+
+  const handleCopyRaw = () => {
+    const payload = JSON.stringify({ status, lastPingResult }, null, 2);
+    navigator.clipboard.writeText(payload);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const isHealthy = status ? status.isHealthy : false;
+  const msSinceLast = status ? status.msSinceLastPoll : 0;
+  const isLagging = msSinceLast > 25000 && !status?.isWebhookActive;
+
+  return (
+    <div
+      id="telegram-bot-health-card"
+      className={`relative overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-950/90 p-5 md:p-6 shadow-2xl backdrop-blur-xl ${className}`}
+    >
+      {/* Background ambient glow */}
+      <div
+        className={`pointer-events-none absolute -top-24 -right-24 h-56 w-56 rounded-full blur-3xl opacity-20 transition-all duration-700 ${
+          isHealthy && !isLagging
+            ? 'bg-emerald-500'
+            : isLagging
+            ? 'bg-amber-500'
+            : 'bg-rose-500'
+        }`}
+      />
+
+      {/* Header Section */}
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/60 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 to-purple-600/10 text-pink-400 shadow-inner">
+            <Bot className="h-6 w-6 text-pink-400 animate-pulse" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base md:text-lg font-bold tracking-tight text-white">
+                Telegram Bot Remote Hub
+              </h3>
+              {status?.botUsername && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-0.5 text-xs font-semibold text-sky-400">
+                  @{status.botUsername.replace('@', '')}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-zinc-400">
+              Live server-side socket health, poll latency & real-time webhook status
+            </p>
+          </div>
+        </div>
+
+        {/* Status Indicators & Action Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Health Badge */}
+          <div
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider border shadow-sm ${
+              isLoading
+                ? 'border-zinc-700 bg-zinc-800/60 text-zinc-400'
+                : isHealthy && !isLagging
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 shadow-emerald-950/20'
+                : isLagging
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                : 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                isLoading
+                  ? 'bg-zinc-500'
+                  : isHealthy && !isLagging
+                  ? 'bg-emerald-400 animate-ping'
+                  : isLagging
+                  ? 'bg-amber-400 animate-pulse'
+                  : 'bg-rose-400'
+              }`}
+            />
+            <span>
+              {isLoading
+                ? 'Connecting...'
+                : isHealthy && !isLagging
+                ? 'Operational 24/7'
+                : isLagging
+                ? 'Re-energizing'
+                : 'Offline / Stalled'}
+            </span>
+          </div>
+
+          {/* Mode Pill */}
+          <span className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-2.5 py-1 text-xs font-medium text-zinc-300">
+            {status?.isWebhookActive ? '⚡ Webhook Active' : '🔄 Long-Polling (10s)'}
+          </span>
+
+          {/* Refresh Button */}
+          <button
+            id="refresh-bot-health-btn"
+            onClick={() => fetchHealthStatus(true)}
+            disabled={isRefreshing}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-white disabled:opacity-50"
+            title="Refresh Health Telemetry"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin text-pink-400' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Error alert if any */}
+      {errorMessage && (
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2.5 text-xs text-rose-300">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
+      {/* Telemetry Metrics Grid */}
+      <div className="relative z-10 mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* Latency / Elapsed */}
+        <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 p-3.5 transition-colors hover:border-zinc-700">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-xs font-medium">Poll Latency</span>
+            <Activity className="h-3.5 w-3.5 text-pink-400" />
+          </div>
+          <div className="mt-1.5 flex items-baseline gap-1">
+            <span
+              className={`text-lg font-bold font-mono ${
+                msSinceLast < 15000
+                  ? 'text-emerald-400'
+                  : msSinceLast < 30000
+                  ? 'text-amber-400'
+                  : 'text-rose-400'
+              }`}
+            >
+              {status ? `${(msSinceLast / 1000).toFixed(1)}s` : '--'}
+            </span>
+            <span className="text-[10px] text-zinc-500">since last tick</span>
+          </div>
+          <div className="mt-1 text-[11px] text-zinc-500 flex items-center gap-1">
+            <Clock className="h-3 w-3 text-zinc-600" />
+            <span>Target: &lt; 15s</span>
+          </div>
+        </div>
+
+        {/* Webhook Status */}
+        <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 p-3.5 transition-colors hover:border-zinc-700">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-xs font-medium">Delivery Mode</span>
+            {status?.isWebhookActive ? (
+              <Wifi className="h-3.5 w-3.5 text-emerald-400" />
+            ) : (
+              <Radio className="h-3.5 w-3.5 text-purple-400" />
+            )}
+          </div>
+          <div className="mt-1.5 text-sm font-bold text-white truncate">
+            {status?.isWebhookActive ? 'Webhook Push' : 'Adaptive Polling'}
+          </div>
+          <div className="mt-1 text-[11px] text-zinc-500 truncate" title={status?.activeWebhookUrl || 'Direct Telegram API'}>
+            {status?.isWebhookActive ? (status.activeWebhookUrl || 'Configured') : 'Timeout: 10s • Offset tracked'}
+          </div>
+        </div>
+
+        {/* Total Poll Cycles */}
+        <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 p-3.5 transition-colors hover:border-zinc-700">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-xs font-medium">Poll Cycles</span>
+            <Server className="h-3.5 w-3.5 text-sky-400" />
+          </div>
+          <div className="mt-1.5 text-lg font-bold font-mono text-sky-300">
+            {status ? status.totalPollCycles.toLocaleString() : '--'}
+          </div>
+          <div className="mt-1 text-[11px] text-zinc-500 flex items-center gap-1">
+            <ShieldCheck className="h-3 w-3 text-emerald-500" />
+            <span>Errors: {status ? status.consecutiveErrors : 0}</span>
+          </div>
+        </div>
+
+        {/* Registered Bot Users */}
+        <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 p-3.5 transition-colors hover:border-zinc-700">
+          <div className="flex items-center justify-between text-zinc-400">
+            <span className="text-xs font-medium">Bot Customers</span>
+            <Users className="h-3.5 w-3.5 text-amber-400" />
+          </div>
+          <div className="mt-1.5 text-lg font-bold font-mono text-amber-300">
+            {status ? status.totalUsers.toLocaleString() : '--'}
+          </div>
+          <div className="mt-1 text-[11px] text-zinc-500 truncate">
+            Memory keys: {status ? status.memoryDedupeKeys : 0}
+          </div>
+        </div>
+      </div>
+
+      {/* Action Toolbar & Diagnostic Ping */}
+      <div className="relative z-10 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Diagnostic Ping Button */}
+          <button
+            id="telegram-diagnostic-ping-btn"
+            onClick={handleDiagnosticPing}
+            disabled={isPinging}
+            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-pink-500 to-purple-600 px-3.5 py-2 text-xs font-semibold text-white shadow-lg shadow-pink-500/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+          >
+            <Zap className={`h-3.5 w-3.5 ${isPinging ? 'animate-spin' : ''}`} />
+            <span>{isPinging ? 'Measuring Latency...' : 'Diagnostic Test Ping'}</span>
+          </button>
+
+          {/* Recycle Socket */}
+          <button
+            id="telegram-recycle-socket-btn"
+            onClick={handleRecyclePolling}
+            disabled={isRecycling}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 active:scale-95 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${isRecycling ? 'animate-spin text-pink-400' : ''}`} />
+            <span>{isRecycling ? 'Recycling...' : 'Recycle Socket'}</span>
+          </button>
+
+          {/* Open Bot */}
+          {status?.botUsername && (
+            <a
+              href={`https://t.me/${status.botUsername.replace('@', '')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-zinc-800"
+            >
+              <span>Open in Telegram</span>
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
+
+        {/* Auto-Refresh Toggle */}
+        <div className="flex items-center gap-2 text-xs text-zinc-400">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isAutoRefreshEnabled}
+              onChange={(e) => setIsAutoRefreshEnabled(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-800 text-pink-500 focus:ring-pink-500/30"
+            />
+            <span>Auto-refresh (5s)</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Diagnostic Result Banner (if test performed) */}
+      {lastPingResult && (
+        <div className="relative z-10 mt-3 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 transition-all">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-xs font-semibold text-emerald-300">
+                Telegram Gateway Responded Successfully
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-xs font-mono">
+              <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-emerald-400 font-bold">
+                ⚡ Roundtrip: {lastPingResult.latencyMs}ms
+              </span>
+              <span className="text-zinc-400">
+                Bot ID: <code>{lastPingResult.botDetails?.id || 'Connected'}</code>
+              </span>
+            </div>
+          </div>
+          {lastPingResult.webhookInfo?.url && (
+            <div className="mt-2 text-[11px] text-zinc-400">
+              🔗 Registered Webhook: <code className="text-sky-300">{lastPingResult.webhookInfo.url}</code>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Raw Diagnostic Accordion */}
+      <div className="relative z-10 mt-3 border-t border-zinc-800/60 pt-3">
+        <button
+          onClick={() => setShowRawDetails(!showRawDetails)}
+          className="flex w-full items-center justify-between text-xs font-medium text-zinc-400 transition-colors hover:text-zinc-200"
+        >
+          <span className="flex items-center gap-1.5">
+            <Code2 className="h-3.5 w-3.5 text-zinc-500" />
+            <span>Inspect Raw Telemetry & Diagnostic Data</span>
+          </span>
+          {showRawDetails ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </button>
+
+        {showRawDetails && (
+          <div className="mt-2 relative">
+            <button
+              onClick={handleCopyRaw}
+              className="absolute top-2 right-2 flex items-center gap-1 rounded bg-zinc-800 px-2 py-1 text-[10px] font-medium text-zinc-300 transition-colors hover:bg-zinc-700"
+            >
+              {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              <span>{copied ? 'Copied' : 'Copy JSON'}</span>
+            </button>
+            <pre className="max-h-56 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-[11px] text-zinc-300">
+              {JSON.stringify({ status, lastPingResult, lastRefreshedAt }, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

@@ -2,8 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import { app } from './src/server/app';
+import { productSyncScheduler } from './src/server/product-sync-scheduler';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 async function startServer() {
   const distPath = path.join(process.cwd(), 'dist');
@@ -56,6 +57,8 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Server] Digital Key Reselling Platform live at http://localhost:${PORT}`);
+    const syncState = productSyncScheduler.getSchedulerState();
+    console.log(`[Server] Background Product Sync Scheduler active (Every ${syncState.intervalHours}h, API configured: ${syncState.isApiConfigured ? 'YES' : 'NO (Waiting for external Admin API URL)'})`);
   });
 }
 
