@@ -1772,6 +1772,189 @@ app.post('/api/notify-telegram', async (req: Request, res: Response) => {
   }
 });
 
+// Telegram Bot Status & Diagnostics Endpoint
+app.get('/api/telegram/status', (req: Request, res: Response) => {
+  try {
+    const status = telegramBotService.getBotStatus();
+    res.json({
+      success: true,
+      status,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Restart Telegram Bot Polling / Service Endpoint
+app.post('/api/telegram/restart', async (req: Request, res: Response) => {
+  try {
+    telegramBotService.stopPolling();
+    // Restart polling with active handlers
+    telegramBotService.startPolling(
+      () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+      getWalletForTelegram,
+      deductWalletForTelegram,
+      (identifier: string, amount: number, reason: string) => creditUserWalletOnServer(identifier, identifier, amount, reason),
+      deliverKeyForTelegram,
+      createFamGatewayPaymentOrder,
+      queryFamGatewayPaymentOrder
+    );
+    res.json({
+      success: true,
+      message: 'Telegram Bot polling engine restarted successfully with 24/7 watchdog!',
+      status: telegramBotService.getBotStatus(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Telegram Webhook Handler (Allows bot to receive updates via Webhook as well as Polling)
+const handleTelegramWebhook = async (req: Request, res: Response) => {
+  try {
+    const update = req.body;
+    if (!update || typeof update !== 'object') {
+      return res.status(400).json({ ok: false, error: 'Invalid update body' });
+    }
+
+    // Process update asynchronously or synchronously
+    const result = await telegramBotService.processIncomingWebhookUpdate(update);
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[TelegramBot] Webhook error:', err.message);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+};
+
+app.post('/api/telegram/webhook', handleTelegramWebhook);
+app.post('/api/telegram-webhook', handleTelegramWebhook);
+app.get('/api/telegram/webhook', (req: Request, res: Response) => {
+  res.json({ ok: true, message: 'Telegram Webhook endpoint is active and listening for POST updates.' });
+});
+app.get('/api/telegram-webhook', (req: Request, res: Response) => {
+  res.json({ ok: true, message: 'Telegram Webhook endpoint is active and listening for POST updates.' });
+});
+
+// Check Telegram Webhook Status directly from Telegram API
+app.get('/api/telegram/webhook-info', async (req: Request, res: Response) => {
+  try {
+    const dataFile = path.join(DATA_DIR, 'telegram_config.json');
+    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    if (fs.existsSync(dataFile)) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+        if (saved.botToken) botToken = saved.botToken.trim();
+      } catch {}
+    }
+
+    if (!botToken) {
+      return res.status(400).json({ success: false, error: 'Bot token not found' });
+    }
+
+    const infoRes = await fetch(`https://api.telegram.org/bot${botToken}/getWebhookInfo`);
+    const infoData: any = await infoRes.json();
+    return res.json({
+      success: true,
+      botStatus: telegramBotService.getBotStatus(),
+      telegramWebhookInfo: infoData.result || infoData,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+app.get('/api/telegram/get-webhook-info', async (req: Request, res: Response) => {
+  res.redirect('/api/telegram/webhook-info');
+});
+
+// Set Telegram Webhook to this server's public URL
+app.post('/api/telegram/set-webhook', async (req: Request, res: Response) => {
+  try {
+    const customUrl = req.body.webhookUrl;
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.protocol || 'https';
+    const webhookUrl = customUrl || `${protocol}://${host}/api/telegram/webhook`;
+
+    const dataFile = path.join(DATA_DIR, 'telegram_config.json');
+    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    if (fs.existsSync(dataFile)) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+        if (saved.botToken) botToken = saved.botToken.trim();
+      } catch {}
+    }
+
+    if (!botToken) {
+      return res.status(400).json({ success: false, error: 'Bot token not found' });
+    }
+
+    const setRes = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: webhookUrl,
+        drop_pending_updates: false,
+        allowed_updates: ['message', 'callback_query', 'channel_post']
+      }),
+    });
+    const data: any = await setRes.json();
+    if (data.ok) {
+      // If webhook is active, stop polling to avoid duplicate processing
+      telegramBotService.stopPolling();
+      return res.json({
+        success: true,
+        message: `Webhook configured successfully to ${webhookUrl}!`,
+        telegramResponse: data,
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: data.description || 'Failed to set webhook on Telegram',
+        telegramResponse: data,
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete Telegram Webhook and resume Long Polling
+app.post('/api/telegram/delete-webhook', async (req: Request, res: Response) => {
+  try {
+    const dataFile = path.join(DATA_DIR, 'telegram_config.json');
+    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    if (fs.existsSync(dataFile)) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+        if (saved.botToken) botToken = saved.botToken.trim();
+      } catch {}
+    }
+
+    const cleared = await telegramBotService.deleteWebhookIfActive(botToken);
+    
+    // Start long polling
+    telegramBotService.startPolling(
+      () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+      getWalletForTelegram,
+      deductWalletForTelegram,
+      (identifier: string, amount: number, reason: string) => creditUserWalletOnServer(identifier, identifier, amount, reason),
+      deliverKeyForTelegram,
+      createFamGatewayPaymentOrder,
+      queryFamGatewayPaymentOrder
+    );
+
+    return res.json({
+      success: true,
+      cleared,
+      message: 'Webhook removed and self-healing Long Polling resumed.',
+      status: telegramBotService.getBotStatus(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Create Order API Endpoint (Translates and proxies AdityaHost, ZapUPI & FreePanel requests)
 app.post('/api/create-order', async (req: Request, res: Response) => {
   try {
@@ -5364,5 +5547,15 @@ telegramBotService.startPolling(
   createFamGatewayPaymentOrder,
   queryFamGatewayPaymentOrder
 );
+
+// 24/7 Background Keep-Alive & Self-Health Heartbeat
+// Prevents container idle suspension and keeps Telegram bot long-polling alive
+setInterval(() => {
+  try {
+    fetch('http://127.0.0.1:3000/api/health', {
+      signal: AbortSignal.timeout(4000)
+    }).catch(() => {});
+  } catch {}
+}, 180000); // Every 3 minutes
 
 

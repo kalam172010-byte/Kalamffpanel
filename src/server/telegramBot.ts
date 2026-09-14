@@ -86,17 +86,80 @@ export class TelegramBotService {
   private isPolling = false;
   private lastUpdateId = 0;
   private pollTimer: NodeJS.Timeout | null = null;
+  private watchdogTimer: NodeJS.Timeout | null = null;
   private botUsername = 'KALAMFFPANELWEBSITE_BOT';
-  private processedUpdateIds = new Set<number>();
+  private processedKeys = new Set<string>();
+  private inFlightKeys = new Set<string>();
   private lastCallbackTime = new Map<string, number>();
+  private isFetchInProgress = false;
+  private lastPollAttemptTime = Date.now();
+  private lastSuccessfulPollTime = Date.now();
+  private consecutiveErrors = 0;
+  private storedCallbacks: {
+    getProducts: () => any[];
+    getUserWallet: (identifier: string) => { balance: number; email?: string; userId: string };
+    deductWallet: (identifier: string, amount: number, reason: string) => boolean;
+    creditWallet: (identifier: string, amount: number, reason: string) => any;
+    deliverKey: (productId: string, planDuration: string, userEmail: string) => Promise<{ success: boolean; keys?: string[]; error?: string }>;
+    createFamOrder?: (amount: number, userIdentifier: string, userEmail?: string) => Promise<any>;
+    queryFamOrder?: (orderId: string, userIdentifier: string) => Promise<any>;
+  } | null = null;
 
-  private constructor() {}
+  private constructor() {
+    this.lastUpdateId = this.loadLastUpdateId();
+    this.processedKeys = this.loadProcessedKeys();
+  }
 
   public static getInstance(): TelegramBotService {
     if (!TelegramBotService.instance) {
       TelegramBotService.instance = new TelegramBotService();
     }
     return TelegramBotService.instance;
+  }
+
+  private loadLastUpdateId(): number {
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_last_update_id.json');
+      if (fs.existsSync(filePath)) {
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (typeof data.lastUpdateId === 'number') {
+          return data.lastUpdateId;
+        }
+      }
+    } catch {}
+    return 0;
+  }
+
+  private saveLastUpdateId(id: number) {
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_last_update_id.json');
+      fs.writeFileSync(filePath, JSON.stringify({ lastUpdateId: id, updatedAt: new Date().toISOString() }), 'utf8');
+    } catch {}
+  }
+
+  private loadProcessedKeys(): Set<string> {
+    const set = new Set<string>();
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_processed_keys.json');
+      if (fs.existsSync(filePath)) {
+        const arr = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (Array.isArray(arr)) {
+          for (const item of arr) {
+            if (typeof item === 'string') set.add(item);
+          }
+        }
+      }
+    } catch {}
+    return set;
+  }
+
+  private saveProcessedKeys() {
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_processed_keys.json');
+      // Keep up to 2500 recent deduplication keys
+      const arr = Array.from(this.processedKeys).slice(-2500);
+      fs.writeFileSync(filePath, JSON.stringify(arr), 'utf8');
+    } catch {}
   }
 
   private getDataDir(): string {
@@ -470,6 +533,105 @@ export class TelegramBotService {
     return this.sendMessage(chatId, text, replyMarkup);
   }
 
+  public async deleteWebhookIfActive(customToken?: string): Promise<boolean> {
+    const { botToken } = this.getCredentials();
+    const token = customToken || botToken;
+    if (!token) return false;
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=false`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      const data: any = await res.json().catch(() => ({}));
+      if (data.ok) {
+        console.log('[TelegramBot] Webhook cleared successfully for active long polling.');
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      console.warn('[TelegramBot] Non-fatal deleteWebhook check:', err.message);
+      return false;
+    }
+  }
+
+  public getBotStatus() {
+    return {
+      isPolling: this.isPolling,
+      botUsername: this.botUsername,
+      lastPollAttempt: new Date(this.lastPollAttemptTime).toISOString(),
+      lastSuccessfulPoll: new Date(this.lastSuccessfulPollTime).toISOString(),
+      msSinceLastPoll: Date.now() - this.lastSuccessfulPollTime,
+      isHealthy: Date.now() - this.lastSuccessfulPollTime < 60000,
+      consecutiveErrors: this.consecutiveErrors,
+      totalUsers: this.getAllBotUsers().length,
+      mode: this.isPolling ? 'LONG_POLLING_ACTIVE' : 'STANDBY',
+    };
+  }
+
+  private initWatchdog() {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+    }
+    this.watchdogTimer = setInterval(() => {
+      if (!this.isPolling) return;
+      const now = Date.now();
+      const elapsed = now - this.lastSuccessfulPollTime;
+
+      // If no successful poll in the last 60 seconds or fetch has hung, auto-recover
+      if (elapsed > 60000) {
+        console.warn(`[TelegramBot] Watchdog: Polling appears inactive (${Math.round(elapsed / 1000)}s since last tick). Auto-recovering polling loop...`);
+        if (this.pollTimer) {
+          clearTimeout(this.pollTimer);
+          this.pollTimer = null;
+        }
+        this.isFetchInProgress = false;
+        this.lastSuccessfulPollTime = Date.now();
+        this.triggerNextPoll(500);
+      }
+    }, 15000);
+  }
+
+  private stopWatchdog() {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+  }
+
+  private triggerNextPoll(delayMs = 1200) {
+    if (!this.isPolling) return;
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer);
+    }
+    this.pollTimer = setTimeout(() => {
+      this.executePollCycle();
+    }, Math.max(200, delayMs));
+  }
+
+  public async processIncomingWebhookUpdate(update: any): Promise<{ ok: boolean; error?: string }> {
+    if (!update || typeof update !== 'object') {
+      return { ok: false, error: 'Invalid update body' };
+    }
+    if (!this.storedCallbacks) {
+      return { ok: false, error: 'Bot callbacks not initialized' };
+    }
+    try {
+      await this.handleUpdate(
+        update,
+        this.storedCallbacks.getProducts,
+        this.storedCallbacks.getUserWallet,
+        this.storedCallbacks.deductWallet,
+        this.storedCallbacks.creditWallet,
+        this.storedCallbacks.deliverKey,
+        this.storedCallbacks.createFamOrder,
+        this.storedCallbacks.queryFamOrder
+      );
+      return { ok: true };
+    } catch (err: any) {
+      console.error('[TelegramBot] Webhook update processing error:', err);
+      return { ok: false, error: err.message };
+    }
+  }
+
   public startPolling(
     getProducts: () => any[],
     getUserWallet: (identifier: string) => { balance: number; email?: string; userId: string },
@@ -479,13 +641,35 @@ export class TelegramBotService {
     createFamOrder?: (amount: number, userIdentifier: string, userEmail?: string) => Promise<any>,
     queryFamOrder?: (orderId: string, userIdentifier: string) => Promise<any>
   ) {
-    if (this.isPolling) return;
-    this.isPolling = true;
-    console.log('[TelegramBot] Long polling service activated for interactive Telegram store bot!');
+    this.storedCallbacks = {
+      getProducts,
+      getUserWallet,
+      deductWallet,
+      creditWallet,
+      deliverKey,
+      createFamOrder,
+      queryFamOrder,
+    };
 
-    // Fetch bot username and register bot command menu once
+    if (this.isPolling) {
+      console.log('[TelegramBot] Polling already active, callbacks updated.');
+      return;
+    }
+
+    this.isPolling = true;
+    this.lastSuccessfulPollTime = Date.now();
+    this.lastPollAttemptTime = Date.now();
+    this.consecutiveErrors = 0;
+    console.log('[TelegramBot] Long polling service activated with 24/7 self-healing watchdog!');
+
+    // Initialize watchdog timer
+    this.initWatchdog();
+
+    // Fetch bot username, clean up any conflicting webhooks, and register bot command menu
     const { botToken } = this.getCredentials();
     if (botToken) {
+      this.deleteWebhookIfActive(botToken).catch(() => {});
+
       fetch(`https://api.telegram.org/bot${botToken}/getMe`)
         .then((r) => r.json())
         .then((d: any) => {
@@ -499,44 +683,104 @@ export class TelegramBotService {
       this.registerBotCommands().catch(() => {});
     }
 
-    const poll = async () => {
-      if (!this.isPolling) return;
-      const { botToken: currentToken } = this.getCredentials();
+    this.triggerNextPoll(100);
+  }
 
-      if (!currentToken) {
-        this.pollTimer = setTimeout(poll, 5000);
-        return;
+  private async executePollCycle() {
+    if (!this.isPolling) return;
+    if (this.isFetchInProgress) return;
+
+    const { botToken: currentToken } = this.getCredentials();
+    if (!currentToken) {
+      this.triggerNextPoll(5000);
+      return;
+    }
+
+    this.isFetchInProgress = true;
+    this.lastPollAttemptTime = Date.now();
+    let nextDelay = 1200;
+
+    try {
+      const offset = this.lastUpdateId ? `?offset=${this.lastUpdateId + 1}&timeout=18` : '?timeout=18';
+      const res = await fetch(`https://api.telegram.org/bot${currentToken}/getUpdates${offset}`, {
+        signal: AbortSignal.timeout(24000),
+      });
+
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch (jsonErr) {
+        console.warn('[TelegramBot] Non-JSON response received from Telegram gateway:', text.slice(0, 100));
       }
 
-      try {
-        const offset = this.lastUpdateId ? `?offset=${this.lastUpdateId + 1}&timeout=20` : '?timeout=20';
-        const res = await fetch(`https://api.telegram.org/bot${currentToken}/getUpdates${offset}`, {
-          signal: AbortSignal.timeout(28000),
-        });
-        const data: any = await res.json();
+      if (data && data.ok && Array.isArray(data.result)) {
+        this.consecutiveErrors = 0;
+        this.lastSuccessfulPollTime = Date.now();
 
-        if (data.ok && Array.isArray(data.result)) {
+        if (this.storedCallbacks) {
+          const { getProducts, getUserWallet, deductWallet, creditWallet, deliverKey, createFamOrder, queryFamOrder } = this.storedCallbacks;
           for (const update of data.result as TelegramUpdate[]) {
-            this.lastUpdateId = Math.max(this.lastUpdateId, update.update_id);
-            await this.handleUpdate(update, getProducts, getUserWallet, deductWallet, creditWallet, deliverKey, createFamOrder, queryFamOrder);
+            if (update && update.update_id) {
+              this.lastUpdateId = Math.max(this.lastUpdateId, update.update_id);
+              this.saveLastUpdateId(this.lastUpdateId);
+              try {
+                await this.handleUpdate(update, getProducts, getUserWallet, deductWallet, creditWallet, deliverKey, createFamOrder, queryFamOrder);
+              } catch (updateErr: any) {
+                console.error('[TelegramBot] Isolated update error:', updateErr.message);
+              }
+            }
           }
         }
-      } catch (err: any) {
-        if (!err.message?.includes('timeout') && !err.message?.includes('aborted')) {
-          console.warn('[TelegramBot] Polling network tick:', err.message);
+        nextDelay = 1000;
+      } else if (data && !data.ok) {
+        this.consecutiveErrors++;
+        const desc = (data.description || '').toLowerCase();
+        console.warn(`[TelegramBot] Telegram API returned non-OK (code ${data.error_code}):`, data.description);
+
+        if (data.error_code === 409) {
+          // Conflict: active webhook or another instance running
+          if (desc.includes('webhook')) {
+            console.log('[TelegramBot] 409 Conflict detected with active webhook. Auto-deleting webhook to restore polling...');
+            await this.deleteWebhookIfActive(currentToken);
+            nextDelay = 2000;
+          } else {
+            console.warn('[TelegramBot] 409 Conflict with another bot session. Backing off 4s...');
+            nextDelay = 4000;
+          }
+        } else if (data.error_code === 429) {
+          const retryAfter = (data.parameters && data.parameters.retry_after) || 5;
+          console.warn(`[TelegramBot] 429 Rate limit. Backing off ${retryAfter}s...`);
+          nextDelay = retryAfter * 1000;
+        } else {
+          nextDelay = Math.min(10000, 1500 * Math.pow(1.5, Math.min(this.consecutiveErrors, 4)));
         }
+      } else {
+        // HTTP error or bad response
+        this.consecutiveErrors++;
+        nextDelay = 3000;
       }
-
-      if (this.isPolling) {
-        this.pollTimer = setTimeout(poll, 1200);
+    } catch (err: any) {
+      const msg = err.message || '';
+      if (!msg.includes('timeout') && !msg.includes('aborted')) {
+        this.consecutiveErrors++;
+        console.warn('[TelegramBot] Polling network cycle tick:', msg);
+        nextDelay = Math.min(8000, 2000 * Math.min(this.consecutiveErrors, 4));
+      } else {
+        // Normal long poll timeout completion
+        this.lastSuccessfulPollTime = Date.now();
+        nextDelay = 800;
       }
-    };
-
-    poll();
+    } finally {
+      this.isFetchInProgress = false;
+      this.triggerNextPoll(nextDelay);
+    }
   }
 
   public stopPolling() {
     this.isPolling = false;
+    this.isFetchInProgress = false;
+    this.stopWatchdog();
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
@@ -555,14 +799,24 @@ export class TelegramBotService {
     queryFamOrder?: (orderId: string, userIdentifier: string) => Promise<any>
   ) {
     if (!update || !update.update_id) return;
-    if (this.processedUpdateIds.has(update.update_id)) {
+
+    // Construct a specific deduplication key for this event
+    let dedupeKey = `up_${update.update_id}`;
+    if (update.callback_query && update.callback_query.id) {
+      dedupeKey = `cb_${update.callback_query.id}`;
+    } else if (update.message && update.message.chat && update.message.message_id) {
+      dedupeKey = `msg_${update.message.chat.id}_${update.message.message_id}`;
+    }
+
+    // Check if already processed or currently in-flight
+    if (this.processedKeys.has(dedupeKey) || this.inFlightKeys.has(dedupeKey)) {
       return;
     }
-    this.processedUpdateIds.add(update.update_id);
-    if (this.processedUpdateIds.size > 2000) {
-      const first = this.processedUpdateIds.values().next().value;
-      if (first !== undefined) this.processedUpdateIds.delete(first);
-    }
+
+    // Set lock
+    this.inFlightKeys.add(dedupeKey);
+    this.processedKeys.add(dedupeKey);
+    this.saveProcessedKeys();
 
     try {
       if (update.callback_query) {
@@ -576,6 +830,8 @@ export class TelegramBotService {
       }
     } catch (err: any) {
       console.error('[TelegramBot] Error processing update:', err);
+    } finally {
+      this.inFlightKeys.delete(dedupeKey);
     }
   }
 
