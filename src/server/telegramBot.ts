@@ -107,6 +107,7 @@ export class TelegramBotService {
   private supervisorTimer: NodeJS.Timeout | null = null;
   private currentAbortController: AbortController | null = null;
   private botUsername = 'KALAMFFPANELWEBSITE_BOT';
+  private numpadAmounts = new Map<number, string>();
   private processedKeys = new Set<string>();
   private inFlightKeys = new Set<string>();
   private lastProcessedKeysSavedAt = 0;
@@ -1744,6 +1745,23 @@ export class TelegramBotService {
         body: JSON.stringify({ commands }),
       });
       const data: any = await res.json();
+
+      // Configure Telegram Chat Menu Button to automatically launch the Mini App
+      const appUrl = process.env.APP_URL || 'https://ais-dev-gwn7e34dd4vbugmipzzvvo-128464619421.asia-east1.run.app';
+      fetch(`https://api.telegram.org/bot${botToken}/setChatMenuButton`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          menu_button: {
+            type: 'web_app',
+            text: '🛒 Open Store',
+            web_app: {
+              url: `${appUrl}/tg-app`
+            }
+          }
+        })
+      }).catch(() => {});
+
       return !!data.ok;
     } catch {
       return false;
@@ -3253,21 +3271,51 @@ export class TelegramBotService {
       return;
     }
 
-    // 1. 🛒 Buy Now
+    // 1. 🛒 Shop Now & Device Categories
     if (data === 'catalog') {
       await this.showProductCatalog(chatId, getProducts(), msgId);
       return;
     }
 
-    // 2. Check Update
-    if (data === 'check_update') {
-      await this.showCheckUpdate(chatId, msgId);
+    if (data.startsWith('cat_dev:')) {
+      const dev = data.replace('cat_dev:', '');
+      await this.showProductsForDevice(chatId, dev, getProducts(), msgId);
       return;
     }
 
-    // 3. 💸 Add Balance
-    if (data === 'deposit_prompt') {
-      await this.showFamGatewayDepositMenu(chatId, msgId);
+    // 2. 💲 Add Balance with Interactive Numpad
+    if (data === 'deposit_prompt' || data === 'deposit_numpad') {
+      this.numpadAmounts.set(chatId, '0');
+      await this.showDepositNumpad(chatId, msgId);
+      return;
+    }
+
+    if (data.startsWith('np:')) {
+      const key = data.replace('np:', '');
+      let currentStr = this.numpadAmounts.get(chatId) || '0';
+      if (key === 'clear') {
+        this.numpadAmounts.set(chatId, '0');
+        await this.showDepositNumpad(chatId, msgId);
+        return;
+      }
+      if (key === 'confirm') {
+        const amt = parseInt(currentStr, 10) || 0;
+        if (amt < 1) {
+          await this.answerCallback(cb.id, '⚠️ Minimum deposit amount is ₹1', true);
+          return;
+        }
+        this.numpadAmounts.set(chatId, '0');
+        await this.initiateFamGatewayPayment(chatId, amt, userId, createFamOrder);
+        return;
+      }
+      // Numeric key pressed
+      if (currentStr === '0') {
+        currentStr = key;
+      } else if (currentStr.length < 5) {
+        currentStr += key;
+      }
+      this.numpadAmounts.set(chatId, currentStr);
+      await this.showDepositNumpad(chatId, msgId);
       return;
     }
 
@@ -3828,30 +3876,23 @@ export class TelegramBotService {
     }
   }
 
-  // Exact Main Menu Visual Layout from User Screenshot & Video
+  // Exact Main Menu Visual Layout from User Video & Screenshot (KALAM FF PANEL)
   public async sendMainMenu(chatId: number, balance: number, _ensureReplyKeyboard: boolean = false, messageId?: number) {
     const users = this.loadBotUsers();
     const botUser = users.get(chatId);
-    const isReseller = !!(botUser?.isReseller || this.isAdmin(chatId));
-    const roleBadge = this.isAdmin(chatId) ? '👑 Store Administrator' : (isReseller ? '💎 VIP Reseller Member (Wholesale Active)' : '👤 Standard Member');
+    const userName = (botUser?.firstName || 'KALAM FF PANEL').toUpperCase();
 
     const text =
-      `✨ <b>KALAM FF PANEL VIP STORE BOT</b> 💸\n\n` +
-      `🔥 <b>Features & Quick Menu:</b>\n` +
-      `• <b>🛒 Buy Now:</b> 100% Anti-Ban VIP Keys Delivered Instantly\n` +
-      `• <b>💎 VIP Reseller:</b> Wholesale discounted key rates for resellers\n` +
-      `• <b>💸 Add Balance:</b> Instant Auto UPI Deposit via FamGateway\n` +
-      `• <b>🎟️ Redeem Code:</b> Redeem promo codes for free wallet cash\n` +
-      `• <b>⚡ Balance Transfer:</b> Send balance to friends directly\n` +
-      `• <b>🏆 Leaderboard:</b> Top VIP buyers & top referrers\n` +
-      `• <b>📥 Download APK Hub:</b> Direct APKs, inject tools & bypass configs\n` +
-      `• <b>✈️ Refer And Earn:</b> Earn ₹2 per invite + 5% deposit commission\n` +
-      `• <b>🎁 Daily Gift:</b> Free daily wheel spin for real wallet bonus\n\n` +
-      `<blockquote>〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n` +
-      `💸 <b>Your Balance:</b> 💸₹${balance.toFixed(2)}\n` +
-      `🎖️ <b>Tier:</b> ${roleBadge}\n` +
-      `〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️</blockquote>\n\n` +
-      `👇 <b>Select an option from the menu below:</b>`;
+      `✨ <b>KALAM FF PANEL</b> 💸\n\n` +
+      `👋 <b>Hello, ${userName}!</b>\n\n` +
+      `<blockquote>` +
+      `📦 <b>Wide product catalog</b>\n` +
+      `⚡ <b>Instant delivery on payment</b>\n` +
+      `💳 <b>Multiple payment gateways</b>\n` +
+      `📞 <b>24/7 admin support</b>\n\n` +
+      `💵 <b>Balance: ₹${balance.toFixed(2)}</b>` +
+      `</blockquote>\n\n` +
+      `<i>Tap any button below to begin:</i>`;
 
     const inline_keyboard: any[] = [];
 
@@ -3861,43 +3902,51 @@ export class TelegramBotService {
       ]);
     }
 
-    inline_keyboard.push(
-      [{ text: '🛒 Buy Now', callback_data: 'catalog' }]
-    );
-
-    if (!isReseller) {
-      inline_keyboard.push([
-        { text: '💎 Upgrade to Reseller Account', callback_data: 'upgrade_reseller' }
-      ]);
-    } else {
-      inline_keyboard.push([
-        { text: '💎 VIP Reseller Wholesale Active', callback_data: 'upgrade_reseller' }
-      ]);
-    }
+    const { apkDownloadUrl } = this.getCredentials();
+    const paymentProofsUrl = 'https://t.me/INRADMINPANELVIP';
+    const appUrl = process.env.APP_URL || 'https://ais-dev-gwn7e34dd4vbugmipzzvvo-128464619421.asia-east1.run.app';
 
     inline_keyboard.push(
+      [
+        { text: '🛒 Buy Now', callback_data: 'catalog' }
+      ],
       [
         { text: 'Check Update', callback_data: 'check_update' },
         { text: '💸 Add Balance', callback_data: 'deposit_prompt' }
       ],
       [
-        { text: '🎟️ Redeem Code', callback_data: 'redeem_prompt' },
-        { text: '⚡ Transfer Balance', callback_data: 'transfer_prompt' }
+        { text: '👑 My Profile + All History', callback_data: 'profile_history' }
       ],
-      [
-        { text: '🏆 Leaderboard', callback_data: 'leaderboard' },
-        { text: '📥 Download Hub', callback_data: 'download_hub' }
-      ],
-      [{ text: '🔥 My Profile + All History', callback_data: 'profile_history' }],
       [
         { text: '🔗 Refer And Earn', callback_data: 'refer_earn' },
-        { text: '🎁 How To Use Bot', callback_data: 'how_to_use' }
+        { text: '⁉️ How To Use Bot', callback_data: 'how_to_use' }
       ],
       [
-        { text: '🚀 Support', callback_data: 'support' },
+        { text: '✈️ Support', callback_data: 'support' },
         { text: '🎁 Daily Gift', callback_data: 'daily_gift' }
+      ],
+      [
+        { text: '💎 VIP Reseller Upgrade', callback_data: 'upgrade_reseller' }
       ]
     );
+
+    if (!messageId || _ensureReplyKeyboard) {
+      const reply_keyboard = [
+        [{ text: '🛒 Buy Now' }],
+        [{ text: 'Check Update' }, { text: '💸 Add Balance' }],
+        [{ text: '👑 My Profile + All History' }],
+        [{ text: '🔗 Refer And Earn' }, { text: '⁉️ How To Use Bot' }],
+        [{ text: '✈️ Support' }, { text: '🎁 Daily Gift' }]
+      ];
+      if (this.isAdmin(chatId)) {
+        reply_keyboard.push([{ text: '🔲 Admin Panel' }]);
+      }
+      this.sendMessage(chatId, `👇 <b>Menu Active:</b>`, {
+        keyboard: reply_keyboard,
+        resize_keyboard: true,
+        is_persistent: true
+      }).catch(() => {});
+    }
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
@@ -3917,10 +3966,11 @@ export class TelegramBotService {
     if (isReseller && !forceShowUpgradePrompt) {
       const text =
         `💎 <b>VIP RESELLER ACCOUNT ACTIVE!</b> 👑\n\n` +
-        `<blockquote>〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n` +
-        `🎉 <b>Status:</b> <b>Active VIP Reseller Member</b>\n` +
-        `💸 <b>Wallet Balance:</b> <b>₹${wallet.balance.toFixed(2)}</b>\n` +
-        `〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️</blockquote>\n\n` +
+        `<blockquote>` +
+        `<b>Status:</b> <b>Active VIP Reseller Member</b>\n` +
+        `<b>Wholesale Rates:</b> ⚡ <b>Unlocked & Active</b>\n` +
+        `<b>Wallet Balance:</b> 💸<b>₹${wallet.balance.toFixed(2)}</b>` +
+        `</blockquote>\n\n` +
         `🌟 <b>Your Reseller Benefits:</b>\n` +
         `• 🛍️ <b>Wholesale Key Pricing:</b> Discounted rates automatically applied in Buy Now catalog\n` +
         `• ⚡ <b>Instant Delivery:</b> Zero wait time on all keys\n` +
@@ -3963,10 +4013,11 @@ export class TelegramBotService {
       `• 👑 <b>VIP Reseller Badge:</b> Official verified reseller status\n` +
       `• 📢 <b>Early Mod Updates:</b> Get APK mods & OBB injectors before public release\n` +
       `• 🚀 <b>Priority Admin Support:</b> Dedicated assistance for bulk orders\n\n` +
-      `<blockquote>〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n` +
-      `💵 <b>Upgrade Fee:</b> <b>₹${upgradeAmount}</b> (One-Time Lifetime)\n` +
-      `💳 <b>Your Wallet Balance:</b> <b>₹${wallet.balance.toFixed(2)}</b>\n` +
-      `〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️</blockquote>\n\n` +
+      `<blockquote>` +
+      `<b>Upgrade Fee:</b> 💸<b>₹${upgradeAmount}</b> (One-Time Lifetime)\n` +
+      `<b>Your Balance:</b> 💸<b>₹${wallet.balance.toFixed(2)}</b>\n` +
+      `<b>Wholesale Discount:</b> ⚡ <b>20% - 40% OFF</b>` +
+      `</blockquote>\n\n` +
       (canAfford
         ? `✅ <i>You have enough balance in your wallet. Tap below to upgrade immediately!</i>`
         : `⚠️ <i>Insufficient balance. Deposit ₹${Math.max(1, Math.round((upgradeAmount - wallet.balance) * 100) / 100)} via FamGateway UPI to upgrade.</i>`);
@@ -4077,27 +4128,64 @@ export class TelegramBotService {
     }
   }
 
-  // 1. 🛒 Buy Now Catalog matching the video model
-  private async showProductCatalog(chatId: number, products: any[], messageId?: number) {
+  // 1. 🛒 Shop Now — Select Device Type
+  private async showProductCatalog(chatId: number, _products: any[], messageId?: number) {
+    const users = this.loadBotUsers();
+    const botUser = users.get(chatId);
+    const userName = (botUser?.firstName || 'KALAM FF PANEL').toUpperCase();
+
+    const text =
+      `✨ <b>SELECT YOUR DEVICE TYPE</b> ✨\n\n` +
+      `<blockquote>` +
+      `👋 <b>YOO ${userName}!</b>\n` +
+      `<i>Choose a device type to see matching products, plans and live pricing.</i>` +
+      `</blockquote>`;
+
+    const inline_keyboard = [
+      [{ text: '🤖 ANDROID NON ROOT', callback_data: 'cat_dev:non_root' }],
+      [{ text: '⚙️ ANDROID ROOT', callback_data: 'cat_dev:root' }],
+      [{ text: '🍏 IPHONE', callback_data: 'cat_dev:ios' }],
+      [{ text: '❌ Back to Menu', callback_data: 'main_menu' }]
+    ];
+
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
+  }
+
+  private async showProductsForDevice(chatId: number, deviceType: string, products: any[], messageId?: number) {
     if (!products || products.length === 0) {
       await this.editOrSendMessage(
         chatId,
         '⚠️ No products currently in catalog. Please check back shortly!',
-        { inline_keyboard: [[{ text: '🔙 Back', callback_data: 'main_menu' }]] },
+        { inline_keyboard: [[{ text: '❌ Back to Menu', callback_data: 'main_menu' }]] },
         messageId
       );
       return;
     }
 
+    let devLabel = 'ANDROID NON ROOT';
+    if (deviceType === 'root') devLabel = 'ANDROID ROOT';
+    if (deviceType === 'ios') devLabel = 'IPHONE';
+
+    // Filter products if matching category/name or show all
+    const filtered = products.filter((p: any) => {
+      const cat = ((p.category || '') + ' ' + (p.name || '')).toLowerCase();
+      if (deviceType === 'non_root') return !cat.includes('root') || cat.includes('non root') || cat.includes('nonroot');
+      if (deviceType === 'root') return cat.includes('root') && !cat.includes('non');
+      if (deviceType === 'ios') return cat.includes('ios') || cat.includes('iphone') || cat.includes('apple');
+      return true;
+    });
+
+    const displayList = filtered.length > 0 ? filtered : products;
+
     const inline_keyboard: any[] = [];
 
-    for (const p of products) {
+    for (const p of displayList) {
       const rawName = (p.name || p.title || 'Product').trim();
       const plans = Array.isArray(p.plans) ? p.plans : [];
       const planCount = plans.length;
       let displayName = rawName.toUpperCase();
-      if (displayName.length > 20) {
-        displayName = displayName.slice(0, 18) + '...';
+      if (displayName.length > 22) {
+        displayName = displayName.slice(0, 20) + '...';
       }
       const label = `🛒 ${displayName} (${planCount} plans)`;
 
@@ -4109,11 +4197,15 @@ export class TelegramBotService {
       ]);
     }
 
-    inline_keyboard.push([{ text: '🔙 Back', callback_data: 'main_menu' }]);
+    inline_keyboard.push([{ text: '🔙 Change Device', callback_data: 'catalog' }]);
+    inline_keyboard.push([{ text: '❌ Back to Menu', callback_data: 'main_menu' }]);
 
     const text =
-      `🛒 <b>SELECT A PRODUCT TO BUY:</b>\n\n` +
-      `Choose from our safe, anti-ban panel hacks and injector tools below:`;
+      `✨ <b>${devLabel} PRODUCTS</b> ✨\n\n` +
+      `<blockquote>` +
+      `📦 <b>Catalog:</b> ${devLabel}\n` +
+      `🛡️ <i>Select your desired cheat/injector tool below:</i>` +
+      `</blockquote>`;
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
@@ -4215,10 +4307,9 @@ export class TelegramBotService {
     } else {
       const shortage = Math.round((price - wallet.balance) * 100) / 100;
       text += `⚠️ <b>Insufficient Balance!</b> You need ₹${shortage} more to buy this key.\n\n` +
-              `<i>Add balance via FamGateway UPI to proceed.</i>`;
+              `<i>Add balance via UPI to proceed.</i>`;
       inline_keyboard.push([
-        { text: `💸 Add ₹${shortage} via FamGateway`, callback_data: `fam_amt:${shortage}` },
-        { text: '➕ Custom Deposit', callback_data: 'fam_custom' }
+        { text: `💲 Add Balance (₹${shortage})`, callback_data: 'deposit_prompt' }
       ]);
     }
 
@@ -4267,7 +4358,7 @@ export class TelegramBotService {
     if (wallet.balance < price) {
       await this.editOrSendMessage(chatId, `⚠️ Insufficient balance (₹${wallet.balance.toFixed(2)}) for ₹${price} order. Please add balance first.`, {
         inline_keyboard: [
-          [{ text: `💸 Add ₹${price - wallet.balance} via FamGateway`, callback_data: `fam_amt:${price - wallet.balance}` }],
+          [{ text: `💲 Add Balance (₹${price - wallet.balance})`, callback_data: 'deposit_prompt' }],
           [{ text: '🔙 Back', callback_data: 'main_menu' }]
         ]
       }, messageId);
@@ -4288,7 +4379,7 @@ export class TelegramBotService {
         {
           inline_keyboard: [
             [{ text: '🔙 View Products', callback_data: 'catalog' }],
-            [{ text: '🚀 Support', callback_data: 'support' }],
+            [{ text: '📞 Support', callback_data: 'support' }],
             [{ text: '🔙 Back', callback_data: 'main_menu' }]
           ]
         },
@@ -4329,80 +4420,66 @@ export class TelegramBotService {
     const keysList = deliveryResult.keys.map(k => `<code>${k}</code>`).join('\n');
     const newBal = getUserWallet(userId).balance;
 
-    const { apkDownloadUrl, apkTutorialUrl } = this.getCredentials();
-    let lowBalHint = '';
-    if (newBal < 20) {
-      lowBalHint = `\n\n🔔 <i>Tip: Your wallet balance is now ₹${newBal.toFixed(2)}. Remember to add balance or use <code>/redeem</code> to keep funds ready for next renewal!</i>`;
-    }
-
     const successMsg =
       `🎉 <b>KEY PURCHASE SUCCESSFUL!</b>\n\n` +
-      `📦 <b>Product:</b> ${product.name}\n` +
-      `⏳ <b>Duration:</b> ${plan.duration || plan.name}\n` +
-      `💵 <b>Amount Paid:</b> ₹${price}\n` +
-      `💳 <b>Remaining Balance:</b> ₹${newBal.toFixed(2)}\n\n` +
+      `<blockquote>` +
+      `<b>Product:</b> 📦 <b>${product.name}</b>\n` +
+      `<b>Duration:</b> ⏳ <b>${plan.duration || plan.name}</b>\n` +
+      `<b>Amount Paid:</b> 💸<b>₹${price}</b>\n` +
+      `<b>Remaining Balance:</b> 💳<b>₹${newBal.toFixed(2)}</b>` +
+      `</blockquote>\n\n` +
       `🔑 <b>YOUR DELIVERED LICENSE KEY(S):</b>\n` +
       `${keysList}\n\n` +
-      `📌 <i>Tap the key above to copy it instantly. Download the latest safe APK from the Download Hub or Telegram.</i>${lowBalHint}`;
+      `📌 <i>Tap the key above to copy it instantly. Download the latest safe APK from the Download Files menu.</i>`;
 
     await this.editOrSendMessage(chatId, successMsg, {
       inline_keyboard: [
-        [{ text: '📥 Download Hub & Injector', callback_data: 'download_hub' }],
-        [{ text: 'Check Update Channel', callback_data: 'check_update' }],
-        [{ text: '👑 My Profile + All History', callback_data: 'profile_history' }],
-        [{ text: '🛒 Buy Another Key', callback_data: 'catalog' }],
+        [{ text: '📥 Download Files', callback_data: 'download_hub' }],
+        [{ text: '👤 Profile', callback_data: 'profile_history' }],
+        [{ text: '🛒 Shop More', callback_data: 'catalog' }],
         [{ text: '🔙 Back', callback_data: 'main_menu' }]
       ]
     }, messageId);
   }
 
-  // 2. Check Update Menu (matching the video model)
-  private async showCheckUpdate(chatId: number, messageId?: number) {
-    const { apkDownloadUrl } = this.getCredentials();
-    const targetUrl = apkDownloadUrl && apkDownloadUrl.startsWith('http') ? apkDownloadUrl : 'https://t.me/kalamffpanel';
+  // 2. 💲 Add Balance — Interactive Numpad Model
+  private async showDepositNumpad(chatId: number, messageId?: number) {
+    const currentStr = this.numpadAmounts.get(chatId) || '0';
+    const amount = parseInt(currentStr, 10) || 0;
 
     const text =
-      `📢 <b>Follow our updates channel:</b>\n\n` +
-      `✈️ <b>Telegram</b>\n` +
-      `<b>Banti Bhaiya All Update</b>\n` +
-      `🙏 FOCUS ON LAWDA LAHSUN\n` +
-      `Owner :- @BANTIBHAIYA69\n` +
-      `Main Tg:- @SHIVAMBABYUP51\n\n` +
-      `🛡️ <i>Join our updates channel for latest APKs, video guides, and announcements!</i>`;
-
-    const inline_keyboard = [
-      [{ text: 'VIEW CHANNEL', url: targetUrl }],
-      [{ text: '🔙 Back', callback_data: 'main_menu' }]
-    ];
-
-    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
-  }
-
-  // 3. 💸 Add Balance (FamGateway)
-  private async showFamGatewayDepositMenu(chatId: number, messageId?: number) {
-    const text =
-      `⚡ <b>DEPOSIT VIA FAMGATEWAY UPI</b>\n\n` +
-      `• Instant automated UPI payments with direct wallet balance credit.\n` +
-      `• Works with Google Pay, PhonePe, Paytm, BHIM & Cred.\n` +
-      `• Funds credited instantly to your Telegram wallet!\n\n` +
-      `<b>Select an amount to deposit:</b>`;
+      `✨ <b>ADD BALANCE — ENTER AMOUNT</b> ✨\n\n` +
+      `<blockquote>` +
+      `<b>Amount:</b> ₹${amount}\n\n` +
+      `⚡ <b>Instant Auto-Credit</b>\n` +
+      `🔒 <b>100% Secure UPI Payment</b>\n` +
+      `✅ <b>Verified in Seconds</b>` +
+      `</blockquote>\n\n` +
+      `⭐ <i>Use the keypad below to enter amount</i>`;
 
     const inline_keyboard = [
       [
-        { text: '₹20', callback_data: 'fam_amt:20' },
-        { text: '₹50', callback_data: 'fam_amt:50' },
-        { text: '₹100', callback_data: 'fam_amt:100' }
+        { text: '1', callback_data: 'np:1' },
+        { text: '2', callback_data: 'np:2' },
+        { text: '3', callback_data: 'np:3' }
       ],
       [
-        { text: '₹200', callback_data: 'fam_amt:200' },
-        { text: '₹500', callback_data: 'fam_amt:500' },
-        { text: '₹1000', callback_data: 'fam_amt:1000' }
+        { text: '4', callback_data: 'np:4' },
+        { text: '5', callback_data: 'np:5' },
+        { text: '6', callback_data: 'np:6' }
       ],
       [
-        { text: '✏️ Enter Custom Amount', callback_data: 'fam_custom' }
+        { text: '7', callback_data: 'np:7' },
+        { text: '8', callback_data: 'np:8' },
+        { text: '9', callback_data: 'np:9' }
       ],
       [
-        { text: '🔙 Back', callback_data: 'main_menu' }
+        { text: '⌫ Clear', callback_data: 'np:clear' },
+        { text: '0', callback_data: 'np:0' },
+        { text: '✅ Confirm', callback_data: 'np:confirm' }
+      ],
+      [
+        { text: '❌ Back', callback_data: 'main_menu' }
       ]
     ];
 
@@ -4447,7 +4524,7 @@ export class TelegramBotService {
         { text: '✅ Check Payment Status', callback_data: `check_order:${order.orderId}` }
       ]);
       inline_keyboard.push([
-        { text: '🔙 Cancel / Main Menu', callback_data: 'main_menu' }
+        { text: '❌ Cancel / Back', callback_data: 'main_menu' }
       ]);
 
       if (order.qrUrl) {
@@ -4461,33 +4538,7 @@ export class TelegramBotService {
     }
   }
 
-  // Balance & Wallet Fast Display
-  private async showBalance(
-    chatId: number,
-    botUser: BotUser,
-    getUserWallet: (id: string) => { balance: number; email?: string; userId: string },
-    messageId?: number
-  ) {
-    const wallet = getUserWallet(botUser.userId);
-    const text =
-      `💰 <b>YOUR WALLET BALANCE</b>\n\n` +
-      `<blockquote>〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n` +
-      `💸 <b>Current Balance:</b> <b>₹${wallet.balance.toFixed(2)}</b>\n` +
-      `〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️</blockquote>\n\n` +
-      `🆔 <b>Telegram ID:</b> <code>${botUser.userId}</code>\n\n` +
-      `<i>Need more funds to purchase VIP keys? Top up instantly below:</i>`;
-
-    const inline_keyboard = [
-      [{ text: '💸 Add Balance (FamGateway)', callback_data: 'deposit_prompt' }],
-      [{ text: '🛒 Buy Now', callback_data: 'catalog' }],
-      [{ text: '🔥 My Profile + History', callback_data: 'profile_history' }],
-      [{ text: '🔙 Back', callback_data: 'main_menu' }]
-    ];
-
-    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
-  }
-
-  // 4. 🔥 My Profile + All History
+  // 3. 👤 User Profile (Video layout)
   private async showUserProfileAndHistory(
     chatId: number,
     botUser: BotUser,
@@ -4495,186 +4546,127 @@ export class TelegramBotService {
     messageId?: number
   ) {
     const wallet = getUserWallet(botUser.userId);
-
-    const gifts = this.loadDailyGifts();
-    const giftRecord = gifts.get(chatId) || { lastClaimed: 0, streak: 0, totalWon: 0 };
-
-    const referrals = this.loadReferrals();
-    const refRecord = referrals.get(chatId) || { referralCount: 0, totalEarned: 0, referredUserIds: [] };
-
-    // Load recent purchases
     const allPurchases = this.loadPurchases();
-    const userPurchases = allPurchases.filter(p => p.chatId === chatId || p.userId === botUser.userId).slice(0, 3);
-
-    let purchaseHistoryText = '<i>No keys purchased yet</i>';
-    if (userPurchases.length > 0) {
-      purchaseHistoryText = userPurchases.map(p => {
-        const d = new Date(p.timestamp).toLocaleDateString();
-        const kStr = p.keys.map(k => `<code>${k}</code>`).join(', ');
-        return `• <b>${p.productName}</b> (${p.planDuration}) - ₹${p.price}\n  Key: ${kStr} (${d})`;
-      }).join('\n');
-    }
+    const userPurchases = allPurchases.filter(p => p.chatId === chatId || p.userId === botUser.userId);
 
     const isReseller = !!(botUser.isReseller || this.isAdmin(chatId));
-    const tierText = this.isAdmin(chatId) ? '👑 Store Administrator' : (isReseller ? '💎 VIP Reseller (Wholesale Active)' : '👤 Standard Member');
+    const roleText = isReseller ? '💎 VIP Reseller' : (this.isAdmin(chatId) ? '👑 Administrator' : 'Regular User');
+    const joinedDate = botUser.firstSeen ? new Date(botUser.firstSeen).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '08 Sept 2026';
+    const userName = (botUser.firstName || 'KALAM FF PANEL').toUpperCase();
+    const usernameDisplay = botUser.username ? '@' + botUser.username.replace('@', '') : 'Not set';
 
     const text =
-      `🔥 <b>MY PROFILE & ORDER HISTORY</b>\n\n` +
-      `👤 <b>Telegram User:</b> ${botUser.firstName} ${botUser.username ? '(@' + botUser.username + ')' : ''}\n` +
-      `🆔 <b>Telegram ID:</b> <code>${botUser.userId}</code>\n` +
-      `🎖️ <b>Account Tier:</b> ${tierText}\n` +
-      `💰 <b>Current Balance:</b> <b>₹${wallet.balance.toFixed(2)}</b>\n\n` +
-      `🎁 <b>Daily Gifts Won:</b> ₹${giftRecord.totalWon.toFixed(2)} (${giftRecord.streak} streak days)\n` +
-      `👥 <b>Total Referrals:</b> ${refRecord.referralCount} Users (Earned: ₹${refRecord.totalEarned.toFixed(2)})\n\n` +
-      `📜 <b>RECENT DELIVERED KEYS:</b>\n` +
-      `${purchaseHistoryText}`;
+      `✨ <b>USER PROFILE</b> ✨\n\n` +
+      `<blockquote>` +
+      `🆔 <b>ID:</b> <code>${chatId}</code>\n` +
+      `👤 <b>Name:</b> ${userName}\n` +
+      `💎 <b>Username:</b> ${usernameDisplay}\n` +
+      `📅 <b>Joined:</b> ${joinedDate}\n` +
+      `👑 <b>Account Type:</b> ${roleText}\n\n` +
+      `💵 <b>Balance:</b> ₹${wallet.balance.toFixed(2)}\n` +
+      `💳 <b>Spent:</b> ₹${(botUser.totalSpent || 0).toFixed(2)}\n` +
+      `🔑 <b>Keys:</b> ${userPurchases.length}` +
+      `</blockquote>\n\n` +
+      `<i>Profile photo fetched from Telegram.</i>`;
 
-    const inline_keyboard: any[] = [
-      [{ text: '🔑 View All My Keys', callback_data: 'my_keys' }]
-    ];
-
-    if (!isReseller) {
-      inline_keyboard.push([{ text: '💎 Upgrade to VIP Reseller', callback_data: 'upgrade_reseller' }]);
-    } else {
-      inline_keyboard.push([{ text: '💎 VIP Reseller Perks Active', callback_data: 'upgrade_reseller' }]);
-    }
-
-    inline_keyboard.push(
+    const inline_keyboard = [
       [
-        { text: '💸 Add Balance', callback_data: 'deposit_prompt' },
-        { text: '🛒 Buy Now', callback_data: 'catalog' }
+        { text: '🔑 My Keys', callback_data: 'my_keys' },
+        { text: '💲 Add Fund', callback_data: 'deposit_prompt' }
       ],
-      [{ text: '🔙 Back', callback_data: 'main_menu' }]
-    );
+      [{ text: '❌ Back', callback_data: 'main_menu' }]
+    ];
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  private async showUserKeyHistory(chatId: number, botUser: BotUser, messageId?: number) {
+  // 4. 🔑 My Keys
+  private async showUserKeyHistory(chatId: number, botUser?: BotUser, messageId?: number) {
     const allPurchases = this.loadPurchases();
-    const userPurchases = allPurchases.filter(p => p.chatId === chatId || p.userId === botUser.userId);
+    const userPurchases = allPurchases.filter(p => p.chatId === chatId || (botUser && p.userId === botUser.userId));
 
     if (userPurchases.length === 0) {
-      await this.editOrSendMessage(chatId, '📦 <b>No License Keys Found!</b>\nYou have not bought any keys yet. Tap "Buy Now" to make your first purchase.', {
+      const text =
+        `<blockquote>` +
+        `‼️ <b>No keys found!</b>\n` +
+        `<i>You haven't purchased anything yet.</i>` +
+        `</blockquote>`;
+
+      await this.editOrSendMessage(chatId, text, {
         inline_keyboard: [
-          [{ text: '🛒 Buy Now', callback_data: 'catalog' }],
-          [{ text: '🔙 Back', callback_data: 'profile_history' }]
+          [
+            { text: '🛒 Shop Now', callback_data: 'catalog' },
+            { text: '❌ Back', callback_data: 'main_menu' }
+          ]
         ]
       }, messageId);
       return;
     }
 
     const keysList = userPurchases.map((p, idx) => {
-      const dateStr = new Date(p.timestamp).toLocaleString();
-      const keysFormatted = p.keys.map(k => `<code>${k}</code>`).join('\n');
-      return `<b>${idx + 1}. ${p.productName}</b> (${p.planDuration})\n` +
-             `💵 Paid: ₹${p.price} | 📅 ${dateStr}\n` +
-             `🔑 Key(s):\n${keysFormatted}`;
+      const dateStr = new Date(p.timestamp).toLocaleDateString('en-GB');
+      const keysFormatted = p.keys.map(k => `<code>${k}</code>`).join(', ');
+      return `• <b>${p.productName}</b> (${p.planDuration}) - ₹${p.price}\n  Key: ${keysFormatted} (${dateStr})`;
     }).join('\n\n');
 
     const text =
-      `🔑 <b>YOUR DELIVERED LICENSE KEYS</b>\n\n` +
-      `${keysList}\n\n` +
+      `🔑 <b>YOUR PURCHASED KEYS</b>\n\n` +
+      `<blockquote>` +
+      `${keysList}` +
+      `</blockquote>\n\n` +
       `<i>Tap on any key code to copy it directly.</i>`;
 
     await this.editOrSendMessage(chatId, text, {
       inline_keyboard: [
-        [{ text: '🛒 Buy Another Key', callback_data: 'catalog' }],
-        [{ text: '🔙 Back', callback_data: 'profile_history' }]
+        [
+          { text: '🛒 Shop Now', callback_data: 'catalog' },
+          { text: '❌ Back', callback_data: 'main_menu' }
+        ]
       ]
     }, messageId);
   }
 
-  // 5. 🔗 Refer And Earn
-  private async showReferAndEarn(chatId: number, messageId?: number) {
-    const referrals = this.loadReferrals();
-    const refRecord = referrals.get(chatId) || { referralCount: 0, totalEarned: 0, referredUserIds: [] };
-    const refLink = `https://t.me/${this.botUsername}?start=ref_${chatId}`;
-    const shareText = encodeURIComponent(`🔥 Best Free Fire VIP Injectors, Panel Hacks & Mod APKs! Join and get free welcome balance: ${refLink}`);
-
-    const text =
-      `🔗 <b>REFER AND EARN REAL CASH!</b>\n\n` +
-      `Share your personal referral link with your friends or gaming groups and earn money directly in your wallet!\n\n` +
-      `🎁 <b>REFERRAL BENEFITS:</b>\n` +
-      `• <b>Instant Bonus:</b> Earn <b>₹2.00</b> for every friend who joins!\n` +
-      `• <b>Deposit Commission:</b> Earn <b>5% lifetime commission</b> on all deposits made by your friends!\n` +
-      `• <b>Friend Bonus:</b> Your invited friend receives <b>₹1.00</b> free welcome balance!\n\n` +
-      `👥 <b>Your Referrals:</b> <b>${refRecord.referralCount} Users</b>\n` +
-      `💰 <b>Total Referral Earnings:</b> <b>₹${refRecord.totalEarned.toFixed(2)}</b>\n\n` +
-      `🔗 <b>YOUR UNIQUE INVITE LINK:</b>\n` +
-      `<code>${refLink}</code>\n\n` +
-      `<i>Tap the link above to copy it or click Share below!</i>`;
-
-    const inline_keyboard = [
-      [{ text: '📲 Share to Friends & Groups', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${shareText}` }],
-      [
-        { text: '💸 Add Balance', callback_data: 'deposit_prompt' },
-        { text: '🔙 Back', callback_data: 'main_menu' }
-      ]
-    ];
-
-    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
-  }
-
-  // 6. ⁉️ How To Use Bot
+  // 5. 📌 How to use
   private async showHowToUseBot(chatId: number, messageId?: number) {
     const text =
-      `⁉️ <b>HOW TO USE THE STORE BOT & ALL COMMANDS</b>\n\n` +
-      `Follow these simple steps to buy, activate keys, and use VIP features:\n\n` +
-      `1️⃣ <b>Add Balance to Your Wallet:</b>\n` +
-      `• Tap <b>💸 Add Balance</b> in the menu.\n` +
-      `• Scan the FamGateway dynamic QR code via Google Pay, PhonePe, Paytm, or BHIM.\n` +
-      `• Tap <b>Check Payment Status</b>. Funds are credited instantly!\n\n` +
-      `2️⃣ <b>Buy License Key:</b>\n` +
-      `• Tap <b>🛒 Buy Now</b> to view all available products.\n` +
-      `• Pick your mod and desired duration (1 Day, 7 Days, 30 Days).\n` +
-      `• Click <b>Confirm & Buy Key</b>. Your key is delivered immediately in this chat!\n\n` +
-      `3️⃣ <b>🎟️ Promo Codes:</b>\n` +
-      `• Type <code>/redeem KALAMFREE</code> to get free wallet money!\n\n` +
-      `4️⃣ <b>⚡ Balance Transfer:</b>\n` +
-      `• Type <code>/transfer [Telegram_ID] [Amount]</code> to send money to friends.\n\n` +
-      `5️⃣ <b>📥 Download Hub:</b>\n` +
-      `• Tap <b>Download Hub</b> to get the latest APKs, injectors, and setup videos.\n\n` +
-      `6️⃣ <b>🎁 Daily Gift & 🔗 Referrals:</b>\n` +
-      `• Spin the wheel daily for free balance, and earn ₹2 + 5% commission per referral!`;
+      `✨ <b>HOW TO USE THE BOT</b> ✨\n\n` +
+      `<blockquote>` +
+      `<b>Follow these simple steps:</b>\n\n` +
+      `1. 💳 Add balance to your wallet first.\n` +
+      `2. 📦 Go to products section and pick your plan.\n` +
+      `3. 🔑 Click buy and copy your instant key!\n\n` +
+      `<i>Watch the detailed video tutorial below for full guide!</i>` +
+      `</blockquote>`;
 
+    const { apkTutorialUrl } = this.getCredentials();
     const inline_keyboard = [
-      [{ text: '🛒 Buy Now', callback_data: 'catalog' }],
-      [
-        { text: '💸 Add Balance', callback_data: 'deposit_prompt' },
-        { text: '🎟️ Redeem Code', callback_data: 'redeem_prompt' }
-      ],
-      [
-        { text: '📥 Download Hub', callback_data: 'download_hub' },
-        { text: '🏆 Leaderboard', callback_data: 'leaderboard' }
-      ],
-      [{ text: '🔙 Back', callback_data: 'main_menu' }]
+      [{ text: '🎬 Watch Video Guide', url: apkTutorialUrl || 'https://youtu.be/kalam_tutorial' }],
+      [{ text: '❌ Back', callback_data: 'main_menu' }]
     ];
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  // 7. 🚀 Support
-  private async showSupport(chatId: number, messageId?: number) {
+  // 6. 📥 Download Files
+  private async showDownloadHub(chatId: number, messageId?: number) {
     const text =
-      `🚀 <b>CUSTOMER SUPPORT & HELP DESK</b>\n\n` +
-      `Need help with a payment, key activation, or APK setup? Our support team is here for you!\n\n` +
-      `👨‍💻 <b>Support Admin:</b> @Velprasath_12\n` +
-      `📢 <b>Official Updates Channel:</b> <a href="https://t.me/kalamffpanel">Join Kalam Updates Channel</a>\n` +
-      `⏱️ <b>Working Hours:</b> 24/7 Fast Support\n` +
-      `🛡️ <b>Guarantee:</b> 100% Working Keys & Safe Downloads\n\n` +
-      `<i>Tap below to contact support admin directly:</i>`;
+      `✨ <b>DOWNLOAD FILES</b> ✨\n\n` +
+      `<blockquote>` +
+      `📦 <i>Stay up to date with the latest files!</i>\n` +
+      `🛡️ <i>Fast & Anti-Ban Updates & Setups</i>\n\n` +
+      `👇 <b>Tap the button below to open your files.</b>` +
+      `</blockquote>`;
 
+    const { apkDownloadUrl } = this.getCredentials();
     const inline_keyboard = [
-      [{ text: '💬 Contact Support Admin', url: 'https://t.me/Velprasath_12' }],
-      [{ text: '📢 Join Official Channel', url: 'https://t.me/kalamffpanel' }],
-      [{ text: '🔙 Back', callback_data: 'main_menu' }]
+      [{ text: '📂 Open Download Files', url: apkDownloadUrl || 'https://t.me/kalamffpanel' }],
+      [{ text: '❌ Back to Menu', callback_data: 'main_menu' }]
     ];
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  // 8. 🎁 Daily Gift (Free Spin Wheel)
+  // 7. 🎁 Daily Gift
   private async handleDailyGiftSpin(
     chatId: number,
     userId: string,
@@ -4688,68 +4680,98 @@ export class TelegramBotService {
     const cooldownMs = 24 * 60 * 60 * 1000;
     const elapsed = now - record.lastClaimed;
 
+    const users = this.loadBotUsers();
+    const botUser = users.get(chatId);
+    const userName = (botUser?.firstName || 'KALAM FF PANEL').toUpperCase();
+
     if (record.lastClaimed > 0 && elapsed < cooldownMs) {
       const remainingMs = cooldownMs - elapsed;
       const hours = Math.floor(remainingMs / (1000 * 60 * 60));
       const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
 
-      const wallet = getUserWallet(userId);
       const text =
         `⏳ <b>DAILY GIFT COOLDOWN!</b>\n\n` +
-        `You have already spun the daily wheel today.\n\n` +
-        `⏰ <b>Next Free Spin available in:</b>\n` +
-        `<b>${hours} Hours, ${minutes} Minutes, ${seconds} Seconds</b>\n\n` +
-        `💰 <b>Your Current Balance:</b> ₹${wallet.balance.toFixed(2)}\n\n` +
-        `<i>Come back tomorrow to spin again for free balance!</i>`;
+        `<blockquote>` +
+        `⚠️ <i>You have already claimed today's gift!</i>\n\n` +
+        `⏰ <b>Next Gift in:</b> ${hours}h ${minutes}m` +
+        `</blockquote>`;
 
       await this.editOrSendMessage(chatId, text, {
-        inline_keyboard: [
-          [{ text: '🛒 Buy Now', callback_data: 'catalog' }],
-          [{ text: '🔥 My Profile', callback_data: 'profile_history' }],
-          [{ text: '🔙 Back', callback_data: 'main_menu' }]
-        ]
+        inline_keyboard: [[{ text: '❌ Back to Menu', callback_data: 'main_menu' }]]
       }, messageId);
       return;
     }
 
-    // Eligible for spin! Random prize between ₹0.50 and ₹5.00
-    const prizes = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 5.0];
-    const prize = prizes[Math.floor(Math.random() * prizes.length)];
-
-    // Update streak: if claimed within 48 hours, increase streak; else reset to 1
-    if (elapsed < 48 * 60 * 60 * 1000) {
-      record.streak += 1;
-    } else {
-      record.streak = 1;
-    }
+    const wonAmount = 1.0;
+    creditWallet(userId, wonAmount, 'Daily Gift Bonus');
     record.lastClaimed = now;
-    record.totalWon += prize;
+    record.streak = (record.streak || 0) + 1;
+    record.totalWon = (record.totalWon || 0) + wonAmount;
     gifts.set(chatId, record);
     this.saveDailyGifts(gifts);
 
-    // Credit user's wallet
-    creditWallet(userId, prize, `Daily Gift Lucky Spin (Streak: ${record.streak})`);
-    const newWallet = getUserWallet(userId);
+    const wallet = getUserWallet(userId);
 
     const text =
-      `🎁 <b>DAILY GIFT LUCKY SPIN!</b> 🎰\n\n` +
-      `<blockquote>〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n` +
-      `🎉 <b>CONGRATULATIONS!</b>\n` +
-      `You won: <b>💸 ₹${prize.toFixed(2)}</b>\n` +
-      `〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️</blockquote>\n\n` +
-      `💰 <i>The bonus has been added directly to your wallet!</i>\n` +
-      `💳 <b>New Wallet Balance:</b> <b>₹${newWallet.balance.toFixed(2)}</b>\n` +
-      `🔥 <b>Current Streak:</b> ${record.streak} Days\n\n` +
-      `⏰ <i>Come back in 24 hours for your next free spin!</i>`;
+      `✨ <b>DAILY GIFT CLAIMED!</b> ✨\n\n` +
+      `<blockquote>` +
+      `✅ <b>Congratulations ${userName}!</b>\n\n` +
+      `🎁 <b>You Received:</b> ₹${wonAmount.toFixed(2)}\n\n` +
+      `💸 <b>New Wallet Balance:</b> ₹${wallet.balance.toFixed(2)}\n\n` +
+      `🌈 <i>Come back after 24 hours for your next gift!</i>` +
+      `</blockquote>`;
 
     await this.editOrSendMessage(chatId, text, {
-      inline_keyboard: [
-        [{ text: '🛒 Buy Keys Now', callback_data: 'catalog' }],
-        [{ text: '🔥 My Profile', callback_data: 'profile_history' }],
-        [{ text: '🔙 Back', callback_data: 'main_menu' }]
-      ]
+      inline_keyboard: [[{ text: '❌ Back to Menu', callback_data: 'main_menu' }]]
     }, messageId);
+  }
+
+  // 8. 👥 Refer & Earn
+  private async showReferAndEarn(chatId: number, messageId?: number) {
+    const referrals = this.loadReferrals();
+    const refRecord = referrals.get(chatId) || { referralCount: 0, totalEarned: 0, referredUserIds: [] };
+    const refLink = `https://t.me/${this.botUsername.replace('@', '')}?start=ref${chatId}`;
+
+    const text =
+      `✨ <b>REFER & EARN</b> ✨\n\n` +
+      `<blockquote>` +
+      `<b>Invite friends & earn rewards:</b>\n\n` +
+      `• ₹2.00 — when friend adds balance first time\n` +
+      `• ₹2.00 — when friend makes first purchase\n\n` +
+      `👥 <b>Total Referrals:</b> ${refRecord.referralCount}\n` +
+      `💰 <b>Total Earned:</b> ₹${refRecord.totalEarned.toFixed(2)}\n\n` +
+      `🔗 <b>Your Referral Link:</b>\n` +
+      `<code>${refLink}</code>` +
+      `</blockquote>`;
+
+    const shareText = encodeURIComponent(`🔥 Best Free Fire VIP Injectors, Panel Hacks & Mod APKs! Join and get free welcome balance: ${refLink}`);
+    const inline_keyboard = [
+      [{ text: '🍏 📲 Share Link', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${shareText}` }],
+      [{ text: '❌ Back to Menu', callback_data: 'main_menu' }]
+    ];
+
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
+  }
+
+  // 9. 📞 Support
+  private async showSupport(chatId: number, messageId?: number) {
+    const text =
+      `✨ <b>CUSTOMER SUPPORT CENTER</b> ✨\n\n` +
+      `<blockquote>` +
+      `<i>Welcome to our 24/7 support desk.</i>\n` +
+      `<i>Facing any issues with keys or payments? Contact us!</i>\n\n` +
+      `<b>Click the button below to get admin link.</b>` +
+      `</blockquote>`;
+
+    const { supportUsername } = this.getStoreSettingsFromDisk();
+    const cleanAdmin = (supportUsername || 'INR_TAMIL_GAMER1').replace('@', '');
+
+    const inline_keyboard = [
+      [{ text: '💬 Contact Admin', url: `https://t.me/${cleanAdmin}` }],
+      [{ text: '❌ Back', callback_data: 'main_menu' }]
+    ];
+
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   // 9. 🔲 Master Admin Control Panel Hub (Website & Telegram Bot)
