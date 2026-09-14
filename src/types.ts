@@ -113,6 +113,10 @@ export interface StoreSettings {
   telegramBotToken?: string;
   telegramChatId?: string;
   telegramBotUsername?: string;
+  proofBotToken?: string;
+  proofChatId?: string;
+  enableAutoProof?: boolean;
+  proofChannelLink?: string;
 }
 
 export interface BotUser {

@@ -45,6 +45,7 @@ export interface BotUser {
   username?: string;
   firstName: string;
   lastName?: string;
+  firstSeen?: number;
   joinedAt: number;
   lastActive: number;
   referrerId?: string;
@@ -207,7 +208,17 @@ export class TelegramBotService {
     return dataDir;
   }
 
-  private getCredentials(): { botToken: string; defaultChatId: string; apkDownloadUrl: string; apkTutorialUrl: string; botUsername: string } {
+  private getCredentials(): {
+    botToken: string;
+    defaultChatId: string;
+    apkDownloadUrl: string;
+    apkTutorialUrl: string;
+    botUsername: string;
+    proofBotToken: string;
+    proofChatId: string;
+    proofChannelLink: string;
+    enableAutoProof: boolean;
+  } {
     const dataDir = this.getDataDir();
     const configFile = path.join(dataDir, 'telegram_config.json');
     const storeConfigFile = path.join(dataDir, 'store_data.json');
@@ -217,6 +228,11 @@ export class TelegramBotService {
     let apkTutorialUrl = process.env.APK_TUTORIAL_URL || 'https://youtu.be/kalam_tutorial';
     let botUsername = process.env.TELEGRAM_BOT_USERNAME || '@KalamFFStoreBot';
 
+    let proofBotToken = process.env.TELEGRAM_PROOF_BOT_TOKEN || '';
+    let proofChatId = process.env.TELEGRAM_PROOF_CHAT_ID || '';
+    let proofChannelLink = process.env.PAYMENT_PROOF_CHANNEL || '';
+    let enableAutoProof = true;
+
     if (fs.existsSync(storeConfigFile)) {
       try {
         const storeData = JSON.parse(fs.readFileSync(storeConfigFile, 'utf8'));
@@ -225,6 +241,21 @@ export class TelegramBotService {
         }
         if (storeData.storeSettings?.howToUseBotLink) {
           apkTutorialUrl = storeData.storeSettings.howToUseBotLink.trim();
+        }
+        if (storeData.storeSettings?.proofBotToken) {
+          proofBotToken = storeData.storeSettings.proofBotToken.trim();
+        }
+        if (storeData.storeSettings?.proofChatId) {
+          proofChatId = storeData.storeSettings.proofChatId.trim();
+        }
+        if (storeData.storeSettings?.paymentProofChannel) {
+          proofChannelLink = storeData.storeSettings.paymentProofChannel.trim();
+          if (!proofChatId && (proofChannelLink.startsWith('@') || proofChannelLink.startsWith('-100') || (!proofChannelLink.includes('http') && !proofChannelLink.includes('/')))) {
+            proofChatId = proofChannelLink;
+          }
+        }
+        if (typeof storeData.storeSettings?.enableAutoProof === 'boolean') {
+          enableAutoProof = storeData.storeSettings.enableAutoProof;
         }
       } catch {}
     }
@@ -237,10 +268,102 @@ export class TelegramBotService {
         if (saved.apkDownloadUrl) apkDownloadUrl = saved.apkDownloadUrl.trim();
         if (saved.apkTutorialUrl) apkTutorialUrl = saved.apkTutorialUrl.trim();
         if (saved.botUsername) botUsername = saved.botUsername.trim();
+        if (saved.proofBotToken) proofBotToken = saved.proofBotToken.trim();
+        if (saved.proofChatId) proofChatId = saved.proofChatId.trim();
+        if (saved.paymentProofChannel) proofChannelLink = saved.paymentProofChannel.trim();
+        if (typeof saved.enableAutoProof === 'boolean') enableAutoProof = saved.enableAutoProof;
       } catch {}
     }
 
-    return { botToken, defaultChatId, apkDownloadUrl, apkTutorialUrl, botUsername };
+    return { botToken, defaultChatId, apkDownloadUrl, apkTutorialUrl, botUsername, proofBotToken, proofChatId, proofChannelLink, enableAutoProof };
+  }
+
+  // Mask sensitive license key for public channel proofs (e.g. ABCD-****-1234)
+  public maskKeyForProof(key: string): string {
+    if (!key || typeof key !== 'string') return 'XXXX-****-YYYY';
+    const clean = key.trim();
+    if (clean.length <= 6) return clean.substring(0, 2) + '****' + clean.substring(clean.length - 2);
+    if (clean.length <= 12) return clean.substring(0, 3) + '****' + clean.substring(clean.length - 3);
+    return clean.substring(0, 4) + '****' + clean.substring(clean.length - 4);
+  }
+
+  // Dispatch payment & key delivery proof to secondary Proof Bot / Channel
+  public async dispatchPaymentProof(info: {
+    productName: string;
+    planDuration: string;
+    price: number;
+    keys: string[];
+    chatId?: number;
+    username?: string;
+    firstName?: string;
+    orderId?: string;
+  }): Promise<boolean> {
+    try {
+      const creds = this.getCredentials();
+      if (!creds.enableAutoProof) return false;
+
+      const activeToken = creds.proofBotToken || creds.botToken;
+      const targetChat = creds.proofChatId;
+
+      if (!activeToken || !targetChat) {
+        return false;
+      }
+
+      const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+      const maskedKeys = info.keys.map(k => `<code>${this.maskKeyForProof(k)}</code> <i>(Sent Privately to Buyer)</i>`).join('\n');
+      const buyerName = info.username ? `@${info.username.replace('@', '')}` : (info.firstName || 'Verified Customer');
+      const ordId = info.orderId || `TG_ORD_${Date.now()}`;
+      const botHandle = (creds.botUsername || 'kalam_store_bot').replace('@', '');
+
+      const text =
+        `🎉 <b>NEW KEY PURCHASE & PAYMENT PROOF</b> 🎉\n\n` +
+        `<blockquote>` +
+        `📦 <b>Product:</b> ${info.productName}\n` +
+        `⏳ <b>Plan Duration:</b> ${info.planDuration}\n` +
+        `💵 <b>Amount Paid:</b> ₹${Number(info.price).toFixed(2)}\n` +
+        `👤 <b>Customer:</b> ${buyerName}\n` +
+        (info.chatId ? `🆔 <b>User ID:</b> <code>${info.chatId}</code>\n` : '') +
+        `🔖 <b>Order ID:</b> <code>${ordId}</code>\n` +
+        `💳 <b>Payment Mode:</b> Instant Auto-Wallet\n` +
+        `🕒 <b>Time:</b> ${time} (IST)\n` +
+        `</blockquote>\n\n` +
+        `🔐 <b>DELIVERED LICENSE KEY(S):</b>\n` +
+        `${maskedKeys}\n\n` +
+        `🛡️ <b>STATUS:</b> ✅ <b>VERIFIED & DELIVERED</b> ⚡\n` +
+        `🛒 <b>BUY KEY INSTANTLY:</b> @${botHandle}`;
+
+      const res = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: targetChat,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle}` }]
+            ]
+          }
+        })
+      });
+
+      const data: any = await res.json();
+      if (!data.ok) {
+        await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: targetChat,
+            text: text.replace(/<[^>]*>/g, '')
+          })
+        });
+      }
+      return true;
+    } catch (e: any) {
+      console.warn('[TelegramBot] Proof dispatch failed:', e.message);
+      return false;
+    }
   }
 
   public saveApkUrl(url: string): string {
@@ -659,6 +782,11 @@ export class TelegramBotService {
         supportUsername: "@kd_123_1_3"
       }
     };
+  }
+
+  public getStoreSettingsFromDisk(): { shopName?: string; tagline?: string; supportUsername?: string } {
+    const storeData = this.loadStoreDataFromDisk();
+    return storeData.storeSettings || { supportUsername: '@kd_123_1_3' };
   }
 
   public saveStoreDataToDisk(data: any) {
@@ -1139,7 +1267,7 @@ export class TelegramBotService {
     }
   }
 
-  public async answerCallback(callbackQueryId: string, text?: string): Promise<void> {
+  public async answerCallback(callbackQueryId: string, text?: string, showAlert: boolean = false): Promise<void> {
     const { botToken } = this.getCredentials();
     if (!botToken) return;
 
@@ -1150,7 +1278,7 @@ export class TelegramBotService {
         body: JSON.stringify({
           callback_query_id: callbackQueryId,
           text: text || '',
-          show_alert: false,
+          show_alert: showAlert,
         }),
       });
     } catch {}
@@ -4417,6 +4545,18 @@ export class TelegramBotService {
       this.saveBotUsers(activeUsers);
     }
 
+    // Auto-dispatch payment proof to secondary proof bot/channel with masked key
+    this.dispatchPaymentProof({
+      productName: product.name,
+      planDuration: plan.duration || plan.name || '1 Day',
+      price,
+      keys: deliveryResult.keys,
+      chatId,
+      username: botUser?.username,
+      firstName: botUser?.firstName,
+      orderId: purchaseRecord.id,
+    }).catch(err => console.warn('[TelegramBot] Proof dispatch error:', err));
+
     const keysList = deliveryResult.keys.map(k => `<code>${k}</code>`).join('\n');
     const newBal = getUserWallet(userId).balance;
 
@@ -4642,25 +4782,6 @@ export class TelegramBotService {
     const inline_keyboard = [
       [{ text: '🎬 Watch Video Guide', url: apkTutorialUrl || 'https://youtu.be/kalam_tutorial' }],
       [{ text: '❌ Back', callback_data: 'main_menu' }]
-    ];
-
-    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
-  }
-
-  // 6. 📥 Download Files
-  private async showDownloadHub(chatId: number, messageId?: number) {
-    const text =
-      `✨ <b>DOWNLOAD FILES</b> ✨\n\n` +
-      `<blockquote>` +
-      `📦 <i>Stay up to date with the latest files!</i>\n` +
-      `🛡️ <i>Fast & Anti-Ban Updates & Setups</i>\n\n` +
-      `👇 <b>Tap the button below to open your files.</b>` +
-      `</blockquote>`;
-
-    const { apkDownloadUrl } = this.getCredentials();
-    const inline_keyboard = [
-      [{ text: '📂 Open Download Files', url: apkDownloadUrl || 'https://t.me/kalamffpanel' }],
-      [{ text: '❌ Back to Menu', callback_data: 'main_menu' }]
     ];
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
@@ -5414,6 +5535,25 @@ export class TelegramBotService {
     ];
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
+  }
+
+  // Helper methods for text commands
+  public async showFamGatewayDepositMenu(chatId: number, messageId?: number) {
+    this.numpadAmounts.set(chatId, '0');
+    return this.showDepositNumpad(chatId, messageId);
+  }
+
+  public async showBalance(
+    chatId: number,
+    botUser: BotUser,
+    getUserWallet: (id: string) => { balance: number; email?: string; userId: string },
+    messageId?: number
+  ) {
+    return this.showUserProfileAndHistory(chatId, botUser, getUserWallet, messageId);
+  }
+
+  public async showCheckUpdate(chatId: number, messageId?: number) {
+    return this.showDownloadHub(chatId, messageId);
   }
 
   // 13. 📥 Download Hub Display (APK, Injectors, Config Files, Guides)
