@@ -39,16 +39,18 @@ interface TelegramUpdate {
   };
 }
 
-interface BotUser {
+export interface BotUser {
   chatId: number;
   userId: string;
   username?: string;
   firstName: string;
+  lastName?: string;
   joinedAt: number;
   lastActive: number;
   referrerId?: string;
   totalSpent: number;
   totalDeposited: number;
+  interactionCount?: number;
 }
 
 interface DailyGiftRecord {
@@ -86,6 +88,7 @@ export class TelegramBotService {
   private pollTimer: NodeJS.Timeout | null = null;
   private botUsername = 'KALAMFFPANELWEBSITE_BOT';
   private processedUpdateIds = new Set<number>();
+  private lastCallbackTime = new Map<string, number>();
 
   private constructor() {}
 
@@ -172,7 +175,7 @@ export class TelegramBotService {
   }
 
   // Persistent Bot Users Storage
-  private loadBotUsers(): Map<number, BotUser> {
+  public loadBotUsers(): Map<number, BotUser> {
     const filePath = path.join(this.getDataDir(), 'bot_users.json');
     const map = new Map<number, BotUser>();
     if (fs.existsSync(filePath)) {
@@ -185,40 +188,71 @@ export class TelegramBotService {
         }
       } catch {}
     }
+    if (map.size === 0) {
+      // Seed default admin user so directory is never empty
+      const adminChatId = 7768975239;
+      map.set(adminChatId, {
+        chatId: adminChatId,
+        userId: `tg_${adminChatId}`,
+        username: 'Velprasath_12',
+        firstName: 'Kalam',
+        lastName: 'Admin',
+        joinedAt: Date.now() - 7 * 24 * 60 * 60 * 1000,
+        lastActive: Date.now(),
+        totalSpent: 0,
+        totalDeposited: 0,
+        interactionCount: 1,
+      });
+      try {
+        fs.writeFileSync(filePath, JSON.stringify(Array.from(map.values()), null, 2), 'utf8');
+      } catch {}
+    }
     return map;
   }
 
-  private saveBotUsers(map: Map<number, BotUser>) {
+  public saveBotUsers(map: Map<number, BotUser>) {
     const filePath = path.join(this.getDataDir(), 'bot_users.json');
     try {
-      fs.writeFileSync(filePath, JSON.stringify(Array.from(map.values()), null, 2));
+      fs.writeFileSync(filePath, JSON.stringify(Array.from(map.values()), null, 2), 'utf8');
     } catch {}
   }
 
-  private registerOrUpdateUser(msg: NonNullable<TelegramUpdate['message']>, referrerId?: string): BotUser {
+  public getAllBotUsers(): BotUser[] {
     const users = this.loadBotUsers();
-    const chatId = msg.chat.id;
+    return Array.from(users.values());
+  }
+
+  public registerOrUpdateUser(
+    from: { id: number; first_name?: string; last_name?: string; username?: string },
+    chatId: number,
+    referrerId?: string
+  ): BotUser {
+    const users = this.loadBotUsers();
     let user = users.get(chatId);
 
     if (!user) {
       user = {
         chatId,
-        userId: `tg_${msg.from.id}`,
-        username: msg.from.username,
-        firstName: msg.from.first_name || 'User',
+        userId: `tg_${from.id}`,
+        username: from.username,
+        firstName: from.first_name || 'User',
+        lastName: from.last_name,
         joinedAt: Date.now(),
         lastActive: Date.now(),
         referrerId,
         totalSpent: 0,
         totalDeposited: 0,
+        interactionCount: 1,
       };
     } else {
       user.lastActive = Date.now();
-      if (msg.from.username) user.username = msg.from.username;
-      if (msg.from.first_name) user.firstName = msg.from.first_name;
-      if (!user.referrerId && referrerId && referrerId !== `tg_${msg.from.id}`) {
+      if (from.username) user.username = from.username;
+      if (from.first_name) user.firstName = from.first_name;
+      if (from.last_name) user.lastName = from.last_name;
+      if (!user.referrerId && referrerId && referrerId !== `tg_${from.id}`) {
         user.referrerId = referrerId;
       }
+      user.interactionCount = (user.interactionCount || 0) + 1;
     }
 
     users.set(chatId, user);
@@ -384,6 +418,58 @@ export class TelegramBotService {
     } catch {}
   }
 
+  public async editOrSendMessage(
+    chatId: number,
+    text: string,
+    replyMarkup?: any,
+    messageId?: number
+  ): Promise<any> {
+    const { botToken } = this.getCredentials();
+    if (!botToken) return null;
+
+    if (messageId) {
+      try {
+        const payload: any = {
+          chat_id: chatId,
+          message_id: messageId,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        };
+        if (replyMarkup) {
+          payload.reply_markup = replyMarkup;
+        }
+
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data: any = await res.json();
+        if (data.ok) {
+          return data.result;
+        }
+        // If content didn't change ("message is not modified"), consider success
+        if (data.description && data.description.includes('message is not modified')) {
+          return true;
+        }
+        // If the original message was deleted or can't be edited, only then send a fresh message
+        if (data.description && (data.description.includes('message to edit not found') || data.description.includes('message can\'t be edited'))) {
+          return this.sendMessage(chatId, text, replyMarkup);
+        }
+        console.warn('[TelegramBot] editMessageText non-fatal error:', data.description);
+        // Do NOT send a duplicate message for transient errors or duplicate clicks
+        return false;
+      } catch (err: any) {
+        console.warn('[TelegramBot] editMessageText error:', err.message);
+        return false;
+      }
+    }
+
+    return this.sendMessage(chatId, text, replyMarkup);
+  }
+
   public startPolling(
     getProducts: () => any[],
     getUserWallet: (identifier: string) => { balance: number; email?: string; userId: string },
@@ -511,6 +597,7 @@ export class TelegramBotService {
       { command: 'help', description: '⁉️ How to Use Store Bot Tutorial' },
       { command: 'support', description: '🚀 Customer Support & Admin Contact' },
       { command: 'admin', description: '🔲 Admin Control Panel' },
+      { command: 'users', description: '👥 (Admin) View All Registered Bot Users (IDs & Names)' },
       { command: 'setapk', description: '📥 (Admin) Set APK Download URL' },
     ];
 
@@ -559,7 +646,7 @@ export class TelegramBotService {
       refId = cleanCmd.replace('/start ref_', '').trim();
     }
 
-    const botUser = this.registerOrUpdateUser(msg, refId);
+    const botUser = this.registerOrUpdateUser(msg.from, chatId, refId);
 
     // If new user joined via referral, award bonuses!
     if (refId && refId !== String(chatId)) {
@@ -758,7 +845,7 @@ export class TelegramBotService {
     if (cleanCmd === '/myid' || cleanCmd === '/id' || norm === 'my id' || norm === 'myid' || norm === 'id') {
       await this.sendMessage(chatId,
         `🆔 <b>Your Telegram Chat ID:</b> <code>${chatId}</code>\n` +
-        `👤 <b>Name:</b> ${fromUser.first_name || 'User'} ${fromUser.username ? '(@' + fromUser.username + ')' : ''}\n\n` +
+        `👤 <b>Name:</b> ${msg.from.first_name || 'User'} ${msg.from.username ? '(@' + msg.from.username + ')' : ''}\n\n` +
         `📋 <i>Click/tap the numeric ID above to copy it, then paste it in the Website Admin Panel under Telegram Bot & APK settings to receive live deposit & order alerts!</i>`
       );
       return;
@@ -848,25 +935,48 @@ export class TelegramBotService {
       return;
     }
 
+    // Direct Admin commands: /users, /allusers, /botusers, /userlist
+    if (
+      cleanCmd === '/users' ||
+      cleanCmd === '/allusers' ||
+      cleanCmd === '/botusers' ||
+      cleanCmd === '/userlist' ||
+      cleanCmd.startsWith('/users ') ||
+      norm === 'users' ||
+      norm === 'all users' ||
+      norm === 'bot users' ||
+      norm === 'view users' ||
+      norm === 'user list'
+    ) {
+      if (!this.isAdmin(chatId)) {
+        await this.sendMessage(chatId, '🔒 <b>Access Denied:</b> This command is strictly for store administrators.');
+        return;
+      }
+      await this.showAdminUsersList(chatId, 0, getUserWallet);
+      return;
+    }
+
     // 1. 🔲 Admin Panel
     if (norm === 'admin panel' || cleanCmd === '/admin' || cleanCmd.startsWith('/admin ') || norm === 'admin' || norm === 'panel') {
       await this.showAdminPanel(chatId, getProducts, getUserWallet);
       return;
     }
 
-    // 2. 🏠 Main Menu / Start
+    // 2. 🏠 Main Menu / Start / Back
     if (
       cleanCmd === '/start' ||
       cleanCmd.startsWith('/start ') ||
       norm === 'start' ||
       norm === 'main menu' ||
       cleanCmd === '🏠 Main Menu' ||
+      cleanCmd === '🔙 Back' ||
+      norm === 'back' ||
       norm === 'menu' ||
       norm === 'hi' ||
       norm === 'hello'
     ) {
       const wallet = getUserWallet(userId);
-      await this.sendMainMenu(chatId, wallet.balance, true);
+      await this.sendMainMenu(chatId, wallet.balance);
       return;
     }
 
@@ -1042,42 +1152,46 @@ export class TelegramBotService {
     const data = cb.data || '';
     const chatId = cb.message?.chat.id || cb.from.id;
     const userId = `tg_${cb.from.id}`;
+    const msgId = cb.message?.message_id;
+
+    // Prevent duplicate button handling on rapid clicks / multi-taps
+    const now = Date.now();
+    const debounceKey = `${chatId}:${data}`;
+    const lastTime = this.lastCallbackTime.get(debounceKey) || 0;
+    if (now - lastTime < 600) {
+      await this.answerCallback(cb.id);
+      return;
+    }
+    this.lastCallbackTime.set(debounceKey, now);
+    if (this.lastCallbackTime.size > 200) {
+      this.lastCallbackTime.clear();
+    }
 
     await this.answerCallback(cb.id);
 
-    const users = this.loadBotUsers();
-    const botUser = users.get(chatId) || {
-      chatId,
-      userId,
-      firstName: cb.from.first_name || 'User',
-      username: cb.from.username,
-      joinedAt: Date.now(),
-      lastActive: Date.now(),
-      totalSpent: 0,
-      totalDeposited: 0,
-    };
+    const botUser = this.registerOrUpdateUser(cb.from, chatId);
 
     if (data === 'main_menu') {
       const wallet = getUserWallet(userId);
-      await this.sendMainMenu(chatId, wallet.balance);
+      await this.sendMainMenu(chatId, wallet.balance, false, msgId);
       return;
     }
 
     // 1. 🛒 Buy Now
     if (data === 'catalog') {
-      await this.showProductCatalog(chatId, getProducts());
+      await this.showProductCatalog(chatId, getProducts(), msgId);
       return;
     }
 
     // 2. Check Update
     if (data === 'check_update') {
-      await this.showCheckUpdate(chatId);
+      await this.showCheckUpdate(chatId, msgId);
       return;
     }
 
     // 3. 💸 Add Balance
     if (data === 'deposit_prompt') {
-      await this.showFamGatewayDepositMenu(chatId);
+      await this.showFamGatewayDepositMenu(chatId, msgId);
       return;
     }
 
@@ -1107,9 +1221,10 @@ export class TelegramBotService {
           const wallet = getUserWallet(userId);
 
           // Update user deposit stats
-          botUser.totalDeposited += statusResult.amount || 0;
-          users.set(chatId, botUser);
-          this.saveBotUsers(users);
+          const allUsers = this.loadBotUsers();
+          botUser.totalDeposited = (botUser.totalDeposited || 0) + (statusResult.amount || 0);
+          allUsers.set(chatId, botUser);
+          this.saveBotUsers(allUsers);
 
           // If this user was referred by someone, give referrer 5% commission!
           if (botUser.referrerId) {
@@ -1170,42 +1285,57 @@ export class TelegramBotService {
 
     // 4. 👑 My Profile + All History
     if (data === 'profile_history') {
-      await this.showUserProfileAndHistory(chatId, botUser, getUserWallet);
+      await this.showUserProfileAndHistory(chatId, botUser, getUserWallet, msgId);
       return;
     }
 
     if (data === 'my_keys') {
-      await this.showUserKeyHistory(chatId, botUser);
+      await this.showUserKeyHistory(chatId, botUser, msgId);
       return;
     }
 
     // 5. 🔗 Refer And Earn
     if (data === 'refer_earn') {
-      await this.showReferAndEarn(chatId);
+      await this.showReferAndEarn(chatId, msgId);
       return;
     }
 
     // 6. ⁉️ How To Use Bot
     if (data === 'how_to_use') {
-      await this.showHowToUseBot(chatId);
+      await this.showHowToUseBot(chatId, msgId);
       return;
     }
 
     // 7. 🚀 Support
     if (data === 'support') {
-      await this.showSupport(chatId);
+      await this.showSupport(chatId, msgId);
       return;
     }
 
     // 8. 🎁 Daily Gift
     if (data === 'daily_gift') {
-      await this.handleDailyGiftSpin(chatId, userId, getUserWallet, creditWallet);
+      await this.handleDailyGiftSpin(chatId, userId, getUserWallet, creditWallet, msgId);
       return;
     }
 
     // 9. 🔲 Admin Panel
-    if (data === 'admin_panel') {
-      await this.showAdminPanel(chatId, getProducts, getUserWallet);
+    if (data === 'admin_panel' || data === 'admin_panel_back') {
+      await this.showAdminPanel(chatId, getProducts, getUserWallet, msgId);
+      return;
+    }
+
+    if (data.startsWith('admin_users:')) {
+      if (!this.isAdmin(chatId)) {
+        await this.sendMessage(chatId, '🔒 <b>Access Denied:</b> Store administrators only.');
+        return;
+      }
+      const pageStr = data.split(':')[1] || '0';
+      if (pageStr === 'single_page') {
+        await this.answerCallback(cb.id, 'ℹ️ Only 1 page available (all users shown)');
+        return;
+      }
+      const page = parseInt(pageStr, 10) || 0;
+      await this.showAdminUsersList(chatId, page, getUserWallet, msgId, cb.id);
       return;
     }
 
@@ -1239,7 +1369,7 @@ export class TelegramBotService {
     if (data.startsWith('prod:')) {
       const parts = data.split(':');
       const productId = parts[1];
-      await this.showProductPlans(chatId, productId, getProducts());
+      await this.showProductPlans(chatId, productId, getProducts(), msgId);
       return;
     }
 
@@ -1248,7 +1378,7 @@ export class TelegramBotService {
       const parts = data.split(':');
       const productId = parts[1];
       const planId = parts[2];
-      await this.showPurchaseConfirmation(chatId, productId, planId, getProducts(), getUserWallet, userId);
+      await this.showPurchaseConfirmation(chatId, productId, planId, getProducts(), getUserWallet, userId, msgId);
       return;
     }
 
@@ -1258,24 +1388,23 @@ export class TelegramBotService {
       const productId = parts[1];
       const planId = parts[2];
       await this.answerCallback(cb.id, '⏳ Fetching VIP Key...');
-      await this.executeBuyKey(chatId, productId, planId, getProducts(), getUserWallet, deductWallet, deliverKey, userId);
+      await this.executeBuyKey(chatId, productId, planId, getProducts(), getUserWallet, deductWallet, deliverKey, userId, msgId);
       return;
     }
   }
 
-  // Exact Main Menu Visual Layout from User Screenshot
-  public async sendMainMenu(chatId: number, balance: number, _ensureReplyKeyboard: boolean = false) {
-    const { apkDownloadUrl } = this.getCredentials();
+  // Exact Main Menu Visual Layout from User Screenshot & Video
+  public async sendMainMenu(chatId: number, balance: number, _ensureReplyKeyboard: boolean = false, messageId?: number) {
     const text =
-      `ㅏ Check Update : Check Setup Video And Update Apk\n` +
-      `ㅏ ⚙️ My Profile + All History : Check Your Account Information + All History\n` +
-      `ㅏ ✈️ Refer And Earn : Share Refer Link & Earn Money\n` +
-      `ㅏ ⁉️ How To Use Bot : View Tutorial And Work This Bot\n` +
-      `ㅏ 🚀 Support : Bot Problem Fixed For Support Admin\n` +
-      `ㅏ 🎁 Daily Gift : Free Spin and win random balance daily, Only one spin every 24 hours.\n` +
+      `✨ Secure Auto Add Payment System 💸\n` +
+      `- My Profile + All History : Check Your Account Information + All History\n` +
+      `✈️ Refer And Earn : Share Refer Link & Earn Money\n` +
+      `⁉️ How To Use Bot : View Tutorial And Work This Bot\n` +
+      `🚀 Support : Bot Problem Fixed For Support Admin\n` +
+      `🎁 Daily Gift : Free Spin and win random balance daily, Only one spin every 24 hours.\n\n` +
       `<blockquote>〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n` +
       `💸 <b>Your Balance:</b> 💸₹${balance.toFixed(2)}\n` +
-      `〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️</blockquote>\n` +
+      `〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️</blockquote>\n\n` +
       `👇 <b>Select an option from the menu below:</b>`;
 
     const inline_keyboard = [
@@ -1284,11 +1413,10 @@ export class TelegramBotService {
         { text: 'Check Update', callback_data: 'check_update' },
         { text: '💸 Add Balance', callback_data: 'deposit_prompt' }
       ],
-      [{ text: '📥 Download APK (Telegram)', url: apkDownloadUrl }],
-      [{ text: '👑 My Profile + All History', callback_data: 'profile_history' }],
+      [{ text: '🔥 My Profile + All History', callback_data: 'profile_history' }],
       [
         { text: '🔗 Refer And Earn', callback_data: 'refer_earn' },
-        { text: '⁉️ How To Use Bot', callback_data: 'how_to_use' }
+        { text: '🎁 How To Use Bot', callback_data: 'how_to_use' }
       ],
       [
         { text: '🚀 Support', callback_data: 'support' },
@@ -1296,58 +1424,64 @@ export class TelegramBotService {
       ]
     ];
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  // 1. 🛒 Buy Now Catalog
-  private async showProductCatalog(chatId: number, products: any[]) {
+  // 1. 🛒 Buy Now Catalog matching the video model
+  private async showProductCatalog(chatId: number, products: any[], messageId?: number) {
     if (!products || products.length === 0) {
-      await this.sendMessage(chatId, '⚠️ No products currently in catalog. Please check back shortly!');
+      await this.editOrSendMessage(
+        chatId,
+        '⚠️ No products currently in catalog. Please check back shortly!',
+        { inline_keyboard: [[{ text: '🔙 Back', callback_data: 'main_menu' }]] },
+        messageId
+      );
       return;
     }
 
     const inline_keyboard: any[] = [];
 
     for (const p of products) {
-      const name = p.name || p.title || 'Product';
+      const rawName = (p.name || p.title || 'Product').trim();
       const plans = Array.isArray(p.plans) ? p.plans : [];
-      const minPrice = plans.length > 0 ? Math.min(...plans.map((pl: any) => Number(pl.price) || 0)) : 0;
-      const priceTag = minPrice > 0 ? ` (From ₹${minPrice})` : '';
+      const planCount = plans.length;
+      let displayName = rawName.toUpperCase();
+      if (displayName.length > 20) {
+        displayName = displayName.slice(0, 18) + '...';
+      }
+      const label = `🛒 ${displayName} (${planCount} plans)`;
 
       inline_keyboard.push([
         {
-          text: `📦 ${name}${priceTag}`,
+          text: label,
           callback_data: `prod:${p.id || p.productId}`
         }
       ]);
     }
 
-    inline_keyboard.push([
-      { text: '💸 Add Balance (FamGateway)', callback_data: 'deposit_prompt' }
-    ]);
-    inline_keyboard.push([{ text: '🏠 Main Menu', callback_data: 'main_menu' }]);
+    inline_keyboard.push([{ text: '🔙 Back', callback_data: 'main_menu' }]);
 
     const text =
       `🛒 <b>SELECT A PRODUCT TO BUY:</b>\n\n` +
       `Choose from our safe, anti-ban panel hacks and injector tools below:`;
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  private async showProductPlans(chatId: number, productId: string, products: any[]) {
+  private async showProductPlans(chatId: number, productId: string, products: any[], messageId?: number) {
     const product = products.find((p: any) => p.id === productId || p.productId === productId);
     if (!product) {
-      await this.sendMessage(chatId, '⚠️ Product not found.', {
-        inline_keyboard: [[{ text: '🔙 Back to Products', callback_data: 'catalog' }]]
-      });
+      await this.editOrSendMessage(chatId, '⚠️ Product not found.', {
+        inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
+      }, messageId);
       return;
     }
 
     const plans = Array.isArray(product.plans) ? product.plans : [];
     if (plans.length === 0) {
-      await this.sendMessage(chatId, `⚠️ No active pricing plans found for ${product.name}.`, {
-        inline_keyboard: [[{ text: '🔙 Back to Products', callback_data: 'catalog' }]]
-      });
+      await this.editOrSendMessage(chatId, `⚠️ No active pricing plans found for ${product.name}.`, {
+        inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
+      }, messageId);
       return;
     }
 
@@ -1365,8 +1499,7 @@ export class TelegramBotService {
     }
 
     inline_keyboard.push([
-      { text: '🔙 Back to Products', callback_data: 'catalog' },
-      { text: '🏠 Main Menu', callback_data: 'main_menu' }
+      { text: '🔙 Back', callback_data: 'catalog' }
     ]);
 
     const text =
@@ -1376,7 +1509,7 @@ export class TelegramBotService {
       `🛡️ Status: 🟢 <b>100% Anti-Ban Safe & Undetected</b>\n\n` +
       `<b>Select your desired plan duration:</b>`;
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   private async showPurchaseConfirmation(
@@ -1385,7 +1518,8 @@ export class TelegramBotService {
     planId: string,
     products: any[],
     getUserWallet: (id: string) => { balance: number; email?: string; userId: string },
-    userId: string
+    userId: string,
+    messageId?: number
   ) {
     const product = products.find((p: any) => p.id === productId || p.productId === productId);
     if (!product) return;
@@ -1426,11 +1560,10 @@ export class TelegramBotService {
     }
 
     inline_keyboard.push([
-      { text: '🔙 Choose Another Plan', callback_data: `prod:${productId}` },
-      { text: '🏠 Main Menu', callback_data: 'main_menu' }
+      { text: '🔙 Back', callback_data: `prod:${productId}` }
     ]);
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   private async executeBuyKey(
@@ -1441,17 +1574,22 @@ export class TelegramBotService {
     getUserWallet: (id: string) => { balance: number; email?: string; userId: string },
     deductWallet: (id: string, amount: number, reason: string) => boolean,
     deliverKey: (productId: string, planDuration: string, userEmail: string) => Promise<{ success: boolean; keys?: string[]; error?: string }>,
-    userId: string
+    userId: string,
+    messageId?: number
   ) {
     const product = products.find((p: any) => p.id === productId || p.productId === productId);
     if (!product) {
-      await this.sendMessage(chatId, '⚠️ Error: Product no longer available.');
+      await this.editOrSendMessage(chatId, '⚠️ Error: Product no longer available.', {
+        inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
+      }, messageId);
       return;
     }
 
     const plan = (product.plans || []).find((pl: any) => pl.id === planId || pl.duration === planId || pl.name === planId);
     if (!plan) {
-      await this.sendMessage(chatId, '⚠️ Error: Plan no longer available.');
+      await this.editOrSendMessage(chatId, '⚠️ Error: Plan no longer available.', {
+        inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
+      }, messageId);
       return;
     }
 
@@ -1459,12 +1597,12 @@ export class TelegramBotService {
     const wallet = getUserWallet(userId);
 
     if (wallet.balance < price) {
-      await this.sendMessage(chatId, `⚠️ Insufficient balance (₹${wallet.balance.toFixed(2)}) for ₹${price} order. Please add balance first.`, {
+      await this.editOrSendMessage(chatId, `⚠️ Insufficient balance (₹${wallet.balance.toFixed(2)}) for ₹${price} order. Please add balance first.`, {
         inline_keyboard: [
           [{ text: `💸 Add ₹${price - wallet.balance} via FamGateway`, callback_data: `fam_amt:${price - wallet.balance}` }],
-          [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+          [{ text: '🔙 Back', callback_data: 'main_menu' }]
         ]
-      });
+      }, messageId);
       return;
     }
 
@@ -1473,7 +1611,7 @@ export class TelegramBotService {
 
     if (!deliveryResult.success || !deliveryResult.keys || deliveryResult.keys.length === 0) {
       const errMsg = deliveryResult.error || 'Product currently out of stock. Your balance was NOT deducted.';
-      await this.sendMessage(
+      await this.editOrSendMessage(
         chatId,
         `❌ <b>PURCHASE FAILED: OUT OF STOCK</b>\n\n` +
         `📦 <b>Product:</b> ${product.name}\n` +
@@ -1483,9 +1621,10 @@ export class TelegramBotService {
           inline_keyboard: [
             [{ text: '🔙 View Products', callback_data: 'catalog' }],
             [{ text: '🚀 Support', callback_data: 'support' }],
-            [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+            [{ text: '🔙 Back', callback_data: 'main_menu' }]
           ]
-        }
+        },
+        messageId
       );
       return;
     }
@@ -1533,48 +1672,41 @@ export class TelegramBotService {
       `${keysList}\n\n` +
       `📌 <i>Tap the key above to copy it instantly. Download the latest safe APK from Telegram or "Check Update".</i>`;
 
-    await this.sendMessage(chatId, successMsg, {
+    await this.editOrSendMessage(chatId, successMsg, {
       inline_keyboard: [
         [{ text: '📥 Download APK on Telegram', url: apkDownloadUrl }],
         [{ text: 'Check Update & APK', callback_data: 'check_update' }],
         [{ text: '👑 My Profile + All History', callback_data: 'profile_history' }],
         [{ text: '🛒 Buy Another Key', callback_data: 'catalog' }],
-        [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+        [{ text: '🔙 Back', callback_data: 'main_menu' }]
       ]
-    });
+    }, messageId);
   }
 
-  // 2. Check Update Menu
-  private async showCheckUpdate(chatId: number) {
-    const { apkDownloadUrl, apkTutorialUrl } = this.getCredentials();
+  // 2. Check Update Menu (matching the video model)
+  private async showCheckUpdate(chatId: number, messageId?: number) {
+    const { apkDownloadUrl } = this.getCredentials();
+    const targetUrl = apkDownloadUrl && apkDownloadUrl.startsWith('http') ? apkDownloadUrl : 'https://t.me/kalamffpanel';
+
     const text =
-      `📱 <b>KALAM FF PANEL & APK UPDATES</b>\n\n` +
-      `🚀 <b>Current Mod Version:</b> <code>v4.2.0 (OB48 Supported)</code>\n` +
-      `🛡️ <b>Status:</b> 🟢 <b>100% SAFE & UNDETECTED</b> (Anti-Blacklist Active)\n` +
-      `🎮 <b>Supported Games:</b> Free Fire & Free Fire MAX (Android 10 - 15)\n\n` +
-      `📌 <b>KEY FEATURES IN V4.2.0:</b>\n` +
-      `• 100% Auto Headshot & Aimlock Fix\n` +
-      `• Fast ESP Line, Box, Skeleton & Enemy Name\n` +
-      `• High Jump & Custom Speed Controller\n` +
-      `• No Lag & Smooth 120 FPS Rendering\n` +
-      `• Safe Anti-Ban & Auto Matchmaking Fix\n\n` +
-      `🎥 <b>Setup Video Tutorial:</b>\n` +
-      `Watch step-by-step setup guide: <a href="${apkTutorialUrl}">Click Here to Watch Video</a>\n\n` +
-      `📥 <b>Direct APK Download (Telegram):</b>\n` +
-      `Download latest safe APK: <a href="${apkDownloadUrl}">${apkDownloadUrl}</a>`;
+      `📢 <b>Follow our updates channel:</b>\n\n` +
+      `✈️ <b>Telegram</b>\n` +
+      `<b>Banti Bhaiya All Update</b>\n` +
+      `🙏 FOCUS ON LAWDA LAHSUN\n` +
+      `Owner :- @BANTIBHAIYA69\n` +
+      `Main Tg:- @SHIVAMBABYUP51\n\n` +
+      `🛡️ <i>Join our updates channel for latest APKs, video guides, and announcements!</i>`;
 
     const inline_keyboard = [
-      [{ text: '📥 Download APK on Telegram', url: apkDownloadUrl }],
-      [{ text: '🎥 Watch Setup Video', url: apkTutorialUrl }],
-      [{ text: '🛒 Buy License Key Now', callback_data: 'catalog' }],
-      [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+      [{ text: 'VIEW CHANNEL', url: targetUrl }],
+      [{ text: '🔙 Back', callback_data: 'main_menu' }]
     ];
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   // 3. 💸 Add Balance (FamGateway)
-  private async showFamGatewayDepositMenu(chatId: number) {
+  private async showFamGatewayDepositMenu(chatId: number, messageId?: number) {
     const text =
       `⚡ <b>DEPOSIT VIA FAMGATEWAY UPI</b>\n\n` +
       `• Instant automated UPI payments with direct wallet balance credit.\n` +
@@ -1597,11 +1729,11 @@ export class TelegramBotService {
         { text: '✏️ Enter Custom Amount', callback_data: 'fam_custom' }
       ],
       [
-        { text: '🏠 Main Menu', callback_data: 'main_menu' }
+        { text: '🔙 Back', callback_data: 'main_menu' }
       ]
     ];
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   private async initiateFamGatewayPayment(
@@ -1660,7 +1792,8 @@ export class TelegramBotService {
   private async showBalance(
     chatId: number,
     botUser: BotUser,
-    getUserWallet: (id: string) => { balance: number; email?: string; userId: string }
+    getUserWallet: (id: string) => { balance: number; email?: string; userId: string },
+    messageId?: number
   ) {
     const wallet = getUserWallet(botUser.userId);
     const text =
@@ -1674,18 +1807,19 @@ export class TelegramBotService {
     const inline_keyboard = [
       [{ text: '💸 Add Balance (FamGateway)', callback_data: 'deposit_prompt' }],
       [{ text: '🛒 Buy Now', callback_data: 'catalog' }],
-      [{ text: '👑 My Profile + History', callback_data: 'profile_history' }],
-      [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+      [{ text: '🔥 My Profile + History', callback_data: 'profile_history' }],
+      [{ text: '🔙 Back', callback_data: 'main_menu' }]
     ];
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  // 4. 👑 My Profile + All History
+  // 4. 🔥 My Profile + All History
   private async showUserProfileAndHistory(
     chatId: number,
     botUser: BotUser,
-    getUserWallet: (id: string) => { balance: number; email?: string; userId: string }
+    getUserWallet: (id: string) => { balance: number; email?: string; userId: string },
+    messageId?: number
   ) {
     const wallet = getUserWallet(botUser.userId);
 
@@ -1709,7 +1843,7 @@ export class TelegramBotService {
     }
 
     const text =
-      `👑 <b>MY PROFILE & ORDER HISTORY</b>\n\n` +
+      `🔥 <b>MY PROFILE & ORDER HISTORY</b>\n\n` +
       `👤 <b>Telegram User:</b> ${botUser.firstName} ${botUser.username ? '(@' + botUser.username + ')' : ''}\n` +
       `🆔 <b>Telegram ID:</b> <code>${botUser.userId}</code>\n` +
       `💰 <b>Current Balance:</b> <b>₹${wallet.balance.toFixed(2)}</b>\n\n` +
@@ -1724,24 +1858,23 @@ export class TelegramBotService {
         { text: '💸 Add Balance', callback_data: 'deposit_prompt' },
         { text: '🛒 Buy Now', callback_data: 'catalog' }
       ],
-      [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+      [{ text: '🔙 Back', callback_data: 'main_menu' }]
     ];
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  private async showUserKeyHistory(chatId: number, botUser: BotUser) {
+  private async showUserKeyHistory(chatId: number, botUser: BotUser, messageId?: number) {
     const allPurchases = this.loadPurchases();
     const userPurchases = allPurchases.filter(p => p.chatId === chatId || p.userId === botUser.userId);
 
     if (userPurchases.length === 0) {
-      await this.sendMessage(chatId, '📦 <b>No License Keys Found!</b>\nYou have not bought any keys yet. Tap "Buy Now" to make your first purchase.', {
+      await this.editOrSendMessage(chatId, '📦 <b>No License Keys Found!</b>\nYou have not bought any keys yet. Tap "Buy Now" to make your first purchase.', {
         inline_keyboard: [
           [{ text: '🛒 Buy Now', callback_data: 'catalog' }],
-          [{ text: '👑 Back to Profile', callback_data: 'profile_history' }],
-          [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+          [{ text: '🔙 Back', callback_data: 'profile_history' }]
         ]
-      });
+      }, messageId);
       return;
     }
 
@@ -1758,17 +1891,16 @@ export class TelegramBotService {
       `${keysList}\n\n` +
       `<i>Tap on any key code to copy it directly.</i>`;
 
-    await this.sendMessage(chatId, text, {
+    await this.editOrSendMessage(chatId, text, {
       inline_keyboard: [
-        [{ text: '👑 Back to Profile', callback_data: 'profile_history' }],
         [{ text: '🛒 Buy Another Key', callback_data: 'catalog' }],
-        [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+        [{ text: '🔙 Back', callback_data: 'profile_history' }]
       ]
-    });
+    }, messageId);
   }
 
   // 5. 🔗 Refer And Earn
-  private async showReferAndEarn(chatId: number) {
+  private async showReferAndEarn(chatId: number, messageId?: number) {
     const referrals = this.loadReferrals();
     const refRecord = referrals.get(chatId) || { referralCount: 0, totalEarned: 0, referredUserIds: [] };
     const refLink = `https://t.me/${this.botUsername}?start=ref_${chatId}`;
@@ -1791,15 +1923,15 @@ export class TelegramBotService {
       [{ text: '📲 Share to Friends & Groups', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${shareText}` }],
       [
         { text: '💸 Add Balance', callback_data: 'deposit_prompt' },
-        { text: '🏠 Main Menu', callback_data: 'main_menu' }
+        { text: '🔙 Back', callback_data: 'main_menu' }
       ]
     ];
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   // 6. ⁉️ How To Use Bot
-  private async showHowToUseBot(chatId: number) {
+  private async showHowToUseBot(chatId: number, messageId?: number) {
     const text =
       `⁉️ <b>HOW TO USE THE STORE BOT</b>\n\n` +
       `Follow these simple steps to buy and activate your Free Fire keys:\n\n` +
@@ -1824,14 +1956,14 @@ export class TelegramBotService {
         { text: '💸 Add Balance', callback_data: 'deposit_prompt' },
         { text: 'Check Update & Video', callback_data: 'check_update' }
       ],
-      [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+      [{ text: '🔙 Back', callback_data: 'main_menu' }]
     ];
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   // 7. 🚀 Support
-  private async showSupport(chatId: number) {
+  private async showSupport(chatId: number, messageId?: number) {
     const text =
       `🚀 <b>CUSTOMER SUPPORT & HELP DESK</b>\n\n` +
       `Need help with a payment, key activation, or APK setup? Our support team is here for you!\n\n` +
@@ -1844,10 +1976,10 @@ export class TelegramBotService {
     const inline_keyboard = [
       [{ text: '💬 Contact Support Admin', url: 'https://t.me/Velprasath_12' }],
       [{ text: '📢 Join Official Channel', url: 'https://t.me/kalamffpanel' }],
-      [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+      [{ text: '🔙 Back', callback_data: 'main_menu' }]
     ];
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   // 8. 🎁 Daily Gift (Free Spin Wheel)
@@ -1855,7 +1987,8 @@ export class TelegramBotService {
     chatId: number,
     userId: string,
     getUserWallet: (id: string) => { balance: number; email?: string; userId: string },
-    creditWallet: (id: string, amount: number, reason: string) => any
+    creditWallet: (id: string, amount: number, reason: string) => any,
+    messageId?: number
   ) {
     const gifts = this.loadDailyGifts();
     const record = gifts.get(chatId) || { lastClaimed: 0, streak: 0, totalWon: 0 };
@@ -1878,13 +2011,13 @@ export class TelegramBotService {
         `💰 <b>Your Current Balance:</b> ₹${wallet.balance.toFixed(2)}\n\n` +
         `<i>Come back tomorrow to spin again for free balance!</i>`;
 
-      await this.sendMessage(chatId, text, {
+      await this.editOrSendMessage(chatId, text, {
         inline_keyboard: [
           [{ text: '🛒 Buy Now', callback_data: 'catalog' }],
-          [{ text: '👑 My Profile', callback_data: 'profile_history' }],
-          [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+          [{ text: '🔥 My Profile', callback_data: 'profile_history' }],
+          [{ text: '🔙 Back', callback_data: 'main_menu' }]
         ]
-      });
+      }, messageId);
       return;
     }
 
@@ -1918,20 +2051,21 @@ export class TelegramBotService {
       `🔥 <b>Current Streak:</b> ${record.streak} Days\n\n` +
       `⏰ <i>Come back in 24 hours for your next free spin!</i>`;
 
-    await this.sendMessage(chatId, text, {
+    await this.editOrSendMessage(chatId, text, {
       inline_keyboard: [
         [{ text: '🛒 Buy Keys Now', callback_data: 'catalog' }],
-        [{ text: '👑 My Profile', callback_data: 'profile_history' }],
-        [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+        [{ text: '🔥 My Profile', callback_data: 'profile_history' }],
+        [{ text: '🔙 Back', callback_data: 'main_menu' }]
       ]
-    });
+    }, messageId);
   }
 
   // 9. 🔲 Admin Panel
   private async showAdminPanel(
     chatId: number,
     getProducts: () => any[],
-    getUserWallet: (id: string) => { balance: number; email?: string; userId: string }
+    getUserWallet: (id: string) => { balance: number; email?: string; userId: string },
+    messageId?: number
   ) {
     if (!this.isAdmin(chatId)) {
       await this.sendMessage(
@@ -1942,7 +2076,7 @@ export class TelegramBotService {
         {
           inline_keyboard: [
             [{ text: '🚀 Contact Support', callback_data: 'support' }],
-            [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+            [{ text: '🔙 Back', callback_data: 'main_menu' }]
           ]
         }
       );
@@ -1979,14 +2113,93 @@ export class TelegramBotService {
       `<i>Choose an administrative action below:</i>`;
 
     const inline_keyboard = [
+      [{ text: `👥 View All Users (${users.size} Registered)`, callback_data: 'admin_users:0' }],
       [{ text: '📥 Change APK Download URL', callback_data: 'admin_set_apk_url' }],
       [{ text: '📢 Broadcast Announcement', callback_data: 'admin_broadcast' }],
       [{ text: '➕ Add Balance to User', callback_data: 'admin_add_bal' }],
       [{ text: '📦 View Stock Diagnostics', callback_data: 'catalog' }],
-      [{ text: '🏠 Exit to Main Menu', callback_data: 'main_menu' }]
+      [{ text: '🔙 Back', callback_data: 'main_menu' }]
     ];
 
-    await this.sendMessage(chatId, text, { inline_keyboard });
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
+  }
+
+  // Admin Users List with Pagination & Tap-to-Copy IDs
+  public async showAdminUsersList(
+    chatId: number,
+    page: number,
+    getUserWallet: (id: string) => { balance: number; email?: string; userId: string },
+    messageId?: number,
+    callbackQueryId?: string
+  ) {
+    if (!this.isAdmin(chatId)) {
+      await this.sendMessage(chatId, '🔒 <b>Access Denied:</b> This section is strictly for store administrators.');
+      return;
+    }
+
+    const usersMap = this.loadBotUsers();
+    const allUsers = Array.from(usersMap.values());
+    // Sort by last active descending
+    allUsers.sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
+
+    const totalUsers = allUsers.length;
+    const pageSize = 5;
+    const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
+    const curPage = Math.min(Math.max(0, page), totalPages - 1);
+    const startIdx = curPage * pageSize;
+    const pageUsers = allUsers.slice(startIdx, startIdx + pageSize);
+
+    let usersText = '';
+    if (pageUsers.length === 0) {
+      usersText = '<i>No users registered yet. Send /start to the bot to create your user profile.</i>';
+    } else {
+      usersText = pageUsers.map((u, i) => {
+        const wallet = getUserWallet(u.userId);
+        const fullName = `${u.firstName || 'User'}${u.lastName ? ' ' + u.lastName : ''}`.trim();
+        const userHandle = u.username ? `@${u.username}` : '<i>(no username)</i>';
+        const lastActiveStr = u.lastActive ? new Date(u.lastActive).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' }) : 'N/A';
+        const joinedStr = u.joinedAt ? new Date(u.joinedAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A';
+        return `<b>${startIdx + i + 1}. ${fullName}</b> (${userHandle})\n` +
+               `🆔 <b>Telegram User ID:</b> <code>${u.chatId}</code>\n` +
+               `💼 <b>Platform ID:</b> <code>${u.userId}</code>\n` +
+               `💰 <b>Wallet Balance:</b> ₹${wallet.balance.toFixed(2)} | 🛒 <b>Spent:</b> ₹${(u.totalSpent || 0).toFixed(2)}\n` +
+               `⏱️ <b>Last Seen:</b> ${lastActiveStr} | 📅 <b>Joined:</b> ${joinedStr}\n` +
+               `➕ <code>/addbalance ${u.userId} 100</code>`;
+      }).join('\n━━━━━━━━━━━━━━━━━━━━\n');
+    }
+
+    const text =
+      `👥 <b>TELEGRAM BOT REGISTERED USERS DIRECTORY</b>\n\n` +
+      `📊 <b>Total Bot Users:</b> <b>${totalUsers}</b>\n` +
+      `📄 <b>Page:</b> <b>${curPage + 1}</b> of <b>${totalPages}</b>\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `${usersText}\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📋 <i>Tap any User ID or /addbalance command above to copy it instantly.</i>`;
+
+    const navRow: any[] = [];
+    if (totalPages > 1) {
+      const prevPage = curPage > 0 ? curPage - 1 : totalPages - 1;
+      const nextPage = curPage < totalPages - 1 ? curPage + 1 : 0;
+      navRow.push({ text: '◀️ Previous', callback_data: `admin_users:${prevPage}` });
+      navRow.push({ text: `🔄 Refresh (${curPage + 1}/${totalPages})`, callback_data: `admin_users:${curPage}` });
+      navRow.push({ text: 'Next ▶️', callback_data: `admin_users:${nextPage}` });
+    } else {
+      navRow.push({ text: '◀️ Previous', callback_data: `admin_users:single_page` });
+      navRow.push({ text: `🔄 Refresh (1/1)`, callback_data: `admin_users:0` });
+      navRow.push({ text: 'Next ▶️', callback_data: `admin_users:single_page` });
+    }
+
+    const inline_keyboard: any[][] = [
+      navRow,
+      [
+        { text: '➕ Add Balance to User', callback_data: 'admin_add_bal' },
+        { text: '📢 Broadcast to Users', callback_data: 'admin_broadcast' }
+      ],
+      [{ text: '🔙 Back', callback_data: 'admin_panel_back' }]
+    ];
+
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 }
 

@@ -1681,6 +1681,85 @@ app.get('/api/admin/settings/telegram', (req: Request, res: Response) => {
   app._router.handle(req, res);
 });
 
+// Telegram Bot Users Directory Endpoint for Website Admin Panel
+app.get('/api/admin/telegram/users', (req: Request, res: Response) => {
+  try {
+    const rawUsers = telegramBotService.getAllBotUsers();
+    const users = rawUsers.map(u => {
+      const wallet = getWalletForTelegram(u.userId);
+      const fullName = `${u.firstName || 'User'}${u.lastName ? ' ' + u.lastName : ''}`.trim();
+      return {
+        chatId: u.chatId,
+        userId: u.userId,
+        username: u.username || '',
+        firstName: u.firstName || 'User',
+        lastName: u.lastName || '',
+        fullName,
+        balance: wallet.balance,
+        totalSpent: u.totalSpent || 0,
+        totalDeposited: u.totalDeposited || 0,
+        joinedAt: u.joinedAt,
+        lastActive: u.lastActive,
+        interactionCount: u.interactionCount || 1,
+        referrerId: u.referrerId || null,
+      };
+    });
+
+    // Sort descending by lastActive
+    users.sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
+
+    res.json({
+      success: true,
+      count: users.length,
+      users,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message, users: [] });
+  }
+});
+
+// Admin Add Balance to Telegram Bot User
+app.post('/api/admin/telegram/users/add-balance', (req: Request, res: Response) => {
+  try {
+    const { userId, chatId, amount, reason } = req.body;
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid amount' });
+    }
+
+    const targetUser = userId || (chatId ? `tg_${chatId}` : '');
+    if (!targetUser) {
+      return res.status(400).json({ success: false, error: 'userId or chatId is required' });
+    }
+
+    const creditResult = creditUserWalletOnServer(
+      targetUser,
+      targetUser,
+      numAmount,
+      reason || `Admin manual balance credit via Website Admin Panel`
+    );
+
+    // Notify user on Telegram if chatId is known
+    const targetChatId = chatId || parseInt(targetUser.replace('tg_', ''), 10);
+    if (!isNaN(targetChatId)) {
+      telegramBotService.sendMessage(
+        targetChatId,
+        `💰 <b>BALANCE CREDITED!</b>\n\n` +
+        `Admin has added <b>₹${numAmount.toFixed(2)}</b> to your wallet balance!\n` +
+        `💳 <b>New Wallet Balance:</b> <b>₹${creditResult.balance.toFixed(2)}</b>`
+      ).catch(() => {});
+    }
+
+    res.json({
+      success: true,
+      newBalance: creditResult.balance,
+      message: `Successfully credited ₹${numAmount} to ${targetUser}`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Manual / Triggered Telegram Notification Endpoint
 app.post('/api/notify-telegram', async (req: Request, res: Response) => {
   try {

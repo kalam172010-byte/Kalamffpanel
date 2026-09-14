@@ -38,22 +38,39 @@ function patchFile(targetPath) {
     console.log('[Telegram Bot Patch] Added tgBotToken & state variables in tne');
   }
 
-  // 3b. If tgBotToken already exists, ensure live updating states exist
+  // 3b. If tgBotToken already exists, ensure live updating states & users directory states exist
   const existingSavedState = '[tgSaved,setTgSaved]=q.useState(!1),';
-  const extendedStates = '[tgSaved,setTgSaved]=q.useState(!1),[tgLiveUpdating,setTgLiveUpdating]=q.useState(!1),[tgLiveStatus,setTgLiveStatus]=q.useState(null),[tgDetecting,setTgDetecting]=q.useState(!1),[tgDetectHint,setTgDetectHint]=q.useState(null),';
-  if (code.includes(existingSavedState) && !code.includes('[tgLiveUpdating,setTgLiveUpdating]')) {
-    code = code.replace(existingSavedState, extendedStates);
-    changed = true;
-    console.log('[Telegram Bot Patch] Added tgLiveUpdating and tgDetecting state hooks');
+  const extendedStates = '[tgSaved,setTgSaved]=q.useState(!1),[tgLiveUpdating,setTgLiveUpdating]=q.useState(!1),[tgLiveStatus,setTgLiveStatus]=q.useState(null),[tgDetecting,setTgDetecting]=q.useState(!1),[tgDetectHint,setTgDetectHint]=q.useState(null),[tgUsers,setTgUsers]=q.useState([]),[tgUsersLoading,setTgUsersLoading]=q.useState(!1),[tgUserSearch,setTgUserSearch]=q.useState(""),[tgCreditUser,setTgCreditUser]=q.useState(null),[tgCreditAmt,setTgCreditAmt]=q.useState(""),[tgCreditReason,setTgCreditReason]=q.useState(""),[tgCreditMsg,setTgCreditMsg]=q.useState(null),[tgCrediting,setTgCrediting]=q.useState(!1),';
+  if (code.includes(existingSavedState) && !code.includes('[tgUsers,setTgUsers]')) {
+    if (code.includes('[tgDetectHint,setTgDetectHint]=q.useState(null),')) {
+      code = code.replace(
+        '[tgDetectHint,setTgDetectHint]=q.useState(null),',
+        '[tgDetectHint,setTgDetectHint]=q.useState(null),[tgUsers,setTgUsers]=q.useState([]),[tgUsersLoading,setTgUsersLoading]=q.useState(!1),[tgUserSearch,setTgUserSearch]=q.useState(""),[tgCreditUser,setTgCreditUser]=q.useState(null),[tgCreditAmt,setTgCreditAmt]=q.useState(""),[tgCreditReason,setTgCreditReason]=q.useState(""),[tgCreditMsg,setTgCreditMsg]=q.useState(null),[tgCrediting,setTgCrediting]=q.useState(!1),'
+      );
+      changed = true;
+      console.log('[Telegram Bot Patch] Added tgUsers and balance crediting state hooks');
+    } else {
+      code = code.replace(existingSavedState, extendedStates);
+      changed = true;
+      console.log('[Telegram Bot Patch] Added tgLiveUpdating, tgDetecting, and tgUsers state hooks');
+    }
   }
 
-  // 4. Add initialTab sync & live /api/telegram-config fetch in tne
-  const targetEffectAnchor = 'q.useEffect(()=>{n&&(n.shopName!==void 0&&i(n.shopName),';
-  const newEffectInit = 'q.useEffect(()=>{if(tInit)s(tInit);},[tInit]);q.useEffect(()=>{fetch("/api/telegram-config").then(Je=>Je.json()).then(Je=>{if(Je&&Je.success){Je.botToken&&setTgBotToken(Je.botToken);Je.chatId&&setTgChatId(Je.chatId);Je.botUsername&&setTgBotUsername(Je.botUsername);Je.apkDownloadUrl&&setApkLink(Je.apkDownloadUrl);Je.howToUseBotLink&&we(Je.howToUseBotLink);Je.paymentProofChannel&&xe(Je.paymentProofChannel);Je.welcomeMessage&&setTgWelcomeMsg(Je.welcomeMessage)}}).catch(()=>{})},[]);q.useEffect(()=>{n&&(n.shopName!==void 0&&i(n.shopName),';
-  if (code.includes(targetEffectAnchor) && !code.includes('if(tInit)s(tInit)')) {
-    code = code.replace(targetEffectAnchor, newEffectInit);
+  // 4. Add initialTab sync & live /api/telegram-config + /api/admin/telegram/users fetch in tne
+  const targetConfigCatch = 'Je.welcomeMessage&&setTgWelcomeMsg(Je.welcomeMessage)}}).catch(()=>{})},[]);';
+  const newConfigCatch = 'Je.welcomeMessage&&setTgWelcomeMsg(Je.welcomeMessage)}}).catch(()=>{});fetch("/api/admin/telegram/users").then(Je=>Je.json()).then(Je=>{if(Je&&Je.users)setTgUsers(Je.users)}).catch(()=>{});},[]);';
+  if (code.includes(targetConfigCatch) && !code.includes('fetch("/api/admin/telegram/users")')) {
+    code = code.replace(targetConfigCatch, newConfigCatch);
     changed = true;
-    console.log('[Telegram Bot Patch] Added initialTab & config sync useEffect in tne');
+    console.log('[Telegram Bot Patch] Added /api/admin/telegram/users fetch in tne useEffect');
+  } else {
+    const targetEffectAnchor = 'q.useEffect(()=>{n&&(n.shopName!==void 0&&i(n.shopName),';
+    const newEffectInit = 'q.useEffect(()=>{if(tInit)s(tInit);},[tInit]);q.useEffect(()=>{fetch("/api/telegram-config").then(Je=>Je.json()).then(Je=>{if(Je&&Je.success){Je.botToken&&setTgBotToken(Je.botToken);Je.chatId&&setTgChatId(Je.chatId);Je.botUsername&&setTgBotUsername(Je.botUsername);Je.apkDownloadUrl&&setApkLink(Je.apkDownloadUrl);Je.howToUseBotLink&&we(Je.howToUseBotLink);Je.paymentProofChannel&&xe(Je.paymentProofChannel);Je.welcomeMessage&&setTgWelcomeMsg(Je.welcomeMessage)}}).catch(()=>{});fetch("/api/admin/telegram/users").then(Je=>Je.json()).then(Je=>{if(Je&&Je.users)setTgUsers(Je.users)}).catch(()=>{});},[]);q.useEffect(()=>{n&&(n.shopName!==void 0&&i(n.shopName),';
+    if (code.includes(targetEffectAnchor) && !code.includes('if(tInit)s(tInit)')) {
+      code = code.replace(targetEffectAnchor, newEffectInit);
+      changed = true;
+      console.log('[Telegram Bot Patch] Added initialTab & config sync useEffect in tne');
+    }
   }
 
   // 5. Add to kr() return in tne
@@ -329,6 +346,145 @@ function patchFile(targetPath) {
       'r.jsx("p",{className:"text-[10px] text-gray-400",children:"This greeting message is sent to every user when they start the bot or click /start."})' +
     ']}),' +
 
+    // Section 4b: Registered Telegram Bot Users Directory (IDs, Names, Usernames & Balances)
+    'r.jsxs("div",{className:"bg-black/50 border border-cyan-500/30 rounded-xl p-3.5 sm:p-4 space-y-3.5 shadow-lg",children:[' +
+      'r.jsxs("div",{className:"flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-white/10 pb-3",children:[' +
+        'r.jsxs("div",{className:"flex items-center gap-2",children:[' +
+          'r.jsx("div",{className:"w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0",children:r.jsx(Yp,{className:"w-4 h-4"})}),' +
+          'r.jsxs("div",{children:[' +
+            'r.jsxs("div",{className:"text-xs sm:text-sm font-black text-white uppercase tracking-wider flex items-center gap-2",children:[' +
+              'r.jsx("span",{children:"👥 Telegram Bot Users Directory"}),' +
+              'r.jsxs("span",{className:"text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30",children:[tgUsers.length," USERS"]})' +
+            ']}),' +
+            'r.jsx("p",{className:"text-[10px] sm:text-xs text-gray-400",children:"Registered Telegram customers with user IDs, names, usernames, and wallet balances."})' +
+          ']})' +
+        ']}),' +
+        'r.jsxs("div",{className:"flex items-center gap-2",children:[' +
+          'r.jsx("input",{type:"text",value:tgUserSearch,onChange:He=>setTgUserSearch(He.target.value),placeholder:"🔍 Search ID / name...",className:"px-2.5 py-1.5 rounded-lg bg-black/70 border border-cyan-500/30 focus:border-cyan-400 focus:outline-none text-white text-xs font-mono placeholder:text-gray-500 w-36 sm:w-48"}),' +
+          'r.jsxs(Ge.button,{whileHover:{scale:1.02},whileTap:{scale:.98},disabled:tgUsersLoading,onClick:async()=>{' +
+            'setTgUsersLoading(!0);' +
+            'try{' +
+              'const res=await fetch("/api/admin/telegram/users");' +
+              'const data=await res.json();' +
+              'if(data&&data.users){' +
+                'setTgUsers(data.users);' +
+                'Fs(`Loaded ${data.users.length} Telegram bot users!`);' +
+              '}' +
+            '}catch(e){Fs("Failed to load Telegram users");}' +
+            'finally{setTgUsersLoading(!1);}' +
+          '},className:"px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0",children:[' +
+            'r.jsx(Ox,{className:`w-3.5 h-3.5 ${tgUsersLoading?"animate-spin":""}`}),' +
+            'r.jsx("span",{children:tgUsersLoading?"Loading...":"Refresh"})' +
+          ']})' +
+        ']})' +
+      ']}),' +
+
+      // Inline Add Balance Modal
+      'tgCreditUser&&r.jsxs("div",{className:"p-3.5 rounded-xl bg-cyan-950/30 border border-cyan-500/40 space-y-2.5 shadow-md",children:[' +
+        'r.jsxs("div",{className:"flex items-center justify-between border-b border-white/10 pb-2",children:[' +
+          'r.jsxs("div",{className:"flex items-center gap-2",children:[' +
+            'r.jsx("span",{className:"text-xs font-black text-cyan-300 uppercase",children:"➕ Add Balance:"}),' +
+            'r.jsx("span",{className:"text-xs font-bold text-white",children:tgCreditUser.fullName||tgCreditUser.firstName}),' +
+            'r.jsxs("span",{className:"text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/60 text-cyan-300 border border-cyan-500/30",children:["ID: ",tgCreditUser.chatId]})' +
+          ']}),' +
+          'r.jsx("button",{type:"button",onClick:()=>{setTgCreditUser(null);setTgCreditMsg(null);},className:"text-gray-400 hover:text-white text-xs font-bold px-2 py-0.5 rounded cursor-pointer",children:"✕ Close"})' +
+        ']}),' +
+        'tgCreditMsg&&r.jsxs("div",{className:`p-2 rounded-lg text-xs font-medium flex items-center justify-between ${tgCreditMsg.ok?"bg-emerald-500/20 text-emerald-300 border border-emerald-500/30":"bg-rose-500/20 text-rose-300 border border-rose-500/30"}`,children:[' +
+          'r.jsx("span",{children:tgCreditMsg.msg}),' +
+          'r.jsx("button",{type:"button",onClick:()=>setTgCreditMsg(null),className:"text-xs px-1",children:"✕"})' +
+        ']}),' +
+        'r.jsxs("div",{className:"grid grid-cols-1 sm:grid-cols-2 gap-2.5",children:[' +
+          'r.jsxs("div",{className:"space-y-1",children:[' +
+            'r.jsx("label",{className:"text-[11px] font-bold text-gray-300",children:"Amount to Add (₹):"}),' +
+            'r.jsx("input",{type:"number",value:tgCreditAmt,onChange:He=>setTgCreditAmt(He.target.value),placeholder:"100",className:"w-full px-2.5 py-1.5 rounded-lg bg-black/70 border border-cyan-500/30 focus:border-cyan-400 text-white font-mono text-xs focus:outline-none"}),' +
+            'r.jsxs("div",{className:"flex gap-1 pt-1",children:[50,100,200,500].map(amt=>r.jsx("button",{key:amt,type:"button",onClick:()=>setTgCreditAmt(String(amt)),className:"px-2 py-0.5 rounded bg-white/5 hover:bg-cyan-500/20 text-[10px] font-mono text-cyan-300 border border-white/10 cursor-pointer",children:`+₹${amt}`}))})' +
+          ']}),' +
+          'r.jsxs("div",{className:"space-y-1",children:[' +
+            'r.jsx("label",{className:"text-[11px] font-bold text-gray-300",children:"Reason / Note:"}),' +
+            'r.jsx("input",{type:"text",value:tgCreditReason,onChange:He=>setTgCreditReason(He.target.value),placeholder:"Manual admin credit via Web Panel",className:"w-full px-2.5 py-1.5 rounded-lg bg-black/70 border border-cyan-500/30 focus:border-cyan-400 text-white text-xs focus:outline-none"}),' +
+            'r.jsxs("div",{className:"flex justify-end gap-2 pt-1",children:[' +
+              'r.jsx("button",{type:"button",onClick:()=>{setTgCreditUser(null);setTgCreditMsg(null);},className:"px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold cursor-pointer",children:"Cancel"}),' +
+              'r.jsx("button",{type:"button",disabled:tgCrediting||!tgCreditAmt||Number(tgCreditAmt)<=0,onClick:async()=>{' +
+                'setTgCrediting(!0);setTgCreditMsg(null);' +
+                'try{' +
+                  'const res=await fetch("/api/admin/telegram/users/add-balance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:tgCreditUser.userId,chatId:tgCreditUser.chatId,amount:Number(tgCreditAmt),reason:tgCreditReason})});' +
+                  'const d=await res.json();' +
+                  'if(d.success){' +
+                    'setTgCreditMsg({ok:!0,msg:`✅ Added ₹${tgCreditAmt} to ${tgCreditUser.fullName||tgCreditUser.firstName}! (New Balance: ₹${d.newBalance.toFixed(2)})`});' +
+                    'Fs(`Added ₹${tgCreditAmt} to ${tgCreditUser.fullName}!`);' +
+                    'setTgCreditAmt("");' +
+                    'const ures=await fetch("/api/admin/telegram/users");' +
+                    'const udata=await ures.json();' +
+                    'if(udata&&udata.users)setTgUsers(udata.users);' +
+                  '}else{' +
+                    'setTgCreditMsg({ok:!1,msg:`❌ ${d.error||"Failed to credit balance"}`});' +
+                  '}' +
+                '}catch(e){setTgCreditMsg({ok:!1,msg:"❌ Network error while crediting balance"});}' +
+                'finally{setTgCrediting(!1);}' +
+              '},className:"px-3.5 py-1 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 text-black text-xs font-extrabold cursor-pointer disabled:opacity-50",children:tgCrediting?"Crediting...":"Confirm & Credit ₹"})' +
+            ']})' +
+          ']})' +
+        ']})' +
+      ']}),' +
+
+      // User Cards List
+      'r.jsx("div",{className:"space-y-2 max-h-[380px] overflow-y-auto pr-1",children:' +
+        '(()=>{' +
+          'const filtered=tgUsers.filter(u=>{' +
+            'if(!tgUserSearch.trim())return!0;' +
+            'const q=tgUserSearch.toLowerCase().trim();' +
+            'return String(u.chatId).includes(q)||(u.fullName&&u.fullName.toLowerCase().includes(q))||(u.firstName&&u.firstName.toLowerCase().includes(q))||(u.username&&u.username.toLowerCase().includes(q))||(u.userId&&u.userId.toLowerCase().includes(q));' +
+          '});' +
+          'if(filtered.length===0){' +
+            'return r.jsxs("div",{className:"text-center py-6 px-4 border border-dashed border-white/10 rounded-xl space-y-1.5",children:[' +
+              'r.jsx("div",{className:"w-10 h-10 mx-auto rounded-full bg-white/5 flex items-center justify-center text-gray-400",children:r.jsx(Yp,{className:"w-5 h-5"})}),' +
+              'r.jsx("div",{className:"text-xs font-bold text-gray-300",children:tgUsers.length===0?"No Telegram bot users registered yet":"No users match your search"}),' +
+              'r.jsx("p",{className:"text-[10px] text-gray-500",children:tgUsers.length===0?"Users appear here when they send /start to your bot in Telegram.":"Try searching with a different user ID, name, or handle."})' +
+            ']});' +
+          '}' +
+          'return filtered.map((u,idx)=>{' +
+            'const isAdm=String(u.chatId)==="7768975239"||String(u.chatId)===String(tgChatId);' +
+            'const userHandle=u.username?`@${u.username}`:"(no handle)";' +
+            'const lastActiveStr=u.lastActive?new Date(u.lastActive).toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"}):"N/A";' +
+            'return r.jsxs("div",{key:u.chatId||idx,className:"p-2.5 sm:p-3 rounded-xl bg-black/40 border border-white/10 hover:border-cyan-500/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-inner",children:[' +
+              'r.jsxs("div",{className:"flex items-center gap-2.5 min-w-0",children:[' +
+                'r.jsx("div",{className:`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shrink-0 border ${isAdm?"bg-amber-500/20 text-amber-300 border-amber-500/40":"bg-cyan-500/20 text-cyan-300 border-cyan-500/40"}`,children:(u.firstName||"U")[0].toUpperCase()}),' +
+                'r.jsxs("div",{className:"space-y-0.5 min-w-0",children:[' +
+                  'r.jsxs("div",{className:"flex flex-wrap items-center gap-1.5",children:[' +
+                    'r.jsx("span",{className:"text-xs font-extrabold text-white truncate",children:u.fullName||u.firstName||"User"}),' +
+                    'u.username?r.jsx("a",{href:`https://t.me/${u.username}`,target:"_blank",rel:"noopener noreferrer",className:"text-[11px] font-mono font-medium text-cyan-400 hover:underline",children:userHandle}):r.jsx("span",{className:"text-[11px] text-gray-500",children:userHandle}),' +
+                    'isAdm&&r.jsx("span",{className:"text-[8px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider",children:"👑 ADMIN"})' +
+                  ']}),' +
+                  'r.jsxs("div",{className:"flex flex-wrap items-center gap-1.5 text-[10px] font-mono",children:[' +
+                    'r.jsxs("button",{type:"button",onClick:()=>{navigator.clipboard.writeText(String(u.chatId));Fs(`Copied Telegram User ID: ${u.chatId}`);},className:"px-1.5 py-0.5 rounded bg-black/60 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-mono flex items-center gap-1 cursor-pointer",title:"Click to copy ID",children:[' +
+                      'r.jsx(nc,{className:"w-2.5 h-2.5"}),' +
+                      'r.jsx("span",{children:`ID: ${u.chatId}`}),' +
+                      'r.jsx("span",{className:"text-[8px] text-gray-500",children:"(copy)"})' +
+                    ']}),' +
+                    'r.jsx("span",{className:"text-gray-500",children:"•"}),' +
+                    'r.jsx("span",{className:"text-gray-400",children:`Last seen: ${lastActiveStr}`})' +
+                  ']})' +
+                ']})' +
+              ']}),' +
+              'r.jsxs("div",{className:"flex items-center justify-between sm:justify-end gap-3 shrink-0 border-t sm:border-t-0 pt-1.5 sm:pt-0 border-white/5",children:[' +
+                'r.jsxs("div",{className:"text-left sm:text-right space-y-0.5",children:[' +
+                  'r.jsxs("div",{className:"text-xs font-black text-emerald-400 font-mono",children:["Balance: ₹",(Number(u.balance)||0).toFixed(2)]}),' +
+                  'r.jsxs("div",{className:"text-[9px] text-gray-400 font-mono",children:["Spent: ₹",(Number(u.totalSpent)||0).toFixed(2)]})' +
+                ']}),' +
+                'r.jsxs("div",{className:"flex items-center gap-1.5",children:[' +
+                  'r.jsxs("button",{type:"button",onClick:()=>{setTgCreditUser(u);setTgCreditAmt("100");setTgCreditMsg(null);},className:"px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer",children:[' +
+                    'r.jsx(Ox,{className:"w-3 h-3 text-emerald-400"}),' +
+                    'r.jsx("span",{children:"+ Balance"})' +
+                  ']}),' +
+                  'u.username&&r.jsx("a",{href:`https://t.me/${u.username}`,target:"_blank",rel:"noopener noreferrer",className:"px-2 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[11px] font-bold cursor-pointer",children:"Chat ↗"})' +
+                ']})' +
+              ']})' +
+            ']});' +
+          '});' +
+        '})()' +
+      '}),' +
+    ']}),' +
+
     // Section 5: Tips & Admin Commands Guide
     'r.jsxs("div",{className:"bg-white/[0.03] border border-white/5 rounded-xl p-3.5 text-xs text-gray-300 space-y-2",children:[' +
       'r.jsxs("div",{className:"font-bold text-white flex items-center gap-1.5",children:[' +
@@ -337,6 +493,7 @@ function patchFile(targetPath) {
       ']}),' +
       'r.jsxs("div",{className:"grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-[11px]",children:[' +
         'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsx("div",{className:"font-bold text-cyan-300",children:"/admin"}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"Open in-bot control panel"})]}),' +
+        'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsxs("div",{className:"font-bold text-cyan-300",children:["/users"]}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"View all bot users & IDs"})]}),' +
         'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsxs("div",{className:"font-bold text-cyan-300",children:["/setapk ",r.jsx("span",{className:"text-gray-400 text-[9px]",children:"<url>"})]}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"Change APK link directly via Telegram"})]}),' +
         'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsxs("div",{className:"font-bold text-cyan-300",children:["/broadcast ",r.jsx("span",{className:"text-gray-400 text-[9px]",children:"<msg>"})]}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"Broadcast message to all bot users"})]}),' +
         'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsx("div",{className:"font-bold text-cyan-300",children:"Instant Alerts"}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"UPI deposits & key purchase alerts active"})]})' +

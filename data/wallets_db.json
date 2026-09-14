@@ -164,5 +164,21 @@
         "reason": "Deposit: ₹50"
       }
     ]
+  },
+  {
+    "userId": "tg_7768975239",
+    "email": "tg_7768975239",
+    "balance": 50,
+    "lastUpdated": 1789317044571,
+    "history": [
+      {
+        "id": "WH_1789317044571_992",
+        "type": "DEPOSIT",
+        "amount": 50,
+        "balanceAfter": 50,
+        "timestamp": 1789317044571,
+        "reason": "Testing Admin Balance Credit"
+      }
+    ]
   }
 ]
