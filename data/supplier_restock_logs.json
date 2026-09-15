@@ -1,0 +1,57 @@
+[
+  {
+    "id": "SR_1789475526073_FSST",
+    "timestamp": "2026-09-15T12:32:06.073Z",
+    "timestampMs": 1789475526074,
+    "type": "SIMULATION",
+    "status": "SUCCESS",
+    "productId": "prod-1788707639854",
+    "productName": "DRIPCLIENT FF NONROOT APKMOD",
+    "keysCountAdded": 3,
+    "keysSample": [
+      "KALAM-****1C-1",
+      "KALAM-****2A-2",
+      "KALAM-****0F-3"
+    ],
+    "currentTotalStock": 19,
+    "sourceIp": "admin-panel-tester",
+    "supplierName": "Admin Webhook Simulator",
+    "message": "Successfully added 3 keys to DRIPCLIENT FF NONROOT APKMOD"
+  },
+  {
+    "id": "SR_1789475531505_G5TS",
+    "timestamp": "2026-09-15T12:32:11.505Z",
+    "timestampMs": 1789475531505,
+    "type": "INBOUND_WEBHOOK",
+    "status": "SUCCESS",
+    "productId": "prod-1788707639854",
+    "productName": "DRIPCLIENT FF NONROOT APKMOD",
+    "keysCountAdded": 2,
+    "keysSample": [
+      "SUPPLI****-001",
+      "SUPPLI****-002"
+    ],
+    "currentTotalStock": 21,
+    "sourceIp": "127.0.0.1",
+    "supplierName": "KeyAuth Supplier Partner",
+    "message": "Successfully added 2 keys to DRIPCLIENT FF NONROOT APKMOD"
+  },
+  {
+    "id": "SR_1789475615313_E90E",
+    "timestamp": "2026-09-15T12:33:35.313Z",
+    "timestampMs": 1789475615313,
+    "type": "SIMULATION",
+    "status": "SUCCESS",
+    "productId": "prod-1788707639854",
+    "productName": "DRIPCLIENT FF NONROOT APKMOD",
+    "keysCountAdded": 2,
+    "keysSample": [
+      "KALAM-****XS-1",
+      "KALAM-****BL-2"
+    ],
+    "currentTotalStock": 23,
+    "sourceIp": "admin-panel-tester",
+    "supplierName": "Admin Webhook Simulator",
+    "message": "Successfully added 2 keys to DRIPCLIENT FF NONROOT APKMOD"
+  }
+]

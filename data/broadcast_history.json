@@ -1,0 +1,28 @@
+[
+  {
+    "broadcastId": "BC_1789474613687_A6EGM",
+    "timestamp": "2026-09-15T12:16:53.687Z",
+    "type": "text",
+    "targetLabel": "All Users (5 registered)",
+    "total": 5,
+    "sent": 5,
+    "failed": 0,
+    "failedList": [],
+    "textSnippet": "🔥 <b>KALAM STORE BROADCAST VERIFIED</b>\n\nAll systems operational.",
+    "hasButton": false,
+    "status": "COMPLETED"
+  },
+  {
+    "broadcastId": "BC_1789474480555_SLXL6",
+    "timestamp": "2026-09-15T12:14:40.555Z",
+    "type": "text",
+    "targetLabel": "All Users (5 registered)",
+    "total": 5,
+    "sent": 5,
+    "failed": 0,
+    "failedList": [],
+    "textSnippet": "Hello World blast",
+    "hasButton": false,
+    "status": "COMPLETED"
+  }
+]

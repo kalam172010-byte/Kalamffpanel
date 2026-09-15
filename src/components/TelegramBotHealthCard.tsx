@@ -19,7 +19,10 @@ import {
   Check,
   Copy,
   Wifi,
-  WifiOff
+  WifiOff,
+  Link,
+  Save,
+  DownloadCloud
 } from 'lucide-react';
 import type { TelegramBotHealthStatus, TelegramDiagnosticResult } from '../types';
 
@@ -45,6 +48,76 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
   const [copied, setCopied] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
+
+  // Check Update Telegram Link state
+  const [updateTelegramUrl, setUpdateTelegramUrl] = useState<string>('https://t.me/kalamffpanel');
+  const [isSavingUrl, setIsSavingUrl] = useState<boolean>(false);
+  const [urlSaveSuccess, setUrlSaveSuccess] = useState<boolean>(false);
+  const [urlSaveError, setUrlSaveError] = useState<string | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
+
+  // Fetch initial Telegram bot config including Check Update / APK URL
+  const fetchTelegramConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/telegram-config');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.apkDownloadUrl) {
+          setUpdateTelegramUrl(data.apkDownloadUrl);
+        }
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchTelegramConfig();
+  }, [fetchTelegramConfig]);
+
+  const handleSaveUpdateUrl = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!updateTelegramUrl.trim()) {
+      setUrlSaveError('Please enter a valid Telegram link or channel URL');
+      return;
+    }
+
+    setIsSavingUrl(true);
+    setUrlSaveError(null);
+    setUrlSaveSuccess(false);
+
+    try {
+      const trimmed = updateTelegramUrl.trim();
+      const res = await fetch('/api/telegram-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apkDownloadUrl: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to save Check Update Telegram link');
+      }
+
+      // Also ensure /api/admin/apk-download-url is updated
+      await fetch('/api/admin/apk-download-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apkDownloadUrl: trimmed }),
+      }).catch(() => {});
+
+      setUrlSaveSuccess(true);
+      setTimeout(() => setUrlSaveSuccess(false), 4000);
+    } catch (err: any) {
+      console.error('[TelegramBotHealthCard] Save error:', err);
+      setUrlSaveError(err.message || 'Failed to update link');
+    } finally {
+      setIsSavingUrl(false);
+    }
+  };
+
+  const handleCopyUpdateUrl = () => {
+    navigator.clipboard.writeText(updateTelegramUrl);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
+  };
 
   // Fetch bot health telemetry from backend
   const fetchHealthStatus = useCallback(async (isManual = false) => {
@@ -394,6 +467,90 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
           )}
         </div>
       )}
+
+      {/* Check Update / APK Download Telegram Link Management */}
+      <div
+        id="telegram-update-link-section"
+        className="relative z-10 mt-4 rounded-xl border border-pink-500/20 bg-gradient-to-br from-pink-950/20 via-zinc-900/60 to-purple-950/20 p-4 shadow-lg"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-pink-500/30 bg-pink-500/10 text-pink-400">
+              <DownloadCloud className="h-4 w-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                Check Update & APK Download Telegram Link
+              </h4>
+              <p className="text-[11px] text-zinc-400">
+                Live Telegram link opened by bot buttons ("Check Update", "Download APK", /apk, /update)
+              </p>
+            </div>
+          </div>
+          {updateTelegramUrl && (
+            <div className="flex items-center gap-1.5">
+              <a
+                href={updateTelegramUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 bg-zinc-800/90 px-2.5 py-1 text-[11px] font-medium text-sky-400 hover:bg-zinc-700 transition-colors"
+              >
+                <span>Test Link</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              <button
+                type="button"
+                onClick={handleCopyUpdateUrl}
+                className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 bg-zinc-800/90 px-2.5 py-1 text-[11px] font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+              >
+                {copiedUrl ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                <span>{copiedUrl ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={handleSaveUpdateUrl} className="mt-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="relative flex-1">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-zinc-500">
+                <Link className="h-4 w-4" />
+              </div>
+              <input
+                id="telegram-update-link-input"
+                type="text"
+                value={updateTelegramUrl}
+                onChange={(e) => setUpdateTelegramUrl(e.target.value)}
+                placeholder="https://t.me/kalamffpanel or https://t.me/yourchannel/12"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900/90 pl-9 pr-3 py-2 text-xs text-white font-mono placeholder:text-zinc-600 focus:border-pink-500 focus:outline-none focus:ring-1 focus:ring-pink-500/50"
+              />
+            </div>
+            <button
+              id="save-telegram-update-link-btn"
+              type="submit"
+              disabled={isSavingUrl}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-pink-500/20 hover:opacity-95 active:scale-95 disabled:opacity-50 transition-all"
+            >
+              <Save className={`h-3.5 w-3.5 ${isSavingUrl ? 'animate-spin' : ''}`} />
+              <span>{isSavingUrl ? 'Saving...' : 'Save Link'}</span>
+            </button>
+          </div>
+
+          {urlSaveSuccess && (
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>Check Update Telegram Link saved & synced to live bot instantly!</span>
+            </div>
+          )}
+
+          {urlSaveError && (
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-rose-400">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span>{urlSaveError}</span>
+            </div>
+          )}
+        </form>
+      </div>
 
       {/* Raw Diagnostic Accordion */}
       <div className="relative z-10 mt-3 border-t border-zinc-800/60 pt-3">

@@ -8,8 +8,8 @@ import { generateInventoryDiagnostics, renderInventoryDiagnosticsHtml } from './
 
 export const app = express();
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 let detectedPublicOrigin = process.env.APP_URL || '';
 
@@ -780,11 +780,11 @@ function creditUserWalletOnServer(
 }
 
 // Telegram Bot Instant Dispatch Helper Function
-export async function sendTelegramMessage(text: string): Promise<boolean> {
+export async function sendTelegramMessage(text: string, replyMarkup?: any): Promise<boolean> {
   try {
     const dataDir = path.join(process.cwd(), 'data');
     const configFile = path.join(dataDir, 'telegram_config.json');
-    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
     let chatId = process.env.TELEGRAM_CHAT_ID || '7768975239';
 
     if (fs.existsSync(configFile)) {
@@ -800,27 +800,29 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
       return false;
     }
 
+    const payload: any = {
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      reply_markup: replyMarkup || { remove_keyboard: true }
+    };
+
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true
-      })
+      body: JSON.stringify(payload)
     });
 
     const data: any = await res.json();
     if (!data.ok) {
       // Fallback without parse_mode in case of HTML tag format issues
+      payload.parse_mode = undefined;
+      payload.text = text.replace(/<[^>]*>/g, '');
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: text.replace(/<[^>]*>/g, '')
-        })
+        body: JSON.stringify(payload)
       });
     }
     return true;
@@ -890,7 +892,7 @@ export async function sendTelegramDepositProof(info: {
 
     let proofBotToken = '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
     let proofChatId = '-1004325449752';
-    let mainBotToken = '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    let mainBotToken = '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
     let mainBotUsername = '@KALAMFFPANEL1_12_BOT';
     let enableAutoProof = true;
 
@@ -996,7 +998,7 @@ export async function sendTelegramPaymentProof(info: {
 
     let proofBotToken = '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
     let proofChatId = '-1004325449752';
-    let mainBotToken = '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    let mainBotToken = '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
     let mainBotUsername = '@KALAMFFPANEL1_12_BOT';
     let enableAutoProof = true;
 
@@ -1380,12 +1382,20 @@ app.post('/api/products', (req: Request, res: Response) => {
     if (Array.isArray(products)) {
       globalProductsCache = products.map((p: any) => {
         const pid = p.id || p.productId || p.pid;
-        const plans = (p.plans || []).map((pl: any) => ({
-          ...pl,
-          pid: pid,
-          productId: pid,
-          duration: pl.duration || pl.name || '1 Day',
-        }));
+        const plans = (p.plans || []).map((pl: any) => {
+          const regPrice = Math.max(0, Math.round(Number(pl.price) || 0));
+          const rawRes = (pl.resellerPrice !== undefined && pl.resellerPrice !== null && pl.resellerPrice !== '')
+            ? Number(pl.resellerPrice)
+            : undefined;
+          return {
+            ...pl,
+            pid: pid,
+            productId: pid,
+            duration: pl.duration || pl.name || '1 Day',
+            price: regPrice,
+            ...(rawRes !== undefined && !isNaN(rawRes) && rawRes > 0 ? { resellerPrice: Math.round(rawRes) } : {})
+          };
+        });
         return {
           ...p,
           pid: pid,
@@ -1529,7 +1539,7 @@ app.get('/api/telegram-config', (req: Request, res: Response) => {
     }
 
     let config: any = {
-      botToken: process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8',
+      botToken: process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g',
       chatId: process.env.TELEGRAM_CHAT_ID || '7768975239',
       botUsername,
       apkDownloadUrl,
@@ -1594,7 +1604,7 @@ app.post('/api/telegram-config', async (req: Request, res: Response) => {
   try {
     const dataFile = path.join(DATA_DIR, 'telegram_config.json');
     let existingConfig: any = {
-      botToken: process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8',
+      botToken: process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g',
       chatId: process.env.TELEGRAM_CHAT_ID || '7768975239',
       botUsername: '@kalam_store_bot',
       apkDownloadUrl: 'https://t.me/kalamffpanel',
@@ -1691,7 +1701,7 @@ app.post('/api/admin/telegram/test', async (req: Request, res: Response) => {
       }
     }
 
-    botToken = botToken || process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    botToken = botToken || process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
     chatId = chatId || process.env.TELEGRAM_CHAT_ID || '7768975239';
 
     if (!botToken) {
@@ -1762,7 +1772,7 @@ app.post('/api/admin/telegram/test-proof', async (req: Request, res: Response) =
       }
     }
 
-    proofBotToken = proofBotToken || process.env.TELEGRAM_PROOF_BOT_TOKEN || mainBotToken || process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    proofBotToken = proofBotToken || process.env.TELEGRAM_PROOF_BOT_TOKEN || mainBotToken || process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
     proofChatId = proofChatId || process.env.TELEGRAM_PROOF_CHAT_ID || '';
 
     if (!proofBotToken) {
@@ -1863,7 +1873,7 @@ app.post('/api/admin/telegram/live-credentials', async (req: Request, res: Respo
 
     const dataFile = path.join(DATA_DIR, 'telegram_config.json');
     let existingConfig: any = {
-      botToken: process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8',
+      botToken: process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g',
       chatId: process.env.TELEGRAM_CHAT_ID || '7768975239',
       botUsername: '@kalam_store_bot',
       apkDownloadUrl: 'https://t.me/kalamffpanel',
@@ -1986,7 +1996,7 @@ app.get('/api/admin/telegram/recent-chats', async (req: Request, res: Response) 
         if (!proofBotToken && saved.proofBotToken) proofBotToken = saved.proofBotToken.trim();
       } catch {}
     }
-    botToken = botToken || process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    botToken = botToken || process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
 
     const tokensToQuery = Array.from(new Set([botToken, proofBotToken].filter(Boolean)));
     const chats: Array<{
@@ -2392,6 +2402,241 @@ app.post('/api/admin/telegram/users/add-balance', (req: Request, res: Response) 
   }
 });
 
+// ==========================================================
+// TELEGRAM BROADCASTING & MULTI-MEDIA MESSAGING API ROUTES
+// ==========================================================
+
+function readTelegramConfig(): any {
+  try {
+    const dataFile = path.join(DATA_DIR, 'telegram_config.json');
+    if (fs.existsSync(dataFile)) {
+      return JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+    }
+  } catch {}
+  return {
+    botToken: process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g',
+    chatId: process.env.TELEGRAM_CHAT_ID || '7768975239',
+    proofChatId: '-1004325449752'
+  };
+}
+
+// 1. Full Multi-Media Broadcast Endpoint (Text, Photo, Voice, Audio)
+app.post(['/api/admin/telegram/broadcast', '/api/telegram/broadcast'], async (req: Request, res: Response) => {
+  try {
+    const {
+      type = 'text',
+      target = 'all',
+      targetChatId,
+      text,
+      photo,
+      voice,
+      audio,
+      caption,
+      buttonText,
+      buttonUrl,
+      duration
+    } = req.body;
+
+    if (!['text', 'photo', 'voice', 'audio'].includes(type)) {
+      return res.status(400).json({ success: false, error: 'Invalid broadcast type. Must be text, photo, voice, or audio.' });
+    }
+
+    if (type === 'text' && !text && !caption) {
+      return res.status(400).json({ success: false, error: 'Message text is required for text broadcast.' });
+    }
+    if (type === 'photo' && !photo) {
+      return res.status(400).json({ success: false, error: 'Photo URL or image data is required for photo broadcast.' });
+    }
+    if (type === 'voice' && !voice) {
+      return res.status(400).json({ success: false, error: 'Voice audio data is required for voice broadcast.' });
+    }
+    if (type === 'audio' && !audio) {
+      return res.status(400).json({ success: false, error: 'Audio data is required for audio broadcast.' });
+    }
+
+    // Determine target recipient chat IDs
+    let targets: (number | string)[] = [];
+    let targetLabel = 'All Registered Bot Users';
+
+    const usersMap = telegramBotService.loadBotUsers();
+    const allUsers = Array.from(usersMap.values());
+
+    if (target === 'resellers') {
+      targets = allUsers.filter(u => u.isReseller || u.role === 'RESELLER' || u.role === 'ADMIN').map(u => u.chatId);
+      targetLabel = `VIP Resellers Only (${targets.length} users)`;
+    } else if (target === 'channel') {
+      const cfg = readTelegramConfig();
+      const channelId = cfg.proofChatId || cfg.telegramChatId || cfg.chatId;
+      if (!channelId) {
+        return res.status(400).json({ success: false, error: 'No Telegram proof/announcement channel ID configured.' });
+      }
+      targets = [channelId];
+      targetLabel = `Announcement Channel (${channelId})`;
+    } else if (target === 'specific') {
+      const cleanTarget = String(targetChatId || '').trim().replace(/^@/, '');
+      if (!cleanTarget) {
+        return res.status(400).json({ success: false, error: 'Specific target User ID or Chat ID is required.' });
+      }
+      // If numeric chat ID
+      if (/^\d+$/.test(cleanTarget.replace('tg_', ''))) {
+        const numId = parseInt(cleanTarget.replace('tg_', ''), 10);
+        targets = [numId];
+      } else {
+        // Try finding by username
+        const found = allUsers.find(u => (u.username || '').toLowerCase() === cleanTarget.toLowerCase() || u.userId === cleanTarget);
+        if (found) {
+          targets = [found.chatId];
+        } else {
+          return res.status(404).json({ success: false, error: `User "${cleanTarget}" not found in bot database.` });
+        }
+      }
+      targetLabel = `Direct User (${targets[0]})`;
+    } else {
+      // Default: All Users
+      targets = allUsers.map(u => u.chatId);
+      targetLabel = `All Users (${targets.length} registered)`;
+    }
+
+    if (targets.length === 0) {
+      return res.status(400).json({ success: false, error: 'No recipients found for the selected broadcast target.' });
+    }
+
+    const result = await telegramBotService.executeBroadcast({
+      type,
+      targets,
+      targetLabel,
+      text,
+      photo,
+      voice,
+      audio,
+      caption,
+      buttonText: buttonText ? buttonText.trim() : undefined,
+      buttonUrl: buttonUrl ? buttonUrl.trim() : undefined,
+      duration: duration ? parseFloat(duration) : undefined
+    });
+
+    return res.json({
+      success: true,
+      message: `Broadcast finished: ${result.sent} of ${result.total} delivered successfully.`,
+      ...result
+    });
+  } catch (err: any) {
+    console.error('[API Telegram Broadcast Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. Direct Single Message / Photo / Voice Send Endpoint
+app.post(['/api/admin/telegram/send-direct', '/api/telegram/send-direct'], async (req: Request, res: Response) => {
+  try {
+    const {
+      type = 'text',
+      chatId,
+      userId,
+      text,
+      photo,
+      voice,
+      audio,
+      caption,
+      buttonText,
+      buttonUrl
+    } = req.body;
+
+    const targetInput = String(chatId || userId || '').trim();
+    if (!targetInput) {
+      return res.status(400).json({ success: false, error: 'Target chatId or userId is required.' });
+    }
+
+    let targetChatId: string | number = targetInput;
+    if (targetInput.startsWith('tg_')) {
+      targetChatId = parseInt(targetInput.replace('tg_', ''), 10);
+    } else if (/^\d+$/.test(targetInput)) {
+      targetChatId = parseInt(targetInput, 10);
+    }
+
+    const replyMarkup = buttonText && buttonUrl ? {
+      inline_keyboard: [[{ text: buttonText, url: buttonUrl }]]
+    } : undefined;
+
+    let success = false;
+    if (type === 'photo' && photo) {
+      success = await telegramBotService.sendPhotoExtended(targetChatId, photo, caption, replyMarkup);
+    } else if (type === 'voice' && voice) {
+      success = await telegramBotService.sendVoice(targetChatId, voice, caption, replyMarkup);
+    } else if (type === 'audio' && audio) {
+      success = await telegramBotService.sendAudio(targetChatId, audio, caption, 'Direct Audio', 'KALAM FF Admin', replyMarkup);
+    } else {
+      const content = text || caption || '🔔 Notification from KALAM FF Admin';
+      success = await telegramBotService.sendMessage(targetChatId, content, replyMarkup);
+    }
+
+    return res.json({
+      success,
+      message: success ? `Direct ${type} sent successfully to ${targetChatId}` : `Failed to send ${type} to ${targetChatId}`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Send Test Preview to Admin's Personal Chat
+app.post('/api/admin/telegram/test-broadcast', async (req: Request, res: Response) => {
+  try {
+    const {
+      type = 'text',
+      text,
+      photo,
+      voice,
+      audio,
+      caption,
+      buttonText,
+      buttonUrl,
+      adminChatId
+    } = req.body;
+
+    const cfg = readTelegramConfig();
+    const targetChatId = adminChatId || cfg.telegramChatId || cfg.chatId || '7768975239';
+
+    const replyMarkup = buttonText && buttonUrl ? {
+      inline_keyboard: [[{ text: buttonText, url: buttonUrl }]]
+    } : undefined;
+
+    let success = false;
+    if (type === 'photo' && photo) {
+      success = await telegramBotService.sendPhotoExtended(targetChatId, photo, `[TEST PREVIEW]\n\n${caption || ''}`, replyMarkup);
+    } else if (type === 'voice' && voice) {
+      success = await telegramBotService.sendVoice(targetChatId, voice, `[TEST PREVIEW]\n\n${caption || ''}`, replyMarkup);
+    } else if (type === 'audio' && audio) {
+      success = await telegramBotService.sendAudio(targetChatId, audio, `[TEST PREVIEW]\n\n${caption || ''}`, 'Test Preview', 'Admin', replyMarkup);
+    } else {
+      const content = `🧪 <b>[TEST BROADCAST PREVIEW]</b>\n\n${text || caption || 'Sample Announcement Content'}\n\n<i>(This is only sent to your admin chat for verification)</i>`;
+      success = await telegramBotService.sendMessage(targetChatId, content, replyMarkup);
+    }
+
+    return res.json({
+      success,
+      targetChatId,
+      message: success ? `Test ${type} successfully delivered to admin chat (${targetChatId})` : `Failed to deliver test ${type} to chat (${targetChatId})`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Get Broadcast History Log
+app.get('/api/admin/telegram/broadcast-history', (_req: Request, res: Response) => {
+  try {
+    const history = telegramBotService.loadBroadcastHistory();
+    res.json({
+      success: true,
+      history,
+      count: history.length
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message, history: [] });
+  }
+});
+
 // Manual / Triggered Telegram Notification Endpoint
 app.post('/api/notify-telegram', async (req: Request, res: Response) => {
   try {
@@ -2472,7 +2717,7 @@ app.get('/api/telegram-webhook', (req: Request, res: Response) => {
 app.get('/api/telegram/webhook-info', async (req: Request, res: Response) => {
   try {
     const dataFile = path.join(DATA_DIR, 'telegram_config.json');
-    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
     if (fs.existsSync(dataFile)) {
       try {
         const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
@@ -2509,7 +2754,7 @@ app.post('/api/telegram/set-webhook', async (req: Request, res: Response) => {
     const webhookUrl = customUrl || `${protocol}://${host}/api/telegram/webhook`;
 
     const dataFile = path.join(DATA_DIR, 'telegram_config.json');
-    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
     if (fs.existsSync(dataFile)) {
       try {
         const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
@@ -2555,7 +2800,7 @@ app.post('/api/telegram/set-webhook', async (req: Request, res: Response) => {
 app.post('/api/telegram/delete-webhook', async (req: Request, res: Response) => {
   try {
     const dataFile = path.join(DATA_DIR, 'telegram_config.json');
-    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8990109048:AAEin2WyZl3pGdKXrPSQftMn8-Yh1g0Gop8';
+    let botToken = process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
     if (fs.existsSync(dataFile)) {
       try {
         const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
@@ -5920,6 +6165,99 @@ app.post('/api/admin/product-sync/trigger', async (req: Request, res: Response) 
   }
 });
 
+// ==========================================================
+// ⚡ AUTO-RESTOCK SUPPLIER API WEBHOOKS & AUTO-REFILL
+// ==========================================================
+import { supplierRestockService } from './supplier-restock';
+
+// 1. Inbound Webhooks: Accept key restock payloads from supplier APIs
+app.post(['/api/webhook/supplier-restock', '/api/supplier/webhook'], (req: Request, res: Response) => {
+  return supplierRestockService.handleInboundWebhook(req, res);
+});
+
+app.get(['/api/webhook/supplier-restock', '/api/supplier/webhook'], (_req: Request, res: Response) => {
+  const publicUrl = detectedPublicOrigin || `${_req.protocol}://${_req.get('host')}`;
+  res.json({
+    status: 'ONLINE',
+    service: 'KALAM FF PANEL - Supplier Auto-Restock Inbound Webhook',
+    method: 'POST',
+    endpoint: `${publicUrl}/api/webhook/supplier-restock`,
+    acceptedFormats: [
+      '{ "productId": "1", "keys": ["KEY-1", "KEY-2"], "plan": "1 Day", "secretToken": "..." }',
+      '{ "productName": "VIP HACK", "keys": "KEY1\\nKEY2", "secretToken": "..." }',
+      'Text or JSON batch payloads'
+    ]
+  });
+});
+
+// 2. Admin: Get Restock Config & Webhook URL
+app.get('/api/admin/supplier-restock/config', (_req: Request, res: Response) => {
+  try {
+    const config = supplierRestockService.getConfig();
+    const publicUrl = detectedPublicOrigin || `${_req.protocol}://${_req.get('host')}`;
+    return res.json({
+      success: true,
+      config,
+      webhookUrl: `${publicUrl}/api/webhook/supplier-restock`,
+      fallbackWebhookUrl: `${publicUrl}/api/supplier/webhook`
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Admin: Update Restock Config
+app.post('/api/admin/supplier-restock/config', (req: Request, res: Response) => {
+  try {
+    const updated = supplierRestockService.saveConfig(req.body);
+    return res.json({
+      success: true,
+      message: 'Supplier Auto-Restock settings updated successfully!',
+      config: updated
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Admin: Get Restock Audit Logs
+app.get('/api/admin/supplier-restock/logs', (_req: Request, res: Response) => {
+  try {
+    const logs = supplierRestockService.getLogs();
+    return res.json({
+      success: true,
+      count: logs.length,
+      logs
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. Admin: Simulate / Test Supplier Restock Webhook
+app.post('/api/admin/supplier-restock/simulate', async (req: Request, res: Response) => {
+  try {
+    const { productId, count = 5, plan } = req.body;
+    const testKeys = Array.from({ length: Number(count) || 5 }, (_, i) => 
+      `KALAM-SUPPLIER-${Date.now().toString().slice(-4)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${i + 1}`
+    );
+    const result = await supplierRestockService.processRestockPayload({
+      productId,
+      keys: testKeys,
+      plan,
+      supplierName: 'Admin Webhook Simulator'
+    }, 'SIMULATION', 'admin-panel-tester');
+
+    return res.json({
+      success: true,
+      message: result.message,
+      details: result
+    });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // Wire Telegram Bot Interactive Shop & Purchasing Engine
 import { telegramBotService } from './telegramBot';
 
@@ -6837,6 +7175,16 @@ productSyncScheduler.init(
     saveProductsToDisk(updatedProducts);
   },
   () => loadStoreDataFromDisk()
+);
+
+// Initialize Supplier Restock Service Callbacks
+supplierRestockService.registerCallbacks(
+  () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+  (updatedProducts: any[]) => {
+    globalProductsCache = updatedProducts;
+    isProductsInitialized = true;
+    saveProductsToDisk(updatedProducts);
+  }
 );
 
 // 24/7 Background Keep-Alive & Continuous Heartbeat

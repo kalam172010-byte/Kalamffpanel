@@ -1,7 +1,7 @@
 {
   "name": "KALAM FF PANEL",
   "description": "Mobile-first Free Fire key reselling storefront and Admin Bot Control Center with real-time stats, product management, API restock, and payment setup.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
 
