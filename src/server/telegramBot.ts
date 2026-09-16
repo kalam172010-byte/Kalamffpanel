@@ -175,6 +175,94 @@ export interface PromoCodeRecord {
   expiresAt?: number;
 }
 
+// Normalize any user-provided URL to a valid Telegram inline button URL
+export function normalizeTelegramUrl(rawUrl?: string): string {
+  if (!rawUrl) return '';
+  let url = String(rawUrl).trim();
+  if (!url) return '';
+  if (url.startsWith('@')) {
+    return `https://t.me/${url.replace(/^@+/, '')}`;
+  }
+  if (url.startsWith('t.me/')) {
+    return `https://${url}`;
+  }
+  if (/^https?:\/\//i.test(url) || /^tg:\/\//i.test(url)) {
+    return url;
+  }
+  return `https://${url}`;
+}
+
+// Build standard Telegram inline keyboard markup supporting 1 or multiple action buttons
+export function buildInlineKeyboard(
+  buttonText?: string,
+  buttonUrl?: string,
+  button2Text?: string,
+  button2Url?: string,
+  extraButtons?: Array<{ text: string; url?: string; callback_data?: string }>
+): { inline_keyboard: any[][] } | undefined {
+  const rows: any[][] = [];
+  const row1: any[] = [];
+
+  const text1 = buttonText ? String(buttonText).trim() : '';
+  const norm1 = normalizeTelegramUrl(buttonUrl);
+  if (text1 && norm1) {
+    row1.push({ text: text1, url: norm1 });
+  }
+
+  const text2 = button2Text ? String(button2Text).trim() : '';
+  const norm2 = normalizeTelegramUrl(button2Url);
+  if (text2 && norm2) {
+    if (row1.length > 0 && (text1.length + text2.length > 28)) {
+      rows.push(row1);
+      rows.push([{ text: text2, url: norm2 }]);
+    } else if (row1.length > 0) {
+      row1.push({ text: text2, url: norm2 });
+      rows.push(row1);
+    } else {
+      rows.push([{ text: text2, url: norm2 }]);
+    }
+  } else if (row1.length > 0) {
+    rows.push(row1);
+  }
+
+  if (Array.isArray(extraButtons) && extraButtons.length > 0) {
+    for (const btn of extraButtons) {
+      if (btn.text && (btn.url || btn.callback_data)) {
+        if (btn.url) {
+          rows.push([{ text: btn.text, url: normalizeTelegramUrl(btn.url) }]);
+        } else if (btn.callback_data) {
+          rows.push([{ text: btn.text, callback_data: btn.callback_data }]);
+        }
+      }
+    }
+  }
+
+  return rows.length > 0 ? { inline_keyboard: rows } : undefined;
+}
+
+// Sanitize and ensure all URLs inside inline keyboards conform to Telegram API specs
+export function sanitizeReplyMarkup(markup: any): any {
+  if (!markup) return undefined;
+  try {
+    const obj = typeof markup === 'string' ? JSON.parse(markup) : JSON.parse(JSON.stringify(markup));
+    if (obj && Array.isArray(obj.inline_keyboard)) {
+      obj.inline_keyboard = obj.inline_keyboard.map((row: any[]) => {
+        if (!Array.isArray(row)) return [];
+        return row.map((btn: any) => {
+          if (btn && btn.url) {
+            btn.url = normalizeTelegramUrl(btn.url);
+          }
+          return btn;
+        }).filter((b: any) => b && (b.url || b.callback_data || b.web_app));
+      }).filter((row: any[]) => row.length > 0);
+      if (obj.inline_keyboard.length === 0) return undefined;
+    }
+    return obj;
+  } catch {
+    return markup;
+  }
+}
+
 // User state tracking for multi-step bot flows (Deposit, Admin Broadcast, Add Balance, Transfer, Promo, etc.)
 const userStates = new Map<number, { step: string; data?: any }>();
 
@@ -399,6 +487,7 @@ export class TelegramBotService {
   private lastProofDispatchTime = 0;
   private checkingOrdersInProgress = new Set<string>();
   private inFlightPurchases = new Set<string>();
+  private inFlightDeposits = new Set<number>();
 
   private loadDispatchedProofCache() {
     try {
@@ -1567,14 +1656,15 @@ export class TelegramBotService {
     }
 
     try {
+      const sanitizedMarkup = sanitizeReplyMarkup(replyMarkup);
       const payload: any = {
         chat_id: chatId,
         text,
         parse_mode: 'HTML',
         disable_web_page_preview: true,
       };
-      if (replyMarkup) {
-        payload.reply_markup = replyMarkup;
+      if (sanitizedMarkup) {
+        payload.reply_markup = sanitizedMarkup;
       }
 
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -1585,7 +1675,10 @@ export class TelegramBotService {
 
       const data: any = await res.json();
       if (!data.ok) {
-        // Fallback without parse_mode if HTML tags cause a parse error
+        // Fallback without parse_mode if HTML tags cause a parse error or if reply_markup failed
+        if (data.description && (data.description.includes('BUTTON_URL') || data.description.includes('keyboard') || data.description.includes('markup'))) {
+          delete payload.reply_markup;
+        }
         payload.parse_mode = undefined;
         payload.text = text.replace(/<[^>]*>/g, '');
         await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -1637,6 +1730,7 @@ export class TelegramBotService {
     if (!botToken) return false;
 
     try {
+      const sanitizedMarkup = sanitizeReplyMarkup(replyMarkup);
       const isBase64 = typeof photoInput === 'string' && (photoInput.startsWith('data:image/') || photoInput.startsWith('data:application/octet-stream;base64,'));
       const isBuffer = Buffer.isBuffer(photoInput);
 
@@ -1664,8 +1758,8 @@ export class TelegramBotService {
           formData.append('caption', caption);
           formData.append('parse_mode', 'HTML');
         }
-        if (replyMarkup) {
-          formData.append('reply_markup', typeof replyMarkup === 'string' ? replyMarkup : JSON.stringify(replyMarkup));
+        if (sanitizedMarkup) {
+          formData.append('reply_markup', typeof sanitizedMarkup === 'string' ? sanitizedMarkup : JSON.stringify(sanitizedMarkup));
         }
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
@@ -1675,7 +1769,7 @@ export class TelegramBotService {
         const data: any = await res.json();
         if (!data.ok) {
           console.warn('[TelegramBot] sendPhoto multipart failed, falling back to text message:', data.description);
-          return this.sendMessage(chatId, `${caption || '📷 <b>Photo Attached</b>'}`, replyMarkup);
+          return this.sendMessage(chatId, `${caption || '📷 <b>Photo Attached</b>'}`, sanitizedMarkup);
         }
         return true;
       }
@@ -1687,8 +1781,8 @@ export class TelegramBotService {
         caption: caption || '',
         parse_mode: 'HTML',
       };
-      if (replyMarkup) {
-        payload.reply_markup = replyMarkup;
+      if (sanitizedMarkup) {
+        payload.reply_markup = sanitizedMarkup;
       }
 
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
@@ -1699,12 +1793,12 @@ export class TelegramBotService {
 
       const data: any = await res.json();
       if (!data.ok) {
-        return this.sendMessage(chatId, `${caption}\n\n🔗 <b>Photo Link:</b> <a href="${photoInput}">View Image</a>`, replyMarkup);
+        return this.sendMessage(chatId, `${caption}\n\n🔗 <b>Photo Link:</b> <a href="${photoInput}">View Image</a>`, sanitizedMarkup);
       }
       return true;
     } catch (err: any) {
       console.error('[TelegramBot] sendPhoto error:', err.message);
-      return this.sendMessage(chatId, `${caption || ''}`, replyMarkup);
+      return this.sendMessage(chatId, `${caption || ''}`, sanitizeReplyMarkup(replyMarkup));
     }
   }
 
@@ -1719,6 +1813,7 @@ export class TelegramBotService {
     if (!botToken) return false;
 
     try {
+      const sanitizedMarkup = sanitizeReplyMarkup(replyMarkup);
       const isBase64 = typeof voiceInput === 'string' && (voiceInput.startsWith('data:audio/') || voiceInput.startsWith('data:video/webm') || voiceInput.startsWith('data:application/octet-stream;base64,'));
       const isBuffer = Buffer.isBuffer(voiceInput);
 
@@ -1748,8 +1843,8 @@ export class TelegramBotService {
         if (duration) {
           formData.append('duration', String(Math.round(duration)));
         }
-        if (replyMarkup) {
-          formData.append('reply_markup', typeof replyMarkup === 'string' ? replyMarkup : JSON.stringify(replyMarkup));
+        if (sanitizedMarkup) {
+          formData.append('reply_markup', typeof sanitizedMarkup === 'string' ? sanitizedMarkup : JSON.stringify(sanitizedMarkup));
         }
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendVoice`, {
@@ -1759,7 +1854,7 @@ export class TelegramBotService {
         const data: any = await res.json();
         if (!data.ok) {
           console.warn('[TelegramBot] sendVoice failed, attempting sendAudio fallback:', data.description);
-          return this.sendAudio(chatId, buffer, caption, 'Voice Note', 'KALAM FF Admin', replyMarkup);
+          return this.sendAudio(chatId, buffer, caption, 'Voice Note', 'KALAM FF Admin', sanitizedMarkup);
         }
         return true;
       }
@@ -1772,7 +1867,7 @@ export class TelegramBotService {
         parse_mode: 'HTML',
       };
       if (duration) payload.duration = Math.round(duration);
-      if (replyMarkup) payload.reply_markup = replyMarkup;
+      if (sanitizedMarkup) payload.reply_markup = sanitizedMarkup;
 
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendVoice`, {
         method: 'POST',
@@ -1783,7 +1878,7 @@ export class TelegramBotService {
       const data: any = await res.json();
       if (!data.ok) {
         console.warn('[TelegramBot] sendVoice URL failed, trying sendAudio:', data.description);
-        return this.sendAudio(chatId, voiceInput, caption, 'Voice Announcement', 'KALAM FF Admin', replyMarkup);
+        return this.sendAudio(chatId, voiceInput, caption, 'Voice Announcement', 'KALAM FF Admin', sanitizedMarkup);
       }
       return true;
     } catch (err: any) {
@@ -1804,6 +1899,7 @@ export class TelegramBotService {
     if (!botToken) return false;
 
     try {
+      const sanitizedMarkup = sanitizeReplyMarkup(replyMarkup);
       const isBase64 = typeof audioInput === 'string' && (audioInput.startsWith('data:audio/') || audioInput.startsWith('data:video/webm') || audioInput.startsWith('data:application/octet-stream;base64,'));
       const isBuffer = Buffer.isBuffer(audioInput);
 
@@ -1833,8 +1929,8 @@ export class TelegramBotService {
         }
         if (title) formData.append('title', title);
         if (performer) formData.append('performer', performer);
-        if (replyMarkup) {
-          formData.append('reply_markup', typeof replyMarkup === 'string' ? replyMarkup : JSON.stringify(replyMarkup));
+        if (sanitizedMarkup) {
+          formData.append('reply_markup', typeof sanitizedMarkup === 'string' ? sanitizedMarkup : JSON.stringify(sanitizedMarkup));
         }
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendAudio`, {
@@ -1854,7 +1950,7 @@ export class TelegramBotService {
         performer: performer || 'KALAM FF Admin',
         parse_mode: 'HTML',
       };
-      if (replyMarkup) payload.reply_markup = replyMarkup;
+      if (sanitizedMarkup) payload.reply_markup = sanitizedMarkup;
 
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendAudio`, {
         method: 'POST',
@@ -1911,6 +2007,9 @@ export class TelegramBotService {
     caption?: string;
     buttonText?: string;
     buttonUrl?: string;
+    button2Text?: string;
+    button2Url?: string;
+    buttons?: Array<{ text: string; url?: string; callback_data?: string }>;
     duration?: number;
   }): Promise<{
     broadcastId: string;
@@ -1928,11 +2027,15 @@ export class TelegramBotService {
     let failed = 0;
     const failedList: string[] = [];
 
-    const replyMarkup = options.buttonText && options.buttonUrl ? {
-      inline_keyboard: [[{ text: options.buttonText, url: options.buttonUrl }]]
-    } : undefined;
+    const replyMarkup = buildInlineKeyboard(
+      options.buttonText,
+      options.buttonUrl,
+      options.button2Text,
+      options.button2Url,
+      options.buttons
+    );
 
-    console.log(`[TelegramBot Broadcast] Starting ${options.type} broadcast "${broadcastId}" to ${total} recipients...`);
+    console.log(`[TelegramBot Broadcast] Starting ${options.type} broadcast "${broadcastId}" to ${total} recipients... Buttons: ${!!replyMarkup}`);
 
     for (const target of uniqueTargets) {
       try {
@@ -2710,10 +2813,18 @@ export class TelegramBotService {
     ];
 
     try {
+      // 1. Register for Default Scope
+      await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commands, scope: { type: 'default' } }),
+      });
+
+      // 2. Register for Private Chats Scope (Ensures instant command popup on mobile)
       const res = await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commands }),
+        body: JSON.stringify({ commands, scope: { type: 'all_private_chats' } }),
       });
       const data: any = await res.json();
 
@@ -2768,8 +2879,8 @@ export class TelegramBotService {
       this.userLastActionText.clear();
     }
 
-    // Strip bot username suffix if present: e.g. /start@KALAMFFPANELWEBSITE_BOT -> /start
-    const cleanCmd = rawText.replace(/@[a-zA-Z0-9_]+bot\b/i, '').trim();
+    // Strip bot username suffix if present: e.g. /start@KALAMFFPANELWEBSITE_BOT or /buy@any_bot -> /start, /buy
+    const cleanCmd = rawText.replace(/^(\/[a-zA-Z0-9_]+)@[a-zA-Z0-9_]+/i, '$1').trim();
     const lower = cleanCmd.toLowerCase();
     // Normalize alphanumeric without emojis or symbols
     const norm = lower.replace(/[^\w\s]/g, ' ').trim().replace(/\s+/g, ' ');
@@ -2916,19 +3027,27 @@ export class TelegramBotService {
         return;
       }
 
-      // Admin Broadcast message state
+      // Admin Broadcast message state (supports inline button via pipe syntax: <message> | <btn_text> | <btn_url> | <btn2_text> | <btn2_url>)
       if (currentState.step === 'AWAITING_ADMIN_BROADCAST' && this.isAdmin(chatId)) {
         userStates.delete(chatId);
+        const parts = rawText.split('|').map(s => s.trim());
+        const bMsg = parts[0] || '📢 <b>Announcement</b>';
+        const btn1Text = parts[1];
+        const btn1Url = parts[2];
+        const btn2Text = parts[3];
+        const btn2Url = parts[4];
+        const replyMarkup = buildInlineKeyboard(btn1Text, btn1Url, btn2Text, btn2Url);
+
         const users = this.loadBotUsers();
         let sentCount = 0;
-        await this.sendMessage(chatId, `⏳ <i>Broadcasting message to ${users.size} bot users...</i>`);
+        await this.sendMessage(chatId, `⏳ <i>Broadcasting message with inline buttons (${!!replyMarkup}) to ${users.size} bot users...</i>`);
         for (const u of users.values()) {
           try {
-            await this.sendMessage(u.chatId, `📢 <b>ANNOUNCEMENT:</b>\n\n${rawText}`);
+            await this.sendMessage(u.chatId, `📢 <b>ANNOUNCEMENT:</b>\n\n${bMsg}`, replyMarkup);
             sentCount++;
           } catch {}
         }
-        await this.sendMessage(chatId, `✅ <b>Broadcast Completed!</b>\nSuccessfully sent to ${sentCount} users.`);
+        await this.sendMessage(chatId, `✅ <b>Broadcast Completed!</b>\nSuccessfully sent to ${sentCount} users.${replyMarkup ? '\n🔗 <i>Inline Action Buttons attached.</i>' : ''}`);
         return;
       }
 
@@ -3401,24 +3520,42 @@ export class TelegramBotService {
       }
     }
 
-    // Direct Admin commands: /broadcast <message>
+    // Direct Admin commands: /broadcast <message> or /broadcast <message> | <btn_text> | <btn_url>
     if (cleanCmd.startsWith('/broadcast') && this.isAdmin(chatId)) {
-      const bMsg = cleanCmd.replace(/^\/broadcast\s*/i, '').trim();
-      if (!bMsg) {
+      const rawContent = cleanCmd.replace(/^\/broadcast\s*/i, '').trim();
+      if (!rawContent) {
         userStates.set(chatId, { step: 'AWAITING_ADMIN_BROADCAST' });
-        await this.sendMessage(chatId, `📢 <b>Broadcast Announcement</b>\n\nPlease enter the message text to broadcast to all users (or /cancel):`);
+        await this.sendMessage(
+          chatId,
+          `📢 <b>Broadcast Announcement Studio</b>\n\n` +
+          `Please enter the message text to broadcast to all users (or /cancel).\n\n` +
+          `💡 <b>Attach Inline Action Button:</b>\n` +
+          `Use the <code>|</code> pipe separator:\n` +
+          `<code>Your Message | Button Label | Button URL</code>\n\n` +
+          `<i>Example:</i>\n` +
+          `<code>🔥 New Update Live! Download APK | 📥 Download APK | https://t.me/kalamffpanel</code>`
+        );
         return;
       }
+
+      const parts = rawContent.split('|').map(s => s.trim());
+      const bMsg = parts[0] || '📢 <b>Announcement</b>';
+      const btn1Text = parts[1];
+      const btn1Url = parts[2];
+      const btn2Text = parts[3];
+      const btn2Url = parts[4];
+      const replyMarkup = buildInlineKeyboard(btn1Text, btn1Url, btn2Text, btn2Url);
+
       const users = this.loadBotUsers();
       let sentCount = 0;
-      await this.sendMessage(chatId, `⏳ <i>Broadcasting announcement to ${users.size} users...</i>`);
+      await this.sendMessage(chatId, `⏳ <i>Broadcasting announcement (${users.size} users, buttons: ${!!replyMarkup})...</i>`);
       for (const u of users.values()) {
         try {
-          await this.sendMessage(u.chatId, `📢 <b>ANNOUNCEMENT:</b>\n\n${bMsg}`);
+          await this.sendMessage(u.chatId, `📢 <b>ANNOUNCEMENT:</b>\n\n${bMsg}`, replyMarkup);
           sentCount++;
         } catch {}
       }
-      await this.sendMessage(chatId, `✅ <b>Broadcast Complete!</b> Sent to ${sentCount} users.`);
+      await this.sendMessage(chatId, `✅ <b>Broadcast Complete!</b> Sent to ${sentCount} users.${replyMarkup ? '\n🔗 <i>Inline Action Buttons delivered.</i>' : ''}`);
       return;
     }
 
@@ -4429,7 +4566,8 @@ export class TelegramBotService {
           return;
         }
         this.numpadAmounts.set(chatId, '0');
-        await this.initiateFamGatewayPayment(chatId, amt, userId, createFamOrder);
+        await this.answerCallback(cb.id, '⏳ Generating payment QR...', false);
+        await this.initiateFamGatewayPayment(chatId, amt, userId, createFamOrder, msgId);
         return;
       }
       // Numeric key pressed
@@ -4446,7 +4584,8 @@ export class TelegramBotService {
     if (data.startsWith('fam_amt:')) {
       const parts = data.split(':');
       const amount = parseFloat(parts[1]);
-      await this.initiateFamGatewayPayment(chatId, amount, userId, createFamOrder);
+      await this.answerCallback(cb.id, '⏳ Generating payment QR...', false);
+      await this.initiateFamGatewayPayment(chatId, amount, userId, createFamOrder, msgId);
       return;
     }
 
@@ -5840,10 +5979,21 @@ export class TelegramBotService {
     chatId: number,
     amount: number,
     userId: string,
-    createFamOrder?: (amount: number, userIdentifier: string, userEmail?: string) => Promise<any>
+    createFamOrder?: (amount: number, userIdentifier: string, userEmail?: string) => Promise<any>,
+    previousMessageId?: number
   ) {
+    if (this.inFlightDeposits.has(chatId)) {
+      console.log('[TelegramBot] Duplicate initiateFamGatewayPayment blocked for chatId:', chatId);
+      return;
+    }
+    this.inFlightDeposits.add(chatId);
+
     if (!createFamOrder) {
-      await this.sendMessage(chatId, '⚠️ Payment gateway is initializing. Please try again in a few moments.');
+      try {
+        await this.sendMessage(chatId, '⚠️ Payment gateway is initializing. Please try again in a few moments.');
+      } finally {
+        this.inFlightDeposits.delete(chatId);
+      }
       return;
     }
 
@@ -5852,6 +6002,11 @@ export class TelegramBotService {
       if (!order || !order.success) {
         await this.sendMessage(chatId, `❌ Failed to generate order: ${order?.error || 'Gateway unreachable'}. Please try again later.`);
         return;
+      }
+
+      // If user came from interactive numpad, delete the previous prompt to prevent duplicate messages
+      if (previousMessageId) {
+        await this.deleteMessage(chatId, previousMessageId).catch(() => {});
       }
 
       const caption =
@@ -5888,6 +6043,10 @@ export class TelegramBotService {
     } catch (err: any) {
       console.error('[FamGateway Order Error]:', err);
       await this.sendMessage(chatId, `❌ Error creating order: ${err.message}`);
+    } finally {
+      setTimeout(() => {
+        this.inFlightDeposits.delete(chatId);
+      }, 2500);
     }
   }
 

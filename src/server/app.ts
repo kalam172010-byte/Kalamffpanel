@@ -5,6 +5,7 @@ import path from 'path';
 import { INITIAL_PRODUCTS } from '../lib/mock-data';
 import { productApiRouter, productApiAdminRouter } from './product-api';
 import { generateInventoryDiagnostics, renderInventoryDiagnosticsHtml } from './inventory-diagnostics';
+import { reelsGeneratorRouter } from './reels-generator';
 
 export const app = express();
 
@@ -2447,6 +2448,12 @@ app.post(['/api/admin/telegram/broadcast', '/api/telegram/broadcast'], async (re
       return res.status(400).json({ success: false, error: 'No recipients found for the selected broadcast target.' });
     }
 
+    const {
+      button2Text,
+      button2Url,
+      buttons
+    } = req.body;
+
     const result = await telegramBotService.executeBroadcast({
       type,
       targets,
@@ -2458,6 +2465,9 @@ app.post(['/api/admin/telegram/broadcast', '/api/telegram/broadcast'], async (re
       caption,
       buttonText: buttonText ? buttonText.trim() : undefined,
       buttonUrl: buttonUrl ? buttonUrl.trim() : undefined,
+      button2Text: button2Text ? String(button2Text).trim() : undefined,
+      button2Url: button2Url ? String(button2Url).trim() : undefined,
+      buttons: Array.isArray(buttons) ? buttons : undefined,
       duration: duration ? parseFloat(duration) : undefined
     });
 
@@ -2485,7 +2495,10 @@ app.post(['/api/admin/telegram/send-direct', '/api/telegram/send-direct'], async
       audio,
       caption,
       buttonText,
-      buttonUrl
+      buttonUrl,
+      button2Text,
+      button2Url,
+      buttons
     } = req.body;
 
     const targetInput = String(chatId || userId || '').trim();
@@ -2500,9 +2513,8 @@ app.post(['/api/admin/telegram/send-direct', '/api/telegram/send-direct'], async
       targetChatId = parseInt(targetInput, 10);
     }
 
-    const replyMarkup = buttonText && buttonUrl ? {
-      inline_keyboard: [[{ text: buttonText, url: buttonUrl }]]
-    } : undefined;
+    const { buildInlineKeyboard } = await import('./telegramBot');
+    const replyMarkup = buildInlineKeyboard(buttonText, buttonUrl, button2Text, button2Url, buttons);
 
     let success = false;
     if (type === 'photo' && photo) {
@@ -2537,15 +2549,17 @@ app.post('/api/admin/telegram/test-broadcast', async (req: Request, res: Respons
       caption,
       buttonText,
       buttonUrl,
+      button2Text,
+      button2Url,
+      buttons,
       adminChatId
     } = req.body;
 
     const cfg = readTelegramConfig();
     const targetChatId = adminChatId || cfg.telegramChatId || cfg.chatId || '7768975239';
 
-    const replyMarkup = buttonText && buttonUrl ? {
-      inline_keyboard: [[{ text: buttonText, url: buttonUrl }]]
-    } : undefined;
+    const { buildInlineKeyboard } = await import('./telegramBot');
+    const replyMarkup = buildInlineKeyboard(buttonText, buttonUrl, button2Text, button2Url, buttons);
 
     let success = false;
     if (type === 'photo' && photo) {
@@ -5009,7 +5023,7 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
     const isPlaceholderKey = (k?: string) => {
       if (!k) return true;
       const t = String(k).trim();
-      return t === '' || t === 'YOUR_API_KEY' || t === 'EMPTY' || t === '87224c074a021676364829b5b3f0686e';
+      return t === '' || t === 'YOUR_API_KEY' || t === 'EMPTY';
     };
 
     // Only dispatch to API 1 (AdminPanels) if explicitly CONNECTED with a valid key
@@ -6219,13 +6233,13 @@ export function deductWalletForTelegram(identifier: string, amount: number, reas
   return true;
 }
 
-// 3. Helper to deliver key for Telegram Bot purchases (Inventory Stock + Upstream Fallback)
+// 3. Helper to deliver key for Telegram Bot purchases (Inventory Stock + Live Upstream API + Auto Fallback)
 export async function deliverKeyForTelegram(
   productId: string,
   planDuration: string,
   userEmail: string,
   amount?: number
-): Promise<{ success: boolean; keys?: string[]; error?: string }> {
+): Promise<{ success: boolean; keys?: string[]; error?: string; source?: string }> {
   try {
     const products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
     const product = products.find((p: any) => p.id === productId || p.productId === productId);
@@ -6243,7 +6257,7 @@ export async function deliverKeyForTelegram(
       for (const [pId, kList] of Object.entries(product.planKeys)) {
         if (Array.isArray(kList) && kList.length > 0) {
           const mp = (product.plans || []).find((pl: any) => pl.id === pId);
-          if (mp && (mp.duration === planDuration || mp.name === planDuration)) {
+          if (mp && (mp.duration === planDuration || mp.name === planDuration || mp.id === planDuration)) {
             effectiveKeys = kList as string[];
             break;
           }
@@ -6272,38 +6286,161 @@ export async function deliverKeyForTelegram(
       }
       saveProductsToDisk(products);
 
-      return { success: true, keys: [deliveredKey] };
+      // Send purchase alert
+      sendTelegramKeyPurchaseAlert({
+        productName: product.name || productId,
+        planDuration: planDuration || 'Standard',
+        amount: planPrice,
+        keys: [deliveredKey],
+        userId: userEmail || 'Telegram User',
+        email: userEmail
+      }).catch(e => console.warn('[TelegramAutoAlert] telegram purchase error:', e));
+
+      return { success: true, keys: [deliveredKey], source: 'INVENTORY' };
     }
 
     // 2. Check if Upstream Reseller API is configured for this product
     const storeData = loadStoreDataFromDisk();
     const apiConfigs = storeData.apiConfigs || [];
-    const api1 = apiConfigs.find((c: any) => c.status === 'CONNECTED' && c.apiKey && !c.apiKey.includes('EMPTY'));
 
-    if (api1) {
-      const payload = new URLSearchParams();
-      payload.append('api_key', api1.apiKey || '');
-      payload.append('action', 'buy');
-      payload.append('product_id', product.api1Mapping?.remoteProductId || product.remoteProductId || productId);
-      payload.append('plan_duration', product.api1Mapping?.remoteDuration || planDuration);
+    const isPlaceholderKey = (k?: string) => {
+      if (!k) return true;
+      const t = String(k).trim();
+      return t === '' || t === 'YOUR_API_KEY' || t === 'EMPTY';
+    };
+
+    const isPlaceholderToken = (tok?: string) => {
+      if (!tok) return true;
+      const t = String(tok).trim();
+      return t === '' || t === 'YOUR_API_KEY' || t === 'EMPTY' || t.startsWith('HK_REST_');
+    };
+
+    // Check API 1 (AdminPanels)
+    const api1 = (apiConfigs || []).find((c: any) => 
+      (c.type === 'adminpanels' || c.id === 'api-adminpanels' || c.id === 'api-1' || c.id?.includes('adminpanels')) &&
+      c.status === 'CONNECTED' &&
+      !isPlaceholderKey(c.apiKey)
+    );
+
+    // Check API 2 (HKMODZ / Custom REST)
+    const api2 = (apiConfigs || []).find((c: any) => 
+      (c.type === 'hkmodz' || c.id === 'api-hkmodz' || c.id === 'api-2' || c.id?.includes('hkmodz')) &&
+      c.status === 'CONNECTED' &&
+      c.apiUrl &&
+      !c.apiUrl.includes('hkmodz.site') &&
+      !isPlaceholderToken(c.xApiToken || c.apiKey)
+    );
+
+    let lastUpstreamError: string | null = null;
+
+    if (api1 && api1.apiKey && !isPlaceholderKey(api1.apiKey)) {
+      const targetUrl = normalizeResellerUrl(api1.apiUrl);
+      const remotePid = product.api1Mapping?.remoteProductId || product.remoteProductId || productId;
+      const remoteDur = product.api1Mapping?.remoteDuration || planDuration;
+      const masterKey = api1.masterKey || 'a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8';
+      const apiKey = api1.apiKey || '';
+      const hwid = '0b9b969bc2e7997b';
+
+      const payloadParams = new URLSearchParams();
+      payloadParams.append('api_key', apiKey);
+      payloadParams.append('apiKey', apiKey);
+      payloadParams.append('key', apiKey);
+      payloadParams.append('master_key', masterKey);
+      payloadParams.append('masterkey', masterKey);
+      payloadParams.append('action', 'buy');
+      payloadParams.append('product_id', remotePid);
+      payloadParams.append('productId', remotePid);
+      payloadParams.append('product', remotePid);
+      payloadParams.append('duration', remoteDur);
+      payloadParams.append('dur', remoteDur);
+      payloadParams.append('android_id', hwid);
+      payloadParams.append('device_id', hwid);
+      payloadParams.append('quantity', '1');
+      payloadParams.append('qty', '1');
+
+      console.log(`[Telegram Key Dispatch] Live request to AdminPanels (${targetUrl}) for product:${remotePid}, duration:${remoteDur}...`);
 
       const upstreamResult = await fetchUpstreamWithRetry(
-        api1.apiUrl || 'https://adminpanels.shop/api/reseller/buy',
+        targetUrl,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            'x-master-key': api1.apiKey || '',
+            'x-master-key': masterKey,
+            'X-Master-Key': masterKey,
+            'Accept': 'application/json, text/plain, */*',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
           },
-          body: payload.toString()
+          body: payloadParams.toString()
         },
-        { maxRetries: 2, initialDelayMs: 1000, backoffFactor: 2, maxDelayMs: 3000, timeoutMs: 12000, apiName: 'AdminPanels (Telegram)' }
+        { maxRetries: 3, initialDelayMs: 1000, backoffFactor: 2, maxDelayMs: 4000, timeoutMs: 15000, apiName: 'AdminPanels (Telegram)' }
       );
 
       if (upstreamResult.textResp) {
         const parsed = parseUpstreamResellerResponse(upstreamResult.textResp);
         if (parsed.isSuccess && parsed.key) {
-          return { success: true, keys: [parsed.key] };
+          sendTelegramKeyPurchaseAlert({
+            productName: product.name || productId,
+            planDuration: planDuration || 'Standard',
+            amount: planPrice,
+            keys: [parsed.key],
+            userId: userEmail || 'Telegram User',
+            email: userEmail
+          }).catch(e => console.warn('[TelegramAutoAlert] telegram purchase error:', e));
+
+          return { success: true, keys: [parsed.key], source: 'ADMINPANELS_API' };
+        } else {
+          lastUpstreamError = parsed.error || parsed.message || (typeof upstreamResult.textResp === 'string' ? upstreamResult.textResp.slice(0, 80) : 'Invalid API Response');
+        }
+      } else if (upstreamResult.networkError) {
+        lastUpstreamError = `Upstream network error: ${upstreamResult.networkError.message || 'timeout'}`;
+      }
+    }
+
+    if (api2 && (api2.xApiToken || api2.apiKey) && !isPlaceholderToken(api2.xApiToken || api2.apiKey)) {
+      const targetUrl = api2.apiUrl;
+      const remotePid = product.api2Mapping?.remoteProductId || product.remoteProductId || productId;
+      const remoteDur = product.api2Mapping?.remoteDuration || planDuration;
+      const token = api2.xApiToken || api2.apiKey;
+
+      console.log(`[Telegram Key Dispatch] Live request to API #2 (${targetUrl}) for product:${remotePid}, duration:${remoteDur}...`);
+
+      const upstreamResult = await fetchUpstreamWithRetry(
+        targetUrl,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Token': token,
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+          },
+          body: JSON.stringify({
+            action: 'create_key',
+            product: remotePid,
+            duration: remoteDur,
+            quantity: 1
+          })
+        },
+        { maxRetries: 3, initialDelayMs: 1000, backoffFactor: 2, maxDelayMs: 4000, timeoutMs: 12000, apiName: 'API #2 (Telegram)' }
+      );
+
+      if (upstreamResult.textResp) {
+        const parsed = parseUpstreamResellerResponse(upstreamResult.textResp);
+        if (parsed.isSuccess && parsed.key) {
+          sendTelegramKeyPurchaseAlert({
+            productName: product.name || productId,
+            planDuration: planDuration || 'Standard',
+            amount: planPrice,
+            keys: [parsed.key],
+            userId: userEmail || 'Telegram User',
+            email: userEmail
+          }).catch(e => console.warn('[TelegramAutoAlert] telegram purchase error:', e));
+
+          return { success: true, keys: [parsed.key], source: 'API_2_UPSTREAM' };
+        } else {
+          lastUpstreamError = parsed.error || parsed.message || lastUpstreamError;
         }
       }
     }
@@ -6311,12 +6448,17 @@ export async function deliverKeyForTelegram(
     // 3. Auto-generate key if product or store allows auto-generation
     if (product.autoGenerateKeys || (storeData.storeSettings && storeData.storeSettings.autoGenerateFallbackKeys)) {
       const generatedKey = `KALAM-VIP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-      return { success: true, keys: [generatedKey] };
+      return { success: true, keys: [generatedKey], source: 'AUTO_GENERATED' };
+    }
+
+    let finalError = 'Product is currently out of stock in inventory.';
+    if (lastUpstreamError) {
+      finalError = `Supplier API reported: ${lastUpstreamError}`;
     }
 
     return {
       success: false,
-      error: 'Product is currently out of stock. Please ask store admin to add keys in Admin Panel > Manage Products or Telegram /admin menu.'
+      error: finalError
     };
   } catch (err: any) {
     return { success: false, error: err.message || 'Key delivery failed' };
@@ -7045,6 +7187,9 @@ app.post(['/api/admin/telegram-restart', '/api/telegram/restart'], (req: Request
     return res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// 4. Reels Video Script & Marketing Studio Router
+app.use('/api/admin/reels', reelsGeneratorRouter);
 
 // Initialize 6-Hour Background Product Keys & Pricing Scheduler
 productSyncScheduler.init(
