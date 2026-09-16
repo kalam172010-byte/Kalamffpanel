@@ -425,9 +425,20 @@ function patchFile(targetPath) {
         ']}),' +
         'r.jsxs("div",{className:"flex gap-2",children:[' +
           'r.jsx("input",{type:"text",value:apkLink,onChange:He=>setApkLink(He.target.value),placeholder:"https://t.me/kalamffpanel",className:"w-full px-3 py-2 rounded-lg bg-black/80 border border-cyan-500/40 focus:border-cyan-400 focus:outline-none text-white font-mono text-xs shadow-inner"}),' +
+          'r.jsx("button",{type:"button",onClick:async()=>{' +
+            'try{' +
+              'const res=await fetch("/api/admin/telegram/apk-url",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({apkDownloadUrl:apkLink})});' +
+              'const data=await res.json();' +
+              'if(data.success){Fs("APK Download URL updated & synced to telegram_config.json!");setTgLiveStatus({ok:!0,msg:`✅ APK Download URL saved & synced to telegram_config.json: ${apkLink}`});}' +
+              'else{setTgLiveStatus({ok:!1,msg:`❌ ${data.error||"Failed to save APK URL"}`});}' +
+            '}catch(e){setTgLiveStatus({ok:!1,msg:"❌ Error saving APK URL to telegram_config.json"});}' +
+          '},className:"px-3 py-2 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-black text-xs font-extrabold whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer shadow-md",children:[' +
+            'r.jsx(Sn,{className:"w-3.5 h-3.5 text-black stroke-[3]"}),' +
+            'r.jsx("span",{children:"⚡ Sync URL"})' +
+          ']}),' +
           'r.jsx("a",{href:apkLink,target:"_blank",rel:"noopener noreferrer",className:"px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-bold whitespace-nowrap flex items-center gap-1 shrink-0 cursor-pointer",children:"Test ↗"})' +
         ']}),' +
-        'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Delivered whenever customers tap \'Check Update\', \'Download APK\' or use commands /apk / /update."})' +
+        'r.jsx("p",{className:"text-[10px] text-gray-400",children:"Delivered dynamically whenever customers tap \'Check Update\', \'Download APK\' or use bot commands /apk and /update."})' +
       ']}),' +
 
       // Tutorial Link

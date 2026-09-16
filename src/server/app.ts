@@ -87,6 +87,91 @@ interface UserWalletRecord {
 
 const userWalletsMap = new Map<string, UserWalletRecord>();
 
+export function getCanonicalWalletKeys(rawId?: string | number, rawEmail?: string): string[] {
+  const keys = new Set<string>();
+  const idStr = (rawId !== undefined && rawId !== null ? String(rawId) : '').trim().toLowerCase();
+  const emStr = (rawEmail || '').trim().toLowerCase();
+
+  const registerKey = (k: string) => {
+    if (!k || k === 'undefined' || k === 'null') return;
+    keys.add(k);
+    const noTg = k.replace(/^tg_/, '').trim();
+    if (/^\d+$/.test(noTg)) {
+      keys.add(`tg_${noTg}`);
+      keys.add(noTg);
+    }
+  };
+
+  registerKey(idStr);
+  registerKey(emStr);
+  return Array.from(keys);
+}
+
+export function findOrCreateWalletRecord(
+  rawId?: string | number,
+  rawEmail?: string,
+  initialBal?: number
+): UserWalletRecord {
+  const allKeys = getCanonicalWalletKeys(rawId, rawEmail);
+  let record: UserWalletRecord | undefined;
+
+  for (const k of allKeys) {
+    if (k && k !== 'guest') {
+      record = userWalletsMap.get(k);
+      if (record) break;
+    }
+  }
+
+  if (!record && (rawId || rawEmail)) {
+    for (const r of userWalletsMap.values()) {
+      const rId = r.userId.toLowerCase();
+      const rEm = (r.email || '').toLowerCase();
+      if (
+        (rId && allKeys.includes(rId)) ||
+        (rEm && allKeys.includes(rEm)) ||
+        (rId.replace(/^tg_/, '') && allKeys.includes(rId.replace(/^tg_/, '')))
+      ) {
+        record = r;
+        break;
+      }
+    }
+  }
+
+  if (!record && (!rawId || String(rawId) === 'guest') && !rawEmail) {
+    record = userWalletsMap.get('guest');
+  }
+
+  if (!record) {
+    const primaryId = (rawId && String(rawId) !== 'guest') ? String(rawId).trim() : (rawEmail || 'guest');
+    const isOwner = (rawEmail === 'kalam172010@gmail.com' || rawEmail === 'kalam2000abc@gmail.com' || primaryId === 'kalam172010@gmail.com');
+    const startBal = typeof initialBal === 'number' ? initialBal : (isOwner ? 290011.65 : 0);
+
+    record = {
+      userId: primaryId,
+      email: rawEmail || undefined,
+      balance: startBal,
+      lastUpdated: Date.now(),
+      history: []
+    };
+  }
+
+  // Ensure all alias keys point to the exact same record object in memory
+  for (const k of allKeys) {
+    if (k) userWalletsMap.set(k, record);
+  }
+  if (record.userId) {
+    userWalletsMap.set(record.userId.toLowerCase(), record);
+    const noTg = record.userId.replace(/^tg_/, '');
+    if (/^\d+$/.test(noTg)) {
+      userWalletsMap.set(`tg_${noTg}`, record);
+      userWalletsMap.set(noTg, record);
+    }
+  }
+  if (record.email) userWalletsMap.set(record.email.toLowerCase(), record);
+
+  return record;
+}
+
 function loadWalletsFromDisk() {
   try {
     if (fs.existsSync(WALLETS_FILE)) {
@@ -94,11 +179,40 @@ function loadWalletsFromDisk() {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         userWalletsMap.clear();
+        const mergedMap = new Map<string, UserWalletRecord>();
+
         parsed.forEach((w: UserWalletRecord) => {
-          if (w && w.userId) {
-            userWalletsMap.set(w.userId.toLowerCase(), w);
-            if (w.email) userWalletsMap.set(w.email.toLowerCase(), w);
+          if (w && (w.userId || w.email)) {
+            const canonicalKeys = getCanonicalWalletKeys(w.userId, w.email);
+            let existing: UserWalletRecord | undefined;
+            for (const k of canonicalKeys) {
+              if (mergedMap.has(k)) {
+                existing = mergedMap.get(k);
+                break;
+              }
+            }
+
+            if (existing) {
+              existing.balance = Math.max(existing.balance || 0, w.balance || 0);
+              existing.lastUpdated = Math.max(existing.lastUpdated || 0, w.lastUpdated || 0);
+              if (w.email && !existing.email) existing.email = w.email;
+              const combinedHist = [...(existing.history || []), ...(w.history || [])];
+              const seenIds = new Set<string>();
+              existing.history = combinedHist.filter(h => {
+                if (!h || !h.id || seenIds.has(h.id)) return false;
+                seenIds.add(h.id);
+                return true;
+              }).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
+
+              canonicalKeys.forEach(k => mergedMap.set(k, existing!));
+            } else {
+              canonicalKeys.forEach(k => mergedMap.set(k, w));
+            }
           }
+        });
+
+        mergedMap.forEach((rec, k) => {
+          userWalletsMap.set(k, rec);
         });
       }
     }
@@ -206,7 +320,7 @@ function loadStoreDataFromDisk(): { storeSettings?: any; paymentConfigs?: any[];
   };
 }
 
-// Helper to save store data to disk
+// Helper to save store data to disk with automatic cross-sync
 function saveStoreDataToDisk(data: { storeSettings?: any; paymentConfigs?: any[]; apiConfigs?: any[]; apkDownloadUrl?: string }) {
   try {
     if (!fs.existsSync(DATA_DIR)) {
@@ -214,7 +328,54 @@ function saveStoreDataToDisk(data: { storeSettings?: any; paymentConfigs?: any[]
     }
     const current = loadStoreDataFromDisk();
     const updated = { ...current, ...data, updatedAt: Date.now() };
+
+    // Synchronize UPI ID and payment settings bi-directionally
+    if (data.storeSettings) {
+      const newUpi = (data.storeSettings.upiId || data.storeSettings.upiManualId || data.storeSettings.merchantUpi || '').trim();
+      if (newUpi && updated.paymentConfigs && Array.isArray(updated.paymentConfigs)) {
+        updated.paymentConfigs = updated.paymentConfigs.map((c: any) => ({
+          ...c,
+          upiId: newUpi,
+        }));
+      }
+    }
+    if (data.paymentConfigs && Array.isArray(data.paymentConfigs)) {
+      const active = data.paymentConfigs.find((c: any) => c.isActive || c.status === 'ACTIVE') || data.paymentConfigs[0];
+      if (active && active.upiId) {
+        if (!updated.storeSettings) updated.storeSettings = {};
+        updated.storeSettings.upiId = active.upiId.trim();
+        updated.storeSettings.upiManualId = active.upiId.trim();
+      }
+    }
+
     fs.writeFileSync(STORE_DATA_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+
+    // Instantly sync to telegram_config.json so the Telegram bot reflects changes in real-time
+    try {
+      const cfgPath = path.join(DATA_DIR, 'telegram_config.json');
+      let tgCfg: any = {};
+      if (fs.existsSync(cfgPath)) {
+        tgCfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+      }
+      if (updated.storeSettings?.telegramBotToken) tgCfg.botToken = updated.storeSettings.telegramBotToken;
+      if (updated.storeSettings?.telegramChatId) tgCfg.adminChatId = updated.storeSettings.telegramChatId;
+      if (updated.storeSettings?.proofBotToken) tgCfg.proofBotToken = updated.storeSettings.proofBotToken;
+      if (updated.storeSettings?.proofChatId) tgCfg.proofChatId = updated.storeSettings.proofChatId;
+      if (updated.storeSettings?.upiId || updated.storeSettings?.upiManualId) {
+        tgCfg.upiId = (updated.storeSettings.upiId || updated.storeSettings.upiManualId).trim();
+      }
+      if (updated.storeSettings?.apkDownloadUrl) tgCfg.apkDownloadUrl = updated.storeSettings.apkDownloadUrl.trim();
+      if (updated.storeSettings?.supportUsername) tgCfg.supportUsername = updated.storeSettings.supportUsername.trim();
+      tgCfg.updatedAt = new Date().toISOString();
+      fs.writeFileSync(cfgPath, JSON.stringify(tgCfg, null, 2), 'utf8');
+    } catch (tgSyncErr) {
+      console.warn('[Server] Telegram config cross-sync note:', tgSyncErr);
+    }
+
+    // Notify Telegram Bot singleton in real-time
+    try {
+      telegramBotService.syncFromStoreData(updated);
+    } catch {}
   } catch (e) {
     console.warn('[Server] Error saving store data to disk:', e);
   }
@@ -677,6 +838,35 @@ function saveOrdersToDisk() {
 // Initial disk load
 loadOrdersFromDisk();
 
+// Proof dispatch deduplication cache to prevent duplicate channel posts
+const dispatchedProofSignatures = new Set<string>();
+const dispatchedKeysGlobal = new Set<string>();
+
+export function isProofAlreadyDispatched(signature: string): boolean {
+  if (!signature) return false;
+  if (dispatchedProofSignatures.has(signature)) return true;
+  dispatchedProofSignatures.add(signature);
+  if (dispatchedProofSignatures.size > 3000) {
+    const list = Array.from(dispatchedProofSignatures);
+    dispatchedProofSignatures.clear();
+    list.slice(-1500).forEach(k => dispatchedProofSignatures.add(k));
+  }
+  return false;
+}
+
+export function isKeyAlreadyDispatched(key: string): boolean {
+  if (!key) return false;
+  const cleanKey = key.trim();
+  if (dispatchedKeysGlobal.has(cleanKey)) return true;
+  dispatchedKeysGlobal.add(cleanKey);
+  if (dispatchedKeysGlobal.size > 5000) {
+    const list = Array.from(dispatchedKeysGlobal);
+    dispatchedKeysGlobal.clear();
+    list.slice(-2500).forEach(k => dispatchedKeysGlobal.add(k));
+  }
+  return false;
+}
+
 // Real-Time Server-Side Wallet Credit Function
 function creditUserWalletOnServer(
   userId?: string,
@@ -684,7 +874,8 @@ function creditUserWalletOnServer(
   amount?: number,
   reason?: string,
   utr?: string,
-  orderId?: string
+  orderId?: string,
+  options?: { skipBotAlert?: boolean; source?: string }
 ): { success: boolean; credited: boolean; balance: number; user: string } {
   const numAmount = Math.max(0, Number(amount) || 0);
   if (numAmount <= 0) {
@@ -699,37 +890,7 @@ function creditUserWalletOnServer(
   const cleanEmail = (email || '').toString().toLowerCase().trim();
   const cleanUserId = (userId || '').toString().toLowerCase().trim();
 
-  let record: UserWalletRecord | undefined;
-  if (cleanUserId && cleanUserId !== 'guest') record = userWalletsMap.get(cleanUserId);
-  if (!record && cleanEmail) record = userWalletsMap.get(cleanEmail);
-
-  if (!record) {
-    for (const r of userWalletsMap.values()) {
-      if ((cleanUserId && cleanUserId !== 'guest' && r.userId.toLowerCase() === cleanUserId) ||
-          (cleanEmail && r.email && r.email.toLowerCase() === cleanEmail)) {
-        record = r;
-        break;
-      }
-    }
-  }
-
-  // If still not found, check guest wallet if applicable
-  if (!record && (!cleanUserId || cleanUserId === 'guest') && !cleanEmail) {
-    record = userWalletsMap.get('guest');
-  }
-
-  if (!record) {
-    const key = (cleanUserId && cleanUserId !== 'guest') ? cleanUserId : (cleanEmail || 'guest');
-    record = {
-      userId: key,
-      email: cleanEmail || undefined,
-      balance: 0,
-      lastUpdated: Date.now(),
-      history: []
-    };
-    userWalletsMap.set(key.toLowerCase(), record);
-    if (cleanEmail) userWalletsMap.set(cleanEmail.toLowerCase(), record);
-  }
+  const record = findOrCreateWalletRecord(cleanUserId, cleanEmail);
 
   // Check if this payment was ALREADY credited to THIS specific wallet record's history
   const isAlreadyCredited = record.history.some(h =>
@@ -761,27 +922,62 @@ function creditUserWalletOnServer(
     creditedPayments.add(creditKey);
   }
 
-  userWalletsMap.set(record.userId.toLowerCase(), record);
-  if (record.email) userWalletsMap.set(record.email.toLowerCase(), record);
+  // Ensure all keys are synchronized
+  const allKeys = getCanonicalWalletKeys(record.userId, record.email);
+  allKeys.forEach(k => userWalletsMap.set(k, record));
   saveWalletsToDisk();
 
+  // Sync with Telegram bot user stats in real time
+  try {
+    const rawDigits = record.userId.replace(/^tg_/, '').trim();
+    const numericId = parseInt(rawDigits, 10);
+    if (!isNaN(numericId) && numericId > 0 && typeof telegramBotService !== 'undefined') {
+      const allUsers = telegramBotService.loadBotUsers();
+      const bUser = allUsers.get(numericId);
+      if (bUser) {
+        bUser.totalDeposited = (bUser.totalDeposited || 0) + numAmount;
+        allUsers.set(numericId, bUser);
+        telegramBotService.saveBotUsers(allUsers);
+      }
+    }
+  } catch {}
+
   console.log(`[AutoCredit] ✅ Successfully credited ₹${numAmount} to ${record.email || record.userId}. New balance: ₹${record.balance} (was ₹${prev})`);
-  // Automatically alert Telegram bot on confirmed wallet credit / deposit
-  sendTelegramDepositAlert({
-    amount: numAmount,
-    userId: record.userId,
-    email: record.email,
-    utr: cleanUtr,
-    orderId: cleanOrderId,
-    balance: record.balance
-  }).catch(e => console.warn('[TelegramAutoAlert] deposit error:', e));
+
+  // Automatically alert Telegram bot only if not explicitly suppressed (e.g., Telegram bot direct verification)
+  if (!options?.skipBotAlert) {
+    sendTelegramDepositAlert({
+      amount: numAmount,
+      userId: record.userId,
+      email: record.email,
+      utr: cleanUtr,
+      orderId: cleanOrderId,
+      balance: record.balance
+    }).catch(e => console.warn('[TelegramAutoAlert] deposit error:', e));
+  }
 
   return { success: true, credited: true, balance: record.balance, user: record.userId };
 }
 
-// Telegram Bot Instant Dispatch Helper Function
+// Telegram Bot Instant Dispatch Helper Function with strict deduplication
+const recentAdminOutgoingMessages = new Map<string, number>();
+
 export async function sendTelegramMessage(text: string, replyMarkup?: any): Promise<boolean> {
   try {
+    const cleanTextKey = text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
+    const now = Date.now();
+    const lastSent = recentAdminOutgoingMessages.get(cleanTextKey) || 0;
+    if (now - lastSent < 4000) {
+      console.log('[TelegramBot] Suppressed duplicate outgoing admin message within 4s window:', cleanTextKey.slice(0, 40));
+      return true;
+    }
+    recentAdminOutgoingMessages.set(cleanTextKey, now);
+    if (recentAdminOutgoingMessages.size > 200) {
+      for (const [k, v] of recentAdminOutgoingMessages.entries()) {
+        if (now - v > 30000) recentAdminOutgoingMessages.delete(k);
+      }
+    }
+
     const dataDir = path.join(process.cwd(), 'data');
     const configFile = path.join(dataDir, 'telegram_config.json');
     let botToken = process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
@@ -851,15 +1047,6 @@ export async function sendTelegramDepositAlert(info: {
     `🕒 <b>Time:</b> ${time}\n\n` +
     `⚡ <i>Instant automated notification from KALAM STORE</i>`;
 
-  // Auto-dispatch deposit proof to secondary proof channel/group
-  sendTelegramDepositProof({
-    amount: info.amount,
-    userId: info.userId,
-    email: info.email,
-    utr: info.utr,
-    orderId: info.orderId,
-  }).catch(() => {});
-
   return sendTelegramMessage(msg);
 }
 
@@ -876,8 +1063,8 @@ export function maskLicenseKey(keyStr: string): string {
   return clean.substring(0, 4) + '****' + clean.substring(clean.length - 4);
 }
 
-// Dispatch Deposit / Top-up Proof to Secondary Proof Bot / Group
-export async function sendTelegramDepositProof(info: {
+// Dispatch Deposit / Top-up Proof to Secondary Proof Bot / Group (Disabled: proofs sent only when VIP key is purchased)
+export async function sendTelegramDepositProof(_info: {
   amount: number;
   userId?: string;
   email?: string;
@@ -885,97 +1072,8 @@ export async function sendTelegramDepositProof(info: {
   orderId?: string;
   paymentMethod?: string;
 }): Promise<boolean> {
-  try {
-    const dataDir = path.join(process.cwd(), 'data');
-    const configFile = path.join(dataDir, 'telegram_config.json');
-    const storeDataFile = path.join(dataDir, 'store_data.json');
-
-    let proofBotToken = '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
-    let proofChatId = '-1004325449752';
-    let mainBotToken = '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
-    let mainBotUsername = '@KALAMFFPANEL1_12_BOT';
-    let enableAutoProof = true;
-
-    if (fs.existsSync(configFile)) {
-      try {
-        const saved = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-        if (saved.proofBotToken) proofBotToken = saved.proofBotToken.trim();
-        if (saved.proofChatId) proofChatId = saved.proofChatId.trim();
-        if (saved.botToken) mainBotToken = saved.botToken.trim();
-        if (saved.botUsername) mainBotUsername = saved.botUsername.trim();
-        if (typeof saved.enableAutoProof === 'boolean') enableAutoProof = saved.enableAutoProof;
-      } catch {}
-    }
-
-    if (fs.existsSync(storeDataFile)) {
-      try {
-        const sd = JSON.parse(fs.readFileSync(storeDataFile, 'utf8'));
-        if (sd.storeSettings) {
-          if (sd.storeSettings.proofBotToken) proofBotToken = sd.storeSettings.proofBotToken.trim();
-          if (sd.storeSettings.proofChatId) proofChatId = sd.storeSettings.proofChatId.trim();
-          if (typeof sd.storeSettings.enableAutoProof === 'boolean') enableAutoProof = sd.storeSettings.enableAutoProof;
-        }
-      } catch {}
-    }
-
-    if (!enableAutoProof) return false;
-
-    const effectiveToken = proofBotToken || mainBotToken;
-    const targetChatId = proofChatId;
-    if (!effectiveToken || !targetChatId) return false;
-
-    const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
-    const userLabel = info.email || info.userId || 'Verified Customer';
-    const cleanOrderId = info.orderId || `DEP_${Date.now()}`;
-    const botHandle = (mainBotUsername || '@KALAMFFPANEL1_12_BOT').replace('@', '');
-
-    const proofText =
-      `💳 <b>NEW UPI PAYMENT & WALLET DEPOSIT PROOF</b> 💳\n\n` +
-      `<blockquote>` +
-      `💵 <b>Amount Paid:</b> ₹${Number(info.amount).toFixed(2)}\n` +
-      `👤 <b>Customer:</b> ${userLabel}\n` +
-      `🔖 <b>UTR / Ref:</b> <code>${info.utr || 'Direct UPI Auto-Sync'}</code>\n` +
-      `🆔 <b>Order ID:</b> <code>${cleanOrderId}</code>\n` +
-      `🏦 <b>Gateway:</b> ${info.paymentMethod || 'Direct UPI / FamGateway'}\n` +
-      `🕒 <b>Time:</b> ${time} (IST)\n` +
-      `</blockquote>\n\n` +
-      `🛡️ <b>STATUS:</b> ✅ <b>PAYMENT VERIFIED & CREDITED</b> ⚡\n` +
-      `🛒 <b>BUY KEY INSTANTLY:</b> @${botHandle}`;
-
-    const res = await fetch(`https://api.telegram.org/bot${effectiveToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: targetChatId,
-        text: proofText,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle}` }]
-          ]
-        }
-      })
-    });
-
-    const data: any = await res.json();
-    if (!data.ok) {
-      console.warn('[TelegramProof] Deposit proof HTML send failed:', data.description);
-      await fetch(`https://api.telegram.org/bot${effectiveToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: targetChatId,
-          text: proofText.replace(/<[^>]*>/g, ''),
-        })
-      });
-    }
-    console.log('[TelegramProof] ✅ Deposit proof dispatched successfully to group:', targetChatId);
-    return true;
-  } catch (err: any) {
-    console.error('[TelegramProof] Deposit proof error:', err.message);
-    return false;
-  }
+  // Public channel proofs for deposits are disabled as requested: only VIP key purchases are posted
+  return false;
 }
 
 // Dispatch Payment & Order Proof to Secondary Proof Bot / Channel
@@ -983,6 +1081,7 @@ export async function sendTelegramPaymentProof(info: {
   productName: string;
   planDuration: string;
   amount?: number;
+  price?: number;
   keys: string[];
   userId?: string;
   username?: string;
@@ -992,121 +1091,26 @@ export async function sendTelegramPaymentProof(info: {
   paymentMethod?: string;
 }): Promise<boolean> {
   try {
-    const dataDir = path.join(process.cwd(), 'data');
-    const configFile = path.join(dataDir, 'telegram_config.json');
-    const storeDataFile = path.join(dataDir, 'store_data.json');
-
-    let proofBotToken = '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
-    let proofChatId = '-1004325449752';
-    let mainBotToken = '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
-    let mainBotUsername = '@KALAMFFPANEL1_12_BOT';
-    let enableAutoProof = true;
-
-    if (fs.existsSync(configFile)) {
-      try {
-        const saved = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-        if (saved.proofBotToken) proofBotToken = saved.proofBotToken.trim();
-        if (saved.proofChatId) proofChatId = saved.proofChatId.trim();
-        if (saved.botToken) mainBotToken = saved.botToken.trim();
-        if (saved.botUsername) mainBotUsername = saved.botUsername.trim();
-        if (typeof saved.enableAutoProof === 'boolean') enableAutoProof = saved.enableAutoProof;
-      } catch {}
-    }
-
-    if (fs.existsSync(storeDataFile)) {
-      try {
-        const sd = JSON.parse(fs.readFileSync(storeDataFile, 'utf8'));
-        if (sd.storeSettings) {
-          if (sd.storeSettings.proofBotToken) proofBotToken = sd.storeSettings.proofBotToken.trim();
-          if (sd.storeSettings.proofChatId) proofChatId = sd.storeSettings.proofChatId.trim();
-          if (!proofChatId && sd.storeSettings.paymentProofChannel) {
-            const raw = sd.storeSettings.paymentProofChannel.trim();
-            if (raw.startsWith('@') || raw.startsWith('-100') || (!raw.includes('http') && !raw.includes('/'))) {
-              proofChatId = raw;
-            }
-          }
-          if (typeof sd.storeSettings.enableAutoProof === 'boolean') enableAutoProof = sd.storeSettings.enableAutoProof;
-        }
-      } catch {}
-    }
-
-    if (!enableAutoProof) return false;
-
-    const effectiveToken = proofBotToken || mainBotToken;
-    const targetChatId = proofChatId;
-
-    if (!effectiveToken || !targetChatId) {
-      return false;
-    }
-
-    const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
-    const maskedKeysList = (info.keys && info.keys.length > 0)
-      ? info.keys.map(k => `<code>${maskLicenseKey(k)}</code> <i>(Sent Privately to Buyer)</i>`).join('\n')
-      : `<code>XXXX-****-YYYY</code> <i>(Sent Privately to Buyer)</i>`;
-
-    const userLabel = info.username
-      ? `@${info.username.replace('@', '')} ${info.firstName ? `(${info.firstName})` : ''}`
-      : (info.firstName || info.userId || 'Verified Customer');
-
-    const cleanOrderId = info.orderId || `ORD_${Date.now()}`;
-    const botHandle = (mainBotUsername || '@KALAMFFPANEL1_12_BOT').replace('@', '');
-
-    const proofText =
-      `🎉 <b>NEW PAYMENT & KEY PURCHASE PROOF</b> 🎉\n\n` +
-      `<blockquote>` +
-      `📦 <b>Product:</b> ${info.productName}\n` +
-      `⏳ <b>Plan Duration:</b> ${info.planDuration}\n` +
-      (info.amount ? `💵 <b>Amount Paid:</b> ₹${Number(info.amount).toFixed(2)}\n` : '') +
-      `👤 <b>Customer:</b> ${userLabel}\n` +
-      (info.chatId ? `🆔 <b>User ID:</b> <code>${info.chatId}</code>\n` : '') +
-      `🔖 <b>Order ID:</b> <code>${cleanOrderId}</code>\n` +
-      `💳 <b>Payment Mode:</b> ${info.paymentMethod || 'Instant Auto-Wallet'}\n` +
-      `🕒 <b>Time:</b> ${time} (IST)\n` +
-      `</blockquote>\n\n` +
-      `🔐 <b>DELIVERED LICENSE KEY(S):</b>\n` +
-      `${maskedKeysList}\n\n` +
-      `🛡️ <b>STATUS:</b> ✅ <b>VERIFIED & DELIVERED</b> ⚡\n` +
-      `🛒 <b>BUY KEY INSTANTLY:</b> @${botHandle}`;
-
-    const res = await fetch(`https://api.telegram.org/bot${effectiveToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: targetChatId,
-        text: proofText,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle}` }
-            ]
-          ]
-        }
-      })
+    return await telegramBotService.dispatchPaymentProof({
+      productName: info.productName,
+      planDuration: info.planDuration,
+      price: info.price !== undefined ? info.price : info.amount,
+      amount: info.amount !== undefined ? info.amount : info.price,
+      keys: info.keys,
+      userId: info.userId,
+      username: info.username,
+      firstName: info.firstName,
+      orderId: info.orderId,
+      chatId: info.chatId,
+      paymentMethod: info.paymentMethod
     });
-
-    const data: any = await res.json();
-    if (!data.ok) {
-      console.warn('[TelegramProof] Error from Telegram API:', data.description);
-      const fbRes = await fetch(`https://api.telegram.org/bot${effectiveToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: targetChatId,
-          text: proofText.replace(/<[^>]*>/g, ''),
-        })
-      });
-      const fbData: any = await fbRes.json();
-      return !!fbData.ok;
-    }
-    console.log('[TelegramProof] ✅ Purchase proof dispatched successfully to group:', targetChatId);
-    return true;
   } catch (err: any) {
     console.error('[TelegramProof] Failed to dispatch proof:', err.message);
     return false;
   }
 }
+
+const recentPurchasesDispatched = new Set<string>();
 
 export async function sendTelegramKeyPurchaseAlert(info: {
   productName: string;
@@ -1116,8 +1120,21 @@ export async function sendTelegramKeyPurchaseAlert(info: {
   userId?: string;
   email?: string;
 }) {
+  const keySig = Array.isArray(info.keys) ? info.keys.filter(Boolean).join(',') : '';
+  const userSig = `alert_${info.email || info.userId || 'cust'}_${info.productName}_${info.planDuration}_${keySig}`;
+  if (keySig && recentPurchasesDispatched.has(userSig)) {
+    console.log('[TelegramAlert] Suppressed duplicate purchase alert for:', userSig);
+    return true;
+  }
+  recentPurchasesDispatched.add(userSig);
+  if (recentPurchasesDispatched.size > 1000) {
+    const arr = Array.from(recentPurchasesDispatched).slice(-500);
+    recentPurchasesDispatched.clear();
+    arr.forEach(k => recentPurchasesDispatched.add(k));
+  }
+
   const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-  const keyList = info.keys.map(k => `<code>${k}</code>`).join('\n');
+  const keyList = (info.keys || []).map(k => `<code>${k}</code>`).join('\n');
   const msg =
     `🔑 <b>KEY PURCHASE DELIVERED!</b>\n\n` +
     `📦 <b>Product:</b> ${info.productName}\n` +
@@ -1128,16 +1145,7 @@ export async function sendTelegramKeyPurchaseAlert(info: {
     `🕒 <b>Time:</b> ${time}\n\n` +
     `⚡ <i>Instant automated delivery notification from KALAM STORE</i>`;
 
-  // Also auto-dispatch payment proof to secondary proof bot/channel with masked key
-  sendTelegramPaymentProof({
-    productName: info.productName,
-    planDuration: info.planDuration,
-    amount: info.amount,
-    keys: info.keys,
-    userId: info.userId,
-    username: info.email,
-  }).catch(() => {});
-
+  // Admin private alert
   return sendTelegramMessage(msg);
 }
 
@@ -1982,77 +1990,15 @@ app.post('/api/admin/telegram/live-credentials', async (req: Request, res: Respo
   }
 });
 
-// Auto-Detect Recent Chats from Telegram getUpdates (Supports Groups, Supergroups, Channels & Private DMs)
+// Auto-Detect Recent Chats from Telegram Bot Service (Supports Groups, Supergroups, Channels & Private DMs)
 app.get('/api/admin/telegram/recent-chats', async (req: Request, res: Response) => {
   try {
-    const dataFile = path.join(DATA_DIR, 'telegram_config.json');
-    let botToken = typeof req.query.botToken === 'string' ? req.query.botToken.trim() : '';
-    let proofBotToken = typeof req.query.proofBotToken === 'string' ? req.query.proofBotToken.trim() : '';
-
-    if (fs.existsSync(dataFile)) {
-      try {
-        const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-        if (!botToken && saved.botToken) botToken = saved.botToken.trim();
-        if (!proofBotToken && saved.proofBotToken) proofBotToken = saved.proofBotToken.trim();
-      } catch {}
-    }
-    botToken = botToken || process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
-
-    const tokensToQuery = Array.from(new Set([botToken, proofBotToken].filter(Boolean)));
-    const chats: Array<{
-      chatId: string;
-      type: string;
-      title?: string;
-      username?: string;
-      firstName?: string;
-      lastText?: string;
-      date?: number;
-      botName?: string;
-    }> = [];
-    const seen = new Set<string>();
-
-    for (const tok of tokensToQuery) {
-      try {
-        const updatesRes = await fetch(`https://api.telegram.org/bot${tok}/getUpdates?limit=50`);
-        const updatesData: any = await updatesRes.json();
-
-        if (updatesData.ok && Array.isArray(updatesData.result)) {
-          const reversed = [...updatesData.result].reverse();
-          for (const update of reversed) {
-            const chatObj =
-              update.message?.chat ||
-              update.channel_post?.chat ||
-              update.my_chat_member?.chat ||
-              update.chat_member?.chat ||
-              update.edited_message?.chat ||
-              update.callback_query?.message?.chat;
-
-            if (chatObj && !seen.has(String(chatObj.id))) {
-              const cId = String(chatObj.id);
-              seen.add(cId);
-              const fromUser = update.message?.from || update.my_chat_member?.from || update.channel_post?.from;
-              chats.push({
-                chatId: cId,
-                type: chatObj.type || 'private',
-                title: chatObj.title || (chatObj.type === 'supergroup' ? 'Supergroup' : chatObj.type === 'group' ? 'Group' : undefined),
-                username: fromUser?.username ? '@' + fromUser.username : (chatObj.username ? '@' + chatObj.username : ''),
-                firstName: fromUser?.first_name || chatObj.first_name || '',
-                lastText: update.message?.text || (update.my_chat_member ? `Bot added as admin to group` : (update.message?.caption ? '[Photo/Media]' : '[Interaction]')),
-                date: update.message?.date || update.my_chat_member?.date || Date.now() / 1000
-              });
-            }
-          }
-        }
-      } catch (tokErr) {
-        console.warn('[TelegramRecentChats] Error fetching updates for token:', tokErr);
-      }
-    }
-
+    const chats = telegramBotService.getRecentDetectedChats();
     res.json({
       success: true,
       count: chats.length,
       chats,
-      hint: chats.length === 0 ? 'No recent messages found. Add your Bot to the group as Admin, then send any message inside the group to auto-detect!' : undefined
+      hint: chats.length === 0 ? 'No recent messages found yet. Send a message to the bot or in your group to auto-detect!' : undefined
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message, chats: [] });
@@ -4470,24 +4416,10 @@ app.post('/api/admin/confirm-order', (req: Request, res: Response) => {
 // Get user's persistent wallet balance
 app.get('/api/wallet/balance', (req: Request, res: Response) => {
   try {
-    const userId = (req.query.userId as string || '').toLowerCase().trim();
-    const email = (req.query.email as string || '').toLowerCase().trim();
+    const userId = (req.query.userId as string || '').toString().trim();
+    const email = (req.query.email as string || '').toString().trim();
 
-    let record: UserWalletRecord | undefined;
-    if (userId) record = userWalletsMap.get(userId);
-    if (!record && email) record = userWalletsMap.get(email);
-
-    if (!record && (userId || email)) {
-      for (const r of userWalletsMap.values()) {
-        if ((userId && r.userId.toLowerCase() === userId) ||
-            (email && r.email && r.email.toLowerCase() === email)) {
-          record = r;
-          break;
-        }
-      }
-    }
-
-    if (!record && (!userId || userId === 'guest') && !email) {
+    if (!userId && !email) {
       return res.json({
         success: true,
         userId: 'guest',
@@ -4497,20 +4429,7 @@ app.get('/api/wallet/balance', (req: Request, res: Response) => {
       });
     }
 
-    if (!record) {
-      const isOwner = email === 'kalam172010@gmail.com' || email === 'kalam2000abc@gmail.com';
-      const initialBal = isOwner ? 290011.65 : 0;
-      record = {
-        userId: userId || email || 'guest',
-        email: email || undefined,
-        balance: initialBal,
-        lastUpdated: Date.now(),
-        history: []
-      };
-      if (userId) userWalletsMap.set(userId, record);
-      if (email) userWalletsMap.set(email, record);
-      saveWalletsToDisk();
-    }
+    const record = findOrCreateWalletRecord(userId, email);
 
     return res.json({
       success: true,
@@ -4528,33 +4447,11 @@ app.get('/api/wallet/balance', (req: Request, res: Response) => {
 app.post('/api/wallet/sync', (req: Request, res: Response) => {
   try {
     const { userId, email, balance, action, amount, reason, orderId, utr } = req.body;
-    const cleanUserId = (userId || '').toString().toLowerCase().trim() || 'guest';
-    const cleanEmail = (email || '').toString().toLowerCase().trim();
+    const cleanUserId = (userId || '').toString().trim() || 'guest';
+    const cleanEmail = (email || '').toString().trim();
     const numAmount = Math.max(0, Number(amount) || 0);
 
-    let record = (cleanUserId && userWalletsMap.get(cleanUserId)) || (cleanEmail && userWalletsMap.get(cleanEmail));
-
-    if (!record) {
-      for (const r of userWalletsMap.values()) {
-        if ((cleanUserId && r.userId.toLowerCase() === cleanUserId) ||
-            (cleanEmail && r.email && r.email.toLowerCase() === cleanEmail)) {
-          record = r;
-          break;
-        }
-      }
-    }
-
-    if (!record) {
-      record = {
-        userId: cleanUserId,
-        email: cleanEmail || undefined,
-        balance: 0,
-        lastUpdated: Date.now(),
-        history: []
-      };
-      userWalletsMap.set(cleanUserId, record);
-      if (cleanEmail) userWalletsMap.set(cleanEmail, record);
-    }
+    const record = findOrCreateWalletRecord(cleanUserId, cleanEmail);
 
     let previousBalance = record.balance;
     let newBalance = previousBalance;
@@ -4615,8 +4512,8 @@ app.post('/api/wallet/sync', (req: Request, res: Response) => {
       }
     }
 
-    userWalletsMap.set(cleanUserId, record);
-    if (cleanEmail) userWalletsMap.set(cleanEmail, record);
+    const allKeys = getCanonicalWalletKeys(record.userId, record.email);
+    allKeys.forEach(k => userWalletsMap.set(k, record));
     saveWalletsToDisk();
 
     console.log(`[Wallet API] Updated ${cleanUserId || cleanEmail} balance: ₹${previousBalance} -> ₹${newBalance} (${action || 'SYNC'})`);
@@ -4997,6 +4894,9 @@ async function fetchUpstreamWithRetry(
   };
 }
 
+// In-flight & Idempotency cache for /api/purchase-key to prevent duplicate key purchases/alerts
+const purchaseKeyLocks = new Map<string, { timestamp: number; result: any }>();
+
 // Purchase / Dispatch Key Route
 app.post('/api/purchase-key', async (req: Request, res: Response) => {
   try {
@@ -5027,6 +4927,22 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
       ? targetProduct.plans.find((pl: any) => pl.id === planId || pl.duration === planDuration || pl.name === planDuration)
       : null;
     const userEmail = (req.body.userEmail || req.body.email || req.body.userId || 'Customer').toString();
+
+    // Idempotency check: prevent duplicate purchases within 12 seconds for same user & product
+    const purchaseLockKey = `pk_${userEmail.toLowerCase()}_${productId}_${planDuration}`;
+    const recentPurchase = purchaseKeyLocks.get(purchaseLockKey);
+    const now = Date.now();
+    if (recentPurchase && (now - recentPurchase.timestamp < 12000)) {
+      console.log(`[Key Dispatch] Duplicate purchase request within 12s detected for ${userEmail}. Returning cached response.`);
+      return res.json(recentPurchase.result);
+    }
+
+    // Clean old locks
+    if (purchaseKeyLocks.size > 200) {
+      for (const [k, v] of purchaseKeyLocks.entries()) {
+        if (now - v.timestamp > 30000) purchaseKeyLocks.delete(k);
+      }
+    }
 
     // Guard: Prevent purchase if product is currently in MAINTENANCE mode
     if (Array.isArray(globalProductsCache) && productId) {
@@ -5069,14 +4985,16 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
         email: userEmail
       }).catch(e => console.warn('[TelegramAutoAlert] purchase error:', e));
 
-      return res.json({
+      const responsePayload = {
         success: true,
         source: 'INVENTORY_STOCK',
         keys: deliveredKeys,
         remainingKeys,
         ...expiryInfo,
         message: `Successfully delivered ${deliveredKeys.length} key(s) from inventory.`
-      });
+      };
+      purchaseKeyLocks.set(purchaseLockKey, { timestamp: Date.now(), result: responsePayload });
+      return res.json(responsePayload);
     }
 
     // 2. If inventory stock is 0 or insufficient, attempt Upstream API Fetch (if configured)
@@ -5173,7 +5091,7 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             email: userEmail
           }).catch(e => console.warn('[TelegramAutoAlert] purchase error:', e));
 
-          return res.json({
+          const responsePayload = {
             success: true,
             source: 'ADMINPANELS_UPSTREAM',
             keys: [parsed.key],
@@ -5182,7 +5100,9 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             retryAttempts: upstreamResult.attempts,
             deliveryTimeMs: upstreamResult.totalTimeMs,
             message: `Key successfully generated and delivered by AdminPanels.shop API (${upstreamResult.attempts} attempt${upstreamResult.attempts > 1 ? 's' : ''}).`
-          });
+          };
+          purchaseKeyLocks.set(purchaseLockKey, { timestamp: Date.now(), result: responsePayload });
+          return res.json(responsePayload);
         } else {
           lastUpstreamError = parsed.error || parsed.message || (typeof upstreamResult.textResp === 'string' ? upstreamResult.textResp.slice(0, 80) : 'Invalid API Key');
           console.log('[Key Dispatch] AdminPanels notice:', lastUpstreamError);
@@ -5242,7 +5162,7 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             email: userEmail
           }).catch(e => console.warn('[TelegramAutoAlert] purchase error:', e));
 
-          return res.json({
+          const responsePayload = {
             success: true,
             source: 'API_2_UPSTREAM',
             keys: [parsed.key],
@@ -5251,7 +5171,9 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             retryAttempts: upstreamResult.attempts,
             deliveryTimeMs: upstreamResult.totalTimeMs,
             message: `Key successfully generated and delivered by Upstream API (${upstreamResult.attempts} attempt${upstreamResult.attempts > 1 ? 's' : ''}).`
-          });
+          };
+          purchaseKeyLocks.set(purchaseLockKey, { timestamp: Date.now(), result: responsePayload });
+          return res.json(responsePayload);
         } else {
           lastUpstreamError = parsed.error || parsed.message || lastUpstreamError;
         }
@@ -6263,16 +6185,8 @@ import { telegramBotService } from './telegramBot';
 
 // 1. Helper to fetch user wallet for Telegram Bot
 export function getWalletForTelegram(identifier: string): { balance: number; email?: string; userId: string } {
-  const clean = (identifier || '').toLowerCase().trim();
-  let record = userWalletsMap.get(clean);
-  if (!record) {
-    for (const r of userWalletsMap.values()) {
-      if (r.userId.toLowerCase() === clean || (r.email && r.email.toLowerCase() === clean)) {
-        record = r;
-        break;
-      }
-    }
-  }
+  const clean = (identifier || '').toString().trim();
+  const record = findOrCreateWalletRecord(clean);
   return {
     balance: record ? record.balance : 0,
     email: record?.email,
@@ -6282,26 +6196,8 @@ export function getWalletForTelegram(identifier: string): { balance: number; ema
 
 // 2. Helper to deduct wallet balance for Telegram Bot purchases
 export function deductWalletForTelegram(identifier: string, amount: number, reason: string): boolean {
-  const clean = (identifier || '').toLowerCase().trim();
-  let record = userWalletsMap.get(clean);
-  if (!record) {
-    for (const r of userWalletsMap.values()) {
-      if (r.userId.toLowerCase() === clean || (r.email && r.email.toLowerCase() === clean)) {
-        record = r;
-        break;
-      }
-    }
-  }
-
-  if (!record) {
-    record = {
-      userId: clean,
-      balance: 0,
-      lastUpdated: Date.now(),
-      history: []
-    };
-    userWalletsMap.set(clean, record);
-  }
+  const clean = (identifier || '').toString().trim();
+  const record = findOrCreateWalletRecord(clean);
 
   const numAmount = Math.max(0, Number(amount) || 0);
   record.balance = Math.max(0, Math.round((record.balance - numAmount) * 100) / 100);
@@ -6317,8 +6213,8 @@ export function deductWalletForTelegram(identifier: string, amount: number, reas
   });
   if (record.history.length > 50) record.history = record.history.slice(0, 50);
 
-  userWalletsMap.set(record.userId.toLowerCase(), record);
-  if (record.email) userWalletsMap.set(record.email.toLowerCase(), record);
+  const allKeys = getCanonicalWalletKeys(record.userId, record.email);
+  allKeys.forEach(k => userWalletsMap.set(k, record));
   saveWalletsToDisk();
   return true;
 }
@@ -6376,16 +6272,6 @@ export async function deliverKeyForTelegram(
       }
       saveProductsToDisk(products);
 
-      // Trigger automatic telegram alert and proof
-      sendTelegramKeyPurchaseAlert({
-        productName: product.name,
-        planDuration,
-        amount: planPrice,
-        keys: [deliveredKey],
-        userId: userEmail,
-        email: userEmail
-      }).catch(() => {});
-
       return { success: true, keys: [deliveredKey] };
     }
 
@@ -6417,15 +6303,6 @@ export async function deliverKeyForTelegram(
       if (upstreamResult.textResp) {
         const parsed = parseUpstreamResellerResponse(upstreamResult.textResp);
         if (parsed.isSuccess && parsed.key) {
-          sendTelegramKeyPurchaseAlert({
-            productName: product.name,
-            planDuration,
-            amount: planPrice,
-            keys: [parsed.key],
-            userId: userEmail,
-            email: userEmail
-          }).catch(() => {});
-
           return { success: true, keys: [parsed.key] };
         }
       }
@@ -6434,15 +6311,6 @@ export async function deliverKeyForTelegram(
     // 3. Auto-generate key if product or store allows auto-generation
     if (product.autoGenerateKeys || (storeData.storeSettings && storeData.storeSettings.autoGenerateFallbackKeys)) {
       const generatedKey = `KALAM-VIP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-      sendTelegramKeyPurchaseAlert({
-        productName: product.name,
-        planDuration,
-        amount: planPrice,
-        keys: [generatedKey],
-        userId: userEmail,
-        email: userEmail
-      }).catch(() => {});
-
       return { success: true, keys: [generatedKey] };
     }
 
@@ -6507,11 +6375,22 @@ export async function createFamGatewayPaymentOrder(
       responseData = { rawResponse: textResponse };
     }
 
+    const storeData = loadStoreDataFromDisk();
+    const liveActiveUpi = (
+      storeData.storeSettings?.upiManualId ||
+      storeData.storeSettings?.upiId ||
+      resolved.merchantUpi ||
+      'kalamffpanel@fampay'
+    ).trim();
+    const liveShopName = (storeData.storeSettings?.shopName || 'KALAM FF PANEL').trim();
+
     const orderId = responseData?.data?.order_id || responseData?.order_id || `fam_${Date.now()}`;
     const checkoutUrl = responseData?.data?.checkout_url || `https://famgateway.in/pay.php?order_id=${orderId}`;
-    const qrUrl = responseData?.data?.qr_url || `https://famgateway.in/api/qr-image.php?order_id=${orderId}`;
-    const upiIntent = responseData?.data?.upi_intent || `upi://pay?pa=8056317218@fam&pn=FamPay&tr=${orderId}&tn=${orderId}&am=${rupeeAmount}&cu=INR`;
-    const payeeUpi = responseData?.data?.upi_id || '8056317218@fam';
+    const payeeUpi = (responseData?.data?.upi_id || liveActiveUpi).trim();
+    const dynamicUpiIntent = `upi://pay?pa=${payeeUpi}&pn=${encodeURIComponent(liveShopName)}&tr=${orderId}&tn=${orderId}&am=${rupeeAmount}&cu=INR`;
+    const upiIntent = responseData?.data?.upi_intent || dynamicUpiIntent;
+    const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiIntent)}`;
+    const qrUrl = responseData?.data?.qr_url || dynamicQrUrl;
 
     // Store in active orders map
     const storedOrder: StoredOrder = {
@@ -6567,7 +6446,7 @@ export async function queryFamGatewayPaymentOrder(
       const order = activeOrders.get(orderId);
       const depositAmount = result.amount || order?.amountInRupees || 0;
 
-      // Credit wallet
+      // Credit wallet without triggering redundant admin alert (bot will directly notify user and dispatch single proof)
       if (depositAmount > 0) {
         creditUserWalletOnServer(
           order?.email || userIdentifier,
@@ -6575,7 +6454,8 @@ export async function queryFamGatewayPaymentOrder(
           depositAmount,
           `FamGateway Deposit (Order: ${orderId}${result.utr ? ', UTR: ' + result.utr : ''})`,
           result.utr,
-          orderId
+          orderId,
+          { skipBotAlert: true, source: 'bot' }
         );
       }
 
@@ -7219,22 +7099,19 @@ setInterval(async () => {
       }).catch(() => {});
     }
 
-    // 3. Proactive Bot Health Self-Inspection & Socket Refresh
+    // 3. Proactive Bot Health Self-Inspection
     const status = telegramBotService.getBotStatus();
-    if (!status.isWebhookActive) {
-      if (!status.isHealthy || status.msSinceLastPoll > 35000) {
-        console.warn(`[Server KeepAlive] Re-energizing Telegram Bot polling (${Math.round(status.msSinceLastPoll / 1000)}s since last poll cycle)...`);
-        telegramBotService.stopPolling();
-        telegramBotService.startPolling(
-          () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
-          getWalletForTelegram,
-          deductWalletForTelegram,
-          (identifier: string, amount: number, reason: string) => creditUserWalletOnServer(identifier, identifier, amount, reason),
-          deliverKeyForTelegram,
-          createFamGatewayPaymentOrder,
-          queryFamGatewayPaymentOrder
-        );
-      }
+    if (!status.isWebhookActive && !status.isPolling) {
+      console.log('[Server KeepAlive] Starting Telegram Bot polling...');
+      telegramBotService.startPolling(
+        () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+        getWalletForTelegram,
+        deductWalletForTelegram,
+        (identifier: string, amount: number, reason: string) => creditUserWalletOnServer(identifier, identifier, amount, reason),
+        deliverKeyForTelegram,
+        createFamGatewayPaymentOrder,
+        queryFamGatewayPaymentOrder
+      );
     }
   } catch (err: any) {
     // Non-fatal keep-alive error

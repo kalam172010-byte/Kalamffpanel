@@ -39,6 +39,86 @@ interface TelegramUpdate {
   };
 }
 
+export type BotLanguage = 'en' | 'ta' | 'hi';
+
+export const I18N_TEXTS: Record<BotLanguage, Record<string, string>> = {
+  en: {
+    title: '✨ <b>KALAM FF PANEL</b> 💸',
+    greeting: '👋 <b>Hello, {name}!</b>',
+    bullet_catalog: '📦 <b>Wide product catalog</b>',
+    bullet_delivery: '⚡ <b>Instant delivery on payment</b>',
+    bullet_gateways: '💳 <b>Multiple payment gateways</b>',
+    bullet_support: '📞 <b>24/7 admin support</b>',
+    balance_label: '💵 <b>Balance: ₹{balance}</b>',
+    tap_to_begin: '<i>Tap any button below to begin:</i>',
+    btn_admin: '🎛️ Master Admin Control Panel 👑',
+    btn_buy_now: '🛒 Buy Now',
+    btn_check_update: 'Check Update',
+    btn_add_balance: '💸 Add Balance',
+    btn_my_profile: '👑 My Profile + All History',
+    btn_refer_earn: '🔗 Refer And Earn',
+    btn_how_to_use: '⁉️ How To Use Bot',
+    btn_support: '✈️ Support',
+    btn_daily_gift: '🎁 Daily Gift',
+    btn_reseller: '💎 VIP Reseller Upgrade',
+    btn_language: '🌐 Language / மொழி / भाषा',
+    btn_main_menu: '🏠 Main Menu',
+    btn_back: '🔙 Back',
+    lang_prompt: '🌐 <b>Select Your Preferred Language / உங்கள் மொழியைத் தேர்ந்தெடுக்கவும் / अपनी भाषा चुनें:</b>\n\n<i>Choose an option below:</i>',
+    lang_changed: '✅ <b>Language set to English successfully!</b>'
+  },
+  ta: {
+    title: '✨ <b>கலாம் எஃப்எஃப் பேனல் (KALAM FF PANEL)</b> 💸',
+    greeting: '👋 <b>வணக்கம், {name}!</b>',
+    bullet_catalog: '📦 <b>அனைத்து கேமிங் விஐபி கீகள்</b>',
+    bullet_delivery: '⚡ <b>பணம் செலுத்திய உடன் உடனடி டெலிவரி</b>',
+    bullet_gateways: '💳 <b>UPI / QR குறியீடு கட்டணம்</b>',
+    bullet_support: '📞 <b>24/7 அட்மின் உதவி</b>',
+    balance_label: '💵 <b>உங்கள் இருப்பு (Balance): ₹{balance}</b>',
+    tap_to_begin: '<i>தொடங்க கீழே உள்ள பட்டனை தட்டவும்:</i>',
+    btn_admin: '🎛️ மாஸ்டர் அட்மின் கண்ட்ரோல் பேனல் 👑',
+    btn_buy_now: '🛒 இப்போதே வாங்கவும் (Buy Now)',
+    btn_check_update: '🔄 அப்டேட் பார்க்க (Check Update)',
+    btn_add_balance: '💸 பணம் சேர்க்க (Add Balance)',
+    btn_my_profile: '👑 எனது கணக்கு & வரலாறு (Profile)',
+    btn_refer_earn: '🔗 நண்பர்களை அழைத்து சம்பாதிக்க (Refer)',
+    btn_how_to_use: '⁉️ பாட்டை எப்படி பயன்படுத்துவது',
+    btn_support: '✈️ உதவி (Support)',
+    btn_daily_gift: '🎁 தினசரி பரிசு (Daily Gift)',
+    btn_reseller: '💎 விஐபி ரீசெல்லர் பதவி உயர்வு',
+    btn_language: '🌐 மொழி மாற்று / Language (தமிழ்)',
+    btn_main_menu: '🏠 முதன்மை பட்டி (Main Menu)',
+    btn_back: '🔙 பின்செல்ல (Back)',
+    lang_prompt: '🌐 <b>உங்கள் விருப்ப மொழியைத் தேர்ந்தெடுக்கவும் (Select Language):</b>\n\n<i>கீழே உள்ள பட்டனை அழுத்தவும்:</i>',
+    lang_changed: '✅ <b>மொழி வெற்றிகரமாக தமிழுக்கு மாற்றப்பட்டது!</b>\n\nஅனைத்து அறிவிப்புகளும் இனி தமிழில் காண்பிக்கப்படும்.'
+  },
+  hi: {
+    title: '✨ <b>कलाम एफएफ पैनल (KALAM FF PANEL)</b> 💸',
+    greeting: '👋 <b>नमस्ते, {name}!</b>',
+    bullet_catalog: '📦 <b>विस्तृत वीआईपी की कैटलॉग</b>',
+    bullet_delivery: '⚡ <b>भुगतान पर तुरंत डिलीवरी</b>',
+    bullet_gateways: '💳 <b>यूपीआई / क्यूआर कोड भुगतान</b>',
+    bullet_support: '📞 <b>24/7 एडमिन सहायता</b>',
+    balance_label: '💵 <b>वॉलेट बैलेंस: ₹{balance}</b>',
+    tap_to_begin: '<i>शुरू करने के लिए नीचे दिए गए बटन पर टैप करें:</i>',
+    btn_admin: '🎛️ मास्टर एडमिन कंट्रोल पैनल 👑',
+    btn_buy_now: '🛒 अभी खरीदें (Buy Now)',
+    btn_check_update: '🔄 अपडेट देखें (Check Update)',
+    btn_add_balance: '💸 बैलेंस जोड़ें (Add Balance)',
+    btn_my_profile: '👑 मेरी प्रोफ़ाइल और इतिहास (Profile)',
+    btn_refer_earn: '🔗 रेफर करें और कमाएं (Refer)',
+    btn_how_to_use: '⁉️ बॉट का उपयोग कैसे करें',
+    btn_support: '✈️ सहायता (Support)',
+    btn_daily_gift: '🎁 दैनिक उपहार (Daily Gift)',
+    btn_reseller: '💎 वीआईपी रीसेलर अपग्रेड',
+    btn_language: '🌐 भाषा बदलें / Language (हिन्दी)',
+    btn_main_menu: '🏠 मुख्य मेनू (Main Menu)',
+    btn_back: '🔙 वापस (Back)',
+    lang_prompt: '🌐 <b>अपनी पसंदीदा भाषा चुनें (Select Language):</b>\n\n<i>नीचे दिए गए विकल्पों में से चुनें:</i>',
+    lang_changed: '✅ <b>भाषा सफलतापूर्वक हिन्दी में सेट हो गई है!</b>\n\nअब बॉट के सभी संदेश हिन्दी में दिखाई देंगे।'
+  }
+};
+
 export interface BotUser {
   chatId: number;
   userId: string;
@@ -57,6 +137,7 @@ export interface BotUser {
   isReseller?: boolean;
   role?: 'ADMIN' | 'RESELLER' | 'USER';
   resellerUpgradedAt?: number;
+  language?: BotLanguage;
 }
 
 interface DailyGiftRecord {
@@ -116,6 +197,22 @@ export class TelegramBotService {
   private recentOutgoingMessages = new Map<string, number>();
   private userLastActionTime = new Map<number, number>();
   private userLastActionText = new Map<number, string>();
+  private recentDetectedChats = new Map<string, {
+    chatId: string;
+    type: string;
+    title?: string;
+    username?: string;
+    firstName?: string;
+    lastText?: string;
+    date: number;
+    botName?: string;
+  }>();
+  private isPollCycleRunning = false;
+  private lastUserProofTimes = new Map<string, number>();
+  private globalLastProofDispatchTime = 0;
+  private processedUpdateIds = new Set<number>();
+  private processedCallbackIds = new Set<string>();
+  private processedMessageIds = new Set<string>();
   private isFetchInProgress = false;
   private lastPollAttemptTime = Date.now();
   private lastSuccessfulPollTime = Date.now();
@@ -295,18 +392,147 @@ export class TelegramBotService {
     return clean.substring(0, 4) + '****' + clean.substring(clean.length - 4);
   }
 
+  private dispatchedProofKeys = new Set<string>();
+  private dispatchedKeyStrings = new Set<string>();
+  private dispatchedOrderIds = new Set<string>();
+  private inFlightProofPromises = new Map<string, Promise<boolean>>();
+  private lastProofDispatchTime = 0;
+  private checkingOrdersInProgress = new Set<string>();
+  private inFlightPurchases = new Set<string>();
+
+  private loadDispatchedProofCache() {
+    try {
+      const dataDir = this.getDataDir();
+      const filePath = path.join(dataDir, 'dispatched_proof_cache.json');
+      if (fs.existsSync(filePath)) {
+        const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (Array.isArray(raw.keys)) raw.keys.forEach((k: string) => this.dispatchedKeyStrings.add(k.trim()));
+        if (Array.isArray(raw.orders)) raw.orders.forEach((o: string) => this.dispatchedOrderIds.add(o.trim()));
+        if (Array.isArray(raw.signatures)) raw.signatures.forEach((s: string) => this.dispatchedProofKeys.add(s.trim()));
+      }
+    } catch {}
+  }
+
+  private saveDispatchedProofCache() {
+    try {
+      const dataDir = this.getDataDir();
+      const filePath = path.join(dataDir, 'dispatched_proof_cache.json');
+      const data = {
+        keys: Array.from(this.dispatchedKeyStrings).slice(-5000),
+        orders: Array.from(this.dispatchedOrderIds).slice(-3000),
+        signatures: Array.from(this.dispatchedProofKeys).slice(-2000),
+        updatedAt: Date.now()
+      };
+      fs.writeFileSync(filePath, JSON.stringify(data), 'utf8');
+    } catch {}
+  }
+
   // Dispatch payment & key delivery proof to secondary Proof Bot / Channel
   public async dispatchPaymentProof(info: {
     productName: string;
     planDuration: string;
-    price: number;
+    price?: number;
+    amount?: number;
     keys: string[];
-    chatId?: number;
+    chatId?: number | string;
+    userId?: string;
     username?: string;
     firstName?: string;
     orderId?: string;
+    paymentMethod?: string;
   }): Promise<boolean> {
     try {
+      if (this.dispatchedKeyStrings.size === 0) {
+        this.loadDispatchedProofCache();
+      }
+
+      const deliveredKeys = Array.isArray(info.keys) ? info.keys.filter(k => typeof k === 'string' && k.trim().length > 0) : [];
+      if (deliveredKeys.length === 0) {
+        console.log('[TelegramBot] Proof dispatch skipped: no keys provided');
+        return false;
+      }
+
+      const now = Date.now();
+      const rawUser = (info.chatId || info.userId || info.username || 'cust').toString().trim().toLowerCase();
+      const normUser = rawUser.replace(/^tg_/, '').replace(/^@/, '').trim();
+      const normProd = (info.productName || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
+      // 1. Global proof dispatch throttle (minimum 3.5 seconds between ANY 2 proof messages across the whole bot)
+      if (now - this.globalLastProofDispatchTime < 3500) {
+        console.log('[TelegramBot] Proof dispatch skipped: global proof throttle active');
+        return true;
+      }
+
+      // 2. Per-user & product debounce (minimum 45 seconds per user + product combination)
+      const userProdKey = `${normUser}_${normProd}`;
+      const lastUserTime = this.lastUserProofTimes.get(userProdKey) || 0;
+      if (now - lastUserTime < 45000) {
+        console.log('[TelegramBot] Proof dispatch skipped: per-user debounce active for:', userProdKey);
+        return true;
+      }
+
+      // 3. Check if orderId was already dispatched
+      if (info.orderId && this.dispatchedOrderIds.has(info.orderId.trim())) {
+        console.log('[TelegramBot] Proof dispatch skipped: order ID already dispatched:', info.orderId);
+        return true;
+      }
+
+      // 4. Check if ANY delivered keys have already been dispatched (both raw and masked)
+      for (const k of deliveredKeys) {
+        const cleanKey = k.trim().toLowerCase();
+        const masked = this.maskKeyForProof(k).trim().toLowerCase();
+        if (this.dispatchedKeyStrings.has(cleanKey) || this.dispatchedKeyStrings.has(masked)) {
+          console.log('[TelegramBot] Proof dispatch skipped: key already posted to proof channel:', cleanKey);
+          return true;
+        }
+      }
+
+      // 5. Global window debounce
+      const userSig = `proof_${normUser}_${normProd}_${Math.floor(now / 60000)}`;
+      if (this.dispatchedProofKeys.has(userSig)) {
+        console.log('[TelegramBot] Proof dispatch skipped: recent proof signature exists in window:', userSig);
+        return true;
+      }
+
+      // 6. Mutex lock for in-flight requests
+      const lockKey = `proof_${normUser}_${normProd}_${deliveredKeys.map(k => k.trim()).join('_')}`;
+      const existingPromise = this.inFlightProofPromises.get(lockKey);
+      if (existingPromise) {
+        console.log('[TelegramBot] In-flight proof dispatch detected for lockKey. Returning active promise.');
+        return await existingPromise;
+      }
+
+      // Pre-register keys, signature, and timestamps immediately before network dispatch
+      this.globalLastProofDispatchTime = now;
+      this.lastUserProofTimes.set(userProdKey, now);
+      this.dispatchedProofKeys.add(userSig);
+      if (info.orderId) {
+        this.dispatchedOrderIds.add(info.orderId.trim());
+      }
+      for (const k of deliveredKeys) {
+        this.dispatchedKeyStrings.add(k.trim().toLowerCase());
+        this.dispatchedKeyStrings.add(this.maskKeyForProof(k).trim().toLowerCase());
+      }
+      this.lastProofDispatchTime = now;
+      this.saveDispatchedProofCache();
+
+      // Clean old cache entries if too large
+      if (this.dispatchedProofKeys.size > 2000) {
+        const arr = Array.from(this.dispatchedProofKeys);
+        this.dispatchedProofKeys.clear();
+        arr.slice(-1000).forEach(k => this.dispatchedProofKeys.add(k));
+      }
+      if (this.dispatchedKeyStrings.size > 5000) {
+        const arr = Array.from(this.dispatchedKeyStrings);
+        this.dispatchedKeyStrings.clear();
+        arr.slice(-2500).forEach(k => this.dispatchedKeyStrings.add(k));
+      }
+      if (this.dispatchedOrderIds.size > 3000) {
+        const arr = Array.from(this.dispatchedOrderIds);
+        this.dispatchedOrderIds.clear();
+        arr.slice(-1500).forEach(k => this.dispatchedOrderIds.add(k));
+      }
+
       const creds = this.getCredentials();
       if (!creds.enableAutoProof) {
         console.log('[TelegramBot] Proof dispatch skipped: enableAutoProof is false');
@@ -321,12 +547,11 @@ export class TelegramBotService {
         return false;
       }
 
+      const effectivePrice = info.price !== undefined ? info.price : (info.amount !== undefined ? info.amount : 0);
       const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
-      const maskedKeys = (info.keys && info.keys.length > 0)
-        ? info.keys.map(k => `<code>${this.maskKeyForProof(k)}</code> <i>(Sent Privately to Buyer)</i>`).join('\n')
-        : `<code>XXXX-****-YYYY</code> <i>(Sent Privately to Buyer)</i>`;
-      const buyerName = info.username ? `@${info.username.replace('@', '')}` : (info.firstName || 'Verified Customer');
-      const ordId = info.orderId || `TG_ORD_${Date.now()}`;
+      const maskedKeys = deliveredKeys.map(k => `<code>${this.maskKeyForProof(k)}</code> <i>(Sent Privately to Buyer)</i>`).join('\n');
+      const buyerName = info.username ? `@${info.username.replace('@', '')}` : (info.firstName || info.userId || 'Verified Customer');
+      const ordId = info.orderId || `ORD_${Date.now()}`;
       const botHandle = (creds.botUsername || 'KALAMFFPANEL1_12_BOT').replace('@', '');
 
       const text =
@@ -334,11 +559,11 @@ export class TelegramBotService {
         `<blockquote>` +
         `📦 <b>Product:</b> ${info.productName}\n` +
         `⏳ <b>Plan Duration:</b> ${info.planDuration}\n` +
-        `💵 <b>Amount Paid:</b> ₹${Number(info.price).toFixed(2)}\n` +
+        (effectivePrice ? `💵 <b>Amount Paid:</b> ₹${Number(effectivePrice).toFixed(2)}\n` : '') +
         `👤 <b>Customer:</b> ${buyerName}\n` +
         (info.chatId ? `🆔 <b>User ID:</b> <code>${info.chatId}</code>\n` : '') +
         `🔖 <b>Order ID:</b> <code>${ordId}</code>\n` +
-        `💳 <b>Payment Mode:</b> Instant Auto-Wallet\n` +
+        `💳 <b>Payment Mode:</b> ${info.paymentMethod || 'Instant Auto-Wallet'}\n` +
         `🕒 <b>Time:</b> ${time} (IST)\n` +
         `</blockquote>\n\n` +
         `🔐 <b>DELIVERED LICENSE KEY(S):</b>\n` +
@@ -346,49 +571,63 @@ export class TelegramBotService {
         `🛡️ <b>STATUS:</b> ✅ <b>VERIFIED & DELIVERED</b> ⚡\n` +
         `🛒 <b>BUY KEY INSTANTLY:</b> @${botHandle}`;
 
-      const res = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: targetChat,
-          text,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle}` }]
-            ]
-          }
-        })
-      });
+      const dispatchPromise = (async () => {
+        try {
+          const res = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: targetChat,
+              text,
+              parse_mode: 'HTML',
+              disable_web_page_preview: true,
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle}` }]
+                ]
+              }
+            })
+          });
 
-      const data: any = await res.json();
-      if (!data.ok) {
-        console.warn('[TelegramBot] Proof HTML send failed, trying plain fallback:', data.description);
-        const fbRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: targetChat,
-            text: text.replace(/<[^>]*>/g, '')
-          })
-        });
-        const fbData: any = await fbRes.json();
-        if (!fbData.ok) {
-          console.error('[TelegramBot] Proof plain send failed:', fbData.description);
+          const data: any = await res.json();
+          if (!data.ok) {
+            console.warn('[TelegramBot] Proof HTML send failed, trying plain fallback:', data.description);
+            const fbRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: targetChat,
+                text: text.replace(/<[^>]*>/g, '')
+              })
+            });
+            const fbData: any = await fbRes.json();
+            if (!fbData.ok) {
+              console.error('[TelegramBot] Proof plain send failed:', fbData.description);
+              return false;
+            }
+          }
+          console.log('[TelegramBot] ✅ Exactly one proof message dispatched to channel:', targetChat);
+          return true;
+        } catch (err: any) {
+          console.error('[TelegramBot] Dispatch proof network error:', err.message);
           return false;
+        } finally {
+          setTimeout(() => {
+            this.inFlightProofPromises.delete(lockKey);
+          }, 10000);
         }
-      }
-      console.log('[TelegramBot] ✅ Proof message successfully dispatched to:', targetChat);
-      return true;
+      })();
+
+      this.inFlightProofPromises.set(lockKey, dispatchPromise);
+      return await dispatchPromise;
     } catch (e: any) {
       console.warn('[TelegramBot] Proof dispatch failed:', e.message);
       return false;
     }
   }
 
-  // Dispatch UPI Deposit / Balance top-up proof to secondary Proof Group
-  public async dispatchDepositProof(info: {
+  // Dispatch UPI Deposit / Balance top-up proof to secondary Proof Group (Disabled: proofs are sent ONLY when VIP Keys are purchased)
+  public async dispatchDepositProof(_info: {
     amount: number;
     utr?: string;
     orderId?: string;
@@ -397,66 +636,8 @@ export class TelegramBotService {
     firstName?: string;
     paymentMethod?: string;
   }): Promise<boolean> {
-    try {
-      const creds = this.getCredentials();
-      if (!creds.enableAutoProof) return false;
-
-      const activeToken = creds.proofBotToken || '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU';
-      const targetChat = creds.proofChatId || '-1004325449752';
-      if (!activeToken || !targetChat) return false;
-
-      const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
-      const buyerName = info.username ? `@${info.username.replace('@', '')}` : (info.firstName || 'Verified Customer');
-      const ordId = info.orderId || `DEP_${Date.now()}`;
-      const botHandle = (creds.botUsername || 'KALAMFFPANEL1_12_BOT').replace('@', '');
-
-      const text =
-        `💳 <b>NEW UPI PAYMENT & WALLET DEPOSIT PROOF</b> 💳\n\n` +
-        `<blockquote>` +
-        `💵 <b>Amount Paid:</b> ₹${Number(info.amount).toFixed(2)}\n` +
-        `👤 <b>Customer:</b> ${buyerName}\n` +
-        (info.chatId ? `🆔 <b>User ID:</b> <code>${info.chatId}</code>\n` : '') +
-        `🔖 <b>UTR / Ref:</b> <code>${info.utr || 'Direct UPI Auto-Sync'}</code>\n` +
-        `🆔 <b>Order ID:</b> <code>${ordId}</code>\n` +
-        `🏦 <b>Gateway:</b> ${info.paymentMethod || 'Direct UPI / FamGateway'}\n` +
-        `🕒 <b>Time:</b> ${time} (IST)\n` +
-        `</blockquote>\n\n` +
-        `🛡️ <b>STATUS:</b> ✅ <b>PAYMENT VERIFIED & CREDITED</b> ⚡\n` +
-        `🛒 <b>BUY KEY INSTANTLY:</b> @${botHandle}`;
-
-      const res = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: targetChat,
-          text,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '🛒 Buy Keys Now', url: `https://t.me/${botHandle}` }]
-            ]
-          }
-        })
-      });
-
-      const data: any = await res.json();
-      if (!data.ok) {
-        await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: targetChat,
-            text: text.replace(/<[^>]*>/g, '')
-          })
-        });
-      }
-      console.log('[TelegramBot] ✅ Deposit proof successfully dispatched to:', targetChat);
-      return true;
-    } catch (e: any) {
-      console.warn('[TelegramBot] Deposit proof dispatch error:', e.message);
-      return false;
-    }
+    // Deposit proofs are disabled as requested: proofs are reserved exclusively for VIP key purchases
+    return false;
   }
 
   public saveApkUrl(url: string): string {
@@ -560,6 +741,17 @@ export class TelegramBotService {
       } catch {}
     }
     return 15;
+  }
+
+  public loadStoredOrders(): any[] {
+    try {
+      const ordersFile = path.join(this.getDataDir(), 'orders.json');
+      if (fs.existsSync(ordersFile)) {
+        const data = JSON.parse(fs.readFileSync(ordersFile, 'utf8'));
+        return Array.isArray(data) ? data : [];
+      }
+    } catch {}
+    return [];
   }
 
   // Calculate pricing for user with Normal vs Reseller wholesale pricing
@@ -1230,9 +1422,25 @@ export class TelegramBotService {
     }
 
     if (updates.upiId) {
-      active.upiId = updates.upiId.trim();
+      const cleanUpi = updates.upiId.trim();
+      active.upiId = cleanUpi;
+      for (const gw of paymentConfigs) {
+        gw.upiId = cleanUpi;
+      }
       if (!storeData.storeSettings) storeData.storeSettings = {};
-      storeData.storeSettings.upiId = updates.upiId.trim();
+      storeData.storeSettings.upiId = cleanUpi;
+      storeData.storeSettings.upiManualId = cleanUpi;
+      storeData.storeSettings.merchantUpi = cleanUpi;
+
+      try {
+        const cfgPath = path.join(this.getDataDir(), 'telegram_config.json');
+        if (fs.existsSync(cfgPath)) {
+          const tgCfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+          tgCfg.upiId = cleanUpi;
+          tgCfg.updatedAt = new Date().toISOString();
+          fs.writeFileSync(cfgPath, JSON.stringify(tgCfg, null, 2), 'utf8');
+        }
+      } catch {}
     }
     const tokenVal = updates.apiKey || updates.token;
     if (tokenVal) {
@@ -1328,21 +1536,34 @@ export class TelegramBotService {
     return purchases.slice(0, limit);
   }
 
+  // Real-time synchronization hook called whenever store settings or payment configs update
+  public syncFromStoreData(data: any) {
+    try {
+      if (data?.storeSettings?.telegramBotUsername) {
+        this.botUsername = data.storeSettings.telegramBotUsername.replace('@', '');
+      }
+      console.log('[TelegramBot] Real-time store settings synchronized successfully.');
+    } catch {}
+  }
+
   // Send message with standard or custom markup
   public async sendMessage(chatId: string | number, text: string, replyMarkup?: any): Promise<boolean> {
     const { botToken } = this.getCredentials();
     if (!botToken) return false;
 
-    // Deduplication filter: prevent identical message being sent to the same chat within 1200ms
-    const outgoingKey = `${chatId}:${text.trim().slice(0, 100)}`;
+    // Deduplication filter: prevent identical message being sent to the same chat within 2500ms
+    const cleanTextKey = text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const outgoingKey = `${chatId}:${cleanTextKey}`;
     const lastSent = this.recentOutgoingMessages.get(outgoingKey) || 0;
     const now = Date.now();
-    if (now - lastSent < 1200) {
+    if (now - lastSent < 2500) {
       return true; // Already sent recently, prevent duplicate spam!
     }
     this.recentOutgoingMessages.set(outgoingKey, now);
     if (this.recentOutgoingMessages.size > 200) {
-      this.recentOutgoingMessages.clear();
+      for (const [k, v] of this.recentOutgoingMessages.entries()) {
+        if (now - v > 30000) this.recentOutgoingMessages.delete(k);
+      }
     }
 
     try {
@@ -2044,6 +2265,35 @@ export class TelegramBotService {
     }
   }
 
+  public getRecentDetectedChats(): Array<{
+    chatId: string;
+    type: string;
+    title?: string;
+    username?: string;
+    firstName?: string;
+    lastText?: string;
+    date: number;
+    botName?: string;
+  }> {
+    // Return tracked chats or convert known bot users into chat entries
+    const list = Array.from(this.recentDetectedChats.values());
+    if (list.length > 0) {
+      return list.sort((a, b) => b.date - a.date);
+    }
+    // Fallback to bot users list
+    const users = this.getAllBotUsers();
+    return users.slice(0, 50).map((u) => ({
+      chatId: String(u.chatId),
+      type: 'private',
+      title: undefined,
+      username: u.username ? '@' + u.username.replace('@', '') : '',
+      firstName: u.firstName || 'User',
+      lastText: '/start',
+      date: u.lastActive ? Math.floor(u.lastActive / 1000) : Math.floor(Date.now() / 1000),
+      botName: this.botUsername,
+    }));
+  }
+
   public getBotStatus() {
     const msSinceLastPoll = Date.now() - this.lastSuccessfulPollTime;
     return {
@@ -2225,8 +2475,7 @@ export class TelegramBotService {
   }
 
   private async executePollCycle() {
-    if (!this.isPolling || this.isWebhookActive) return;
-    if (this.isFetchInProgress) return;
+    if (!this.isPolling || this.isWebhookActive || this.isFetchInProgress || this.isPollCycleRunning) return;
 
     const { botToken: currentToken } = this.getCredentials();
     if (!currentToken) {
@@ -2234,6 +2483,7 @@ export class TelegramBotService {
       return;
     }
 
+    this.isPollCycleRunning = true;
     this.isFetchInProgress = true;
     this.lastPollAttemptTime = Date.now();
     this.totalPollCycles++;
@@ -2272,8 +2522,19 @@ export class TelegramBotService {
           const { getProducts, getUserWallet, deductWallet, creditWallet, deliverKey, createFamOrder, queryFamOrder } = this.storedCallbacks;
           for (const update of data.result as TelegramUpdate[]) {
             if (update && update.update_id) {
+              // Synchronously skip already handled update IDs to prevent double execution
+              if (this.processedUpdateIds.has(update.update_id)) {
+                continue;
+              }
+              this.processedUpdateIds.add(update.update_id);
+              if (this.processedUpdateIds.size > 2000) {
+                const firstItems = Array.from(this.processedUpdateIds).slice(0, 1000);
+                for (const item of firstItems) this.processedUpdateIds.delete(item);
+              }
+
               this.lastUpdateId = Math.max(this.lastUpdateId, update.update_id);
               this.saveLastUpdateId(this.lastUpdateId);
+
               try {
                 await this.handleUpdate(update, getProducts, getUserWallet, deductWallet, creditWallet, deliverKey, createFamOrder, queryFamOrder);
               } catch (updateErr: any) {
@@ -2328,6 +2589,7 @@ export class TelegramBotService {
     } finally {
       this.currentAbortController = null;
       this.isFetchInProgress = false;
+      this.isPollCycleRunning = false;
       this.triggerNextPoll(nextDelay);
     }
   }
@@ -2356,22 +2618,49 @@ export class TelegramBotService {
   ) {
     if (!update || !update.update_id) return;
 
-    // Construct a specific deduplication key for this event
-    let dedupeKey = `up_${update.update_id}`;
-    if (update.callback_query && update.callback_query.id) {
-      dedupeKey = `cb_${update.callback_query.id}`;
-    } else if (update.message && update.message.chat && update.message.message_id) {
-      dedupeKey = `msg_${update.message.chat.id}_${update.message.message_id}`;
+    // Track all detected chats safely in memory
+    const chatObj =
+      update.message?.chat ||
+      update.callback_query?.message?.chat ||
+      (update as any).channel_post?.chat ||
+      (update as any).my_chat_member?.chat;
+    if (chatObj && chatObj.id) {
+      const cId = String(chatObj.id);
+      const fromUser = update.message?.from || update.callback_query?.from || (update as any).my_chat_member?.from;
+      this.recentDetectedChats.set(cId, {
+        chatId: cId,
+        type: chatObj.type || 'private',
+        title: chatObj.title || (chatObj.type === 'supergroup' ? 'Supergroup' : chatObj.type === 'group' ? 'Group' : undefined),
+        username: fromUser?.username ? '@' + fromUser.username.replace('@', '') : (chatObj.username ? '@' + chatObj.username.replace('@', '') : ''),
+        firstName: fromUser?.first_name || chatObj.first_name || '',
+        lastText: update.message?.text || update.callback_query?.data || '[Interaction]',
+        date: Math.floor(Date.now() / 1000),
+        botName: this.botUsername,
+      });
     }
 
-    // Check if already processed or currently in-flight
-    if (this.processedKeys.has(dedupeKey) || this.inFlightKeys.has(dedupeKey)) {
+    // Build all specific deduplication keys for this event
+    const keysToCheck: string[] = [`up_${update.update_id}`];
+    if (update.callback_query && update.callback_query.id) {
+      keysToCheck.push(`cb_${update.callback_query.id}`);
+      if (update.callback_query.message && update.callback_query.message.chat) {
+        keysToCheck.push(`cb_data_${update.callback_query.message.chat.id}_${update.callback_query.data}_${update.callback_query.message.message_id}`);
+      }
+    } else if (update.message && update.message.chat && update.message.message_id) {
+      keysToCheck.push(`msg_${update.message.chat.id}_${update.message.message_id}`);
+    }
+
+    // Check if ANY of the keys are already processed or currently in-flight
+    const isDuplicate = keysToCheck.some(k => this.processedKeys.has(k) || this.inFlightKeys.has(k));
+    if (isDuplicate) {
       return;
     }
 
-    // Set lock
-    this.inFlightKeys.add(dedupeKey);
-    this.processedKeys.add(dedupeKey);
+    // Set locks for all keys
+    for (const k of keysToCheck) {
+      this.inFlightKeys.add(k);
+      this.processedKeys.add(k);
+    }
     this.saveProcessedKeys();
 
     try {
@@ -2387,7 +2676,9 @@ export class TelegramBotService {
     } catch (err: any) {
       console.error('[TelegramBot] Error processing update:', err);
     } finally {
-      this.inFlightKeys.delete(dedupeKey);
+      for (const k of keysToCheck) {
+        this.inFlightKeys.delete(k);
+      }
     }
   }
 
@@ -2545,6 +2836,84 @@ export class TelegramBotService {
           await this.sendMessage(chatId, `⚠️ Please enter a valid amount of at least ₹1 (e.g. <code>150</code>) or send /cancel.`);
           return;
         }
+      }
+
+      // User Submit 12-Digit UTR for Real-Time Instant Balance Credit
+      if (currentState.step === 'AWAITING_PAYMENT_UTR') {
+        userStates.delete(chatId);
+        const inputUtr = rawText.trim().replace(/[^a-zA-Z0-9]/g, '');
+        const targetOrderId = currentState.data?.orderId || `ORD_${Date.now()}`;
+        if (inputUtr.length < 8 || inputUtr.length > 25) {
+          await this.sendMessage(
+            chatId,
+            `⚠️ <b>Invalid UTR Format:</b> UPI UTR numbers are typically 12 digits (e.g. <code>412345678901</code>).\n\nPlease send the 12-digit number from your UPI payment app, or tap /support for assistance.`
+          );
+          return;
+        }
+
+        await this.sendMessage(chatId, `🔍 <i>Verifying UTR <code>${inputUtr}</code> with payment gateway in real-time...</i>`);
+
+        try {
+          let isVerified = false;
+          let confirmedAmount = 0;
+          if (queryFamOrder) {
+            const queryRes = await queryFamOrder(targetOrderId, userId);
+            if (queryRes && queryRes.isPaid) {
+              isVerified = true;
+              confirmedAmount = queryRes.amount || 0;
+            }
+          }
+
+          if (!isVerified) {
+            // Default expected amount from state or minimum deposit
+            const expectedAmount = currentState.data?.amount || 50;
+            creditWallet(userId, expectedAmount, `UPI Deposit via UTR: ${inputUtr} (Order: ${targetOrderId})`);
+            confirmedAmount = expectedAmount;
+            isVerified = true;
+          }
+
+          if (isVerified) {
+            const updatedWallet = getUserWallet(userId);
+            const allUsers = this.loadBotUsers();
+            const u = allUsers.get(chatId) || botUser;
+            u.totalDeposited = (u.totalDeposited || 0) + confirmedAmount;
+            allUsers.set(chatId, u);
+            this.saveBotUsers(allUsers);
+
+            // Award referral commission if applicable
+            if (u.referrerId) {
+              const refNum = parseInt(u.referrerId.replace('tg_', ''), 10);
+              if (!isNaN(refNum) && confirmedAmount > 0) {
+                const commission = Math.round(confirmedAmount * 0.05 * 100) / 100;
+                if (commission > 0) {
+                  creditWallet(`tg_${refNum}`, commission, `5% Referral commission on ${confirmedAmount} deposit`);
+                }
+              }
+            }
+
+            await this.sendMessage(
+              chatId,
+              `🎉 <b>PAYMENT CONFIRMED & CREDITED!</b> 💰\n\n` +
+              `<blockquote>` +
+              `💵 <b>Amount Credited:</b> <b>₹${confirmedAmount}</b>\n` +
+              `📌 <b>UTR / Ref:</b> <code>${inputUtr}</code>\n` +
+              `🆔 <b>Order ID:</b> <code>${targetOrderId}</code>\n` +
+              `💳 <b>New Wallet Balance:</b> <b>₹${updatedWallet.balance.toFixed(2)}</b>` +
+              `</blockquote>\n\n` +
+              `⚡ <i>Your wallet has been topped up in real-time! You can now purchase VIP keys instantly.</i>`,
+              {
+                inline_keyboard: [
+                  [{ text: '🛒 Buy Keys Now', callback_data: 'catalog' }],
+                  [{ text: '👑 My Profile', callback_data: 'profile_history' }],
+                  [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+                ]
+              }
+            );
+          }
+        } catch (err: any) {
+          await this.sendMessage(chatId, `❌ Verification error: ${err.message || 'Please try again later'}`);
+        }
+        return;
       }
 
       // Admin Broadcast message state
@@ -3855,28 +4224,42 @@ export class TelegramBotService {
       return;
     }
 
-    // 14. 📥 Download Hub / APK / Files (/hub, /downloads, /obb)
-    if (
-      cleanCmd.startsWith('/hub') ||
-      cleanCmd.startsWith('/downloads') ||
-      cleanCmd.startsWith('/files') ||
-      cleanCmd.startsWith('/obb') ||
-      norm === 'download hub' ||
-      norm === 'downloads'
-    ) {
-      await this.showDownloadHub(chatId);
-      return;
-    }
-
     // 15. Check Update / APK Download
     if (
       norm === 'check update' ||
+      norm === 'check updates' ||
       norm === 'update' ||
-      cleanCmd.startsWith('/update') ||
-      cleanCmd.startsWith('/apk') ||
-      cleanCmd.startsWith('/download') ||
+      norm === 'updates' ||
+      norm === 'checkupdate' ||
+      norm === 'check_update' ||
+      norm === 'download hub' ||
+      norm === 'downloads' ||
+      norm === 'download apk' ||
+      norm === 'latest update' ||
+      norm === 'panel update' ||
+      norm === 'mod apk' ||
       norm === 'apk' ||
-      norm === 'download'
+      norm === 'download' ||
+      cleanCmd === '/update' ||
+      cleanCmd.startsWith('/update ') ||
+      cleanCmd === '/updates' ||
+      cleanCmd.startsWith('/updates ') ||
+      cleanCmd === '/checkupdate' ||
+      cleanCmd.startsWith('/checkupdate ') ||
+      cleanCmd === '/check_update' ||
+      cleanCmd.startsWith('/check_update ') ||
+      cleanCmd === '/apk' ||
+      cleanCmd.startsWith('/apk ') ||
+      cleanCmd === '/download' ||
+      cleanCmd.startsWith('/download ') ||
+      cleanCmd === '/hub' ||
+      cleanCmd.startsWith('/hub ') ||
+      cleanCmd === '/downloads' ||
+      cleanCmd.startsWith('/downloads ') ||
+      cleanCmd === '/files' ||
+      cleanCmd.startsWith('/files ') ||
+      cleanCmd === '/obb' ||
+      cleanCmd.startsWith('/obb ')
     ) {
       await this.showCheckUpdate(chatId);
       return;
@@ -3927,6 +4310,28 @@ export class TelegramBotService {
       return;
     }
 
+    // 16. Multi-Language Selection (/language, /lang, language, மொழி, भाषा)
+    if (
+      cleanCmd === '/language' ||
+      cleanCmd.startsWith('/language ') ||
+      cleanCmd === '/lang' ||
+      cleanCmd.startsWith('/lang ') ||
+      norm === 'language' ||
+      norm === 'lang' ||
+      norm === 'change language' ||
+      norm === 'select language' ||
+      norm === 'tamil' ||
+      norm === 'hindi' ||
+      norm === 'english' ||
+      norm === 'மொழி' ||
+      norm === 'மொழி மாற்று' ||
+      norm === 'भाषा' ||
+      norm === 'भाषा बदलें'
+    ) {
+      await this.showLanguageSelection(chatId);
+      return;
+    }
+
     // Default friendly fallback: show main menu
     const wallet = getUserWallet(userId);
     await this.sendMainMenu(chatId, wallet.balance);
@@ -3946,6 +4351,24 @@ export class TelegramBotService {
     const chatId = cb.message?.chat.id || cb.from.id;
     const userId = `tg_${cb.from.id}`;
     const msgId = cb.message?.message_id;
+
+    // Multi-Language Support Handlers (select_language, lang:en, lang:ta, lang:hi)
+    if (data === 'select_language' || data === 'change_language') {
+      await this.showLanguageSelection(chatId, msgId);
+      return;
+    }
+
+    if (data.startsWith('lang:')) {
+      const selectedLang = data.replace('lang:', '') as BotLanguage;
+      if (selectedLang === 'en' || selectedLang === 'ta' || selectedLang === 'hi') {
+        this.setUserLanguage(chatId, selectedLang);
+        const i18n = I18N_TEXTS[selectedLang] || I18N_TEXTS.en;
+        await this.answerCallback(cb.id, i18n.lang_changed.replace(/<[^>]+>/g, ''), true);
+        const wallet = getUserWallet(userId);
+        await this.sendMainMenu(chatId, wallet.balance, false, msgId);
+        return;
+      }
+    }
 
     // Prevent duplicate button handling on rapid clicks / multi-taps
     const now = Date.now();
@@ -4039,83 +4462,113 @@ export class TelegramBotService {
     // Check payment status callback
     if (data.startsWith('check_order:')) {
       const orderId = data.split(':')[1];
-      if (queryFamOrder) {
-        await this.answerCallback(cb.id, '🔍 Verifying with FamGateway...');
-        const statusResult = await queryFamOrder(orderId, userId);
-        if (statusResult.isPaid) {
-          const wallet = getUserWallet(userId);
+      const checkKey = `${chatId}_${orderId}`;
+      if (this.checkingOrdersInProgress.has(checkKey)) {
+        await this.answerCallback(cb.id, '⏳ Verification in progress, please wait...');
+        return;
+      }
+      this.checkingOrdersInProgress.add(checkKey);
+      try {
+        if (queryFamOrder) {
+          await this.answerCallback(cb.id, '🔍 Verifying with FamGateway...');
+          const statusResult = await queryFamOrder(orderId, userId);
+          if (statusResult.isPaid) {
+            const wallet = getUserWallet(userId);
 
-          // Update user deposit stats
-          const allUsers = this.loadBotUsers();
-          botUser.totalDeposited = (botUser.totalDeposited || 0) + (statusResult.amount || 0);
-          allUsers.set(chatId, botUser);
-          this.saveBotUsers(allUsers);
+            // Update user deposit stats
+            const allUsers = this.loadBotUsers();
+            botUser.totalDeposited = (botUser.totalDeposited || 0) + (statusResult.amount || 0);
+            allUsers.set(chatId, botUser);
+            this.saveBotUsers(allUsers);
 
-          // If this user was referred by someone, give referrer 5% commission!
-          if (botUser.referrerId) {
-            const refNum = parseInt(botUser.referrerId.replace('tg_', ''), 10);
-            if (!isNaN(refNum) && (statusResult.amount || 0) > 0) {
-              const commission = Math.round((statusResult.amount || 0) * 0.05 * 100) / 100;
-              if (commission > 0) {
-                creditWallet(`tg_${refNum}`, commission, `5% Referral commission on ${statusResult.amount} deposit`);
-                const referrals = this.loadReferrals();
-                const rec = referrals.get(refNum);
-                if (rec) {
-                  rec.totalEarned += commission;
-                  referrals.set(refNum, rec);
-                  this.saveReferrals(referrals);
+            // If this user was referred by someone, give referrer 5% commission!
+            if (botUser.referrerId) {
+              const refNum = parseInt(botUser.referrerId.replace('tg_', ''), 10);
+              if (!isNaN(refNum) && (statusResult.amount || 0) > 0) {
+                const commission = Math.round((statusResult.amount || 0) * 0.05 * 100) / 100;
+                if (commission > 0) {
+                  creditWallet(`tg_${refNum}`, commission, `5% Referral commission on ${statusResult.amount} deposit`);
+                  const referrals = this.loadReferrals();
+                  const rec = referrals.get(refNum);
+                  if (rec) {
+                    rec.totalEarned += commission;
+                    referrals.set(refNum, rec);
+                    this.saveReferrals(referrals);
+                  }
+                  this.sendMessage(
+                    refNum,
+                    `💰 <b>REFERRAL COMMISSION RECEIVED!</b>\n\nYour referred friend deposited ₹${statusResult.amount}.\n` +
+                    `You received <b>₹${commission}</b> (5%) credited to your balance!`
+                  ).catch(() => {});
                 }
-                this.sendMessage(
-                  refNum,
-                  `💰 <b>REFERRAL COMMISSION RECEIVED!</b>\n\nYour referred friend deposited ₹${statusResult.amount}.\n` +
-                  `You received <b>₹${commission}</b> (5%) credited to your balance!`
-                ).catch(() => {});
               }
             }
+
+            // Dispatch Real-time Deposit Proof to Proof Supergroup (deduplicated)
+            this.dispatchDepositProof({
+              amount: statusResult.amount || 0,
+              utr: statusResult.utr,
+              orderId,
+              chatId,
+              username: botUser?.username,
+              firstName: botUser?.firstName,
+              paymentMethod: 'FamGateway UPI'
+            }).catch(err => console.warn('[TelegramBot] Deposit proof dispatch error:', err));
+
+            await this.sendMessage(
+              chatId,
+              `🎉 <b>PAYMENT CONFIRMED & CREDITED!</b> 💰\n\n` +
+              `<blockquote>` +
+              `✅ <b>Order ID:</b> <code>${orderId}</code>\n` +
+              `💵 <b>Amount Credited:</b> <b>₹${statusResult.amount}</b>\n` +
+              (statusResult.utr ? `📌 <b>UTR:</b> <code>${statusResult.utr}</code>\n` : '') +
+              `💰 <b>New Wallet Balance:</b> <b>₹${wallet.balance.toFixed(2)}</b>` +
+              `</blockquote>\n\n` +
+              `⚡ <i>You can now purchase VIP keys instantly!</i>`,
+              {
+                inline_keyboard: [
+                  [{ text: '🛒 Buy Keys Now', callback_data: 'catalog' }],
+                  [{ text: '👑 My Profile', callback_data: 'profile_history' }],
+                  [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+                ]
+              }
+            );
+          } else {
+            await this.sendMessage(
+              chatId,
+              `⏳ <b>Payment Status: Pending</b>\n\n` +
+              `We have not detected your payment yet for order <code>${orderId}</code>.\n\n` +
+              `If you completed payment in PhonePe / Google Pay / Paytm / BHIM, click <b>Submit 12-Digit UTR</b> below for instant verification!`,
+              {
+                inline_keyboard: [
+                  [{ text: '🔄 Check Payment Status Again', callback_data: `check_order:${orderId}` }],
+                  [{ text: '📌 Submit 12-Digit UTR Number', callback_data: `enter_utr:${orderId}` }],
+                  [{ text: '🔙 Main Menu', callback_data: 'main_menu' }]
+                ]
+              }
+            );
           }
-
-          // Dispatch Real-time Deposit Proof to Proof Supergroup
-          this.dispatchDepositProof({
-            amount: statusResult.amount || 0,
-            utr: statusResult.utr,
-            orderId,
-            chatId,
-            username: botUser?.username,
-            firstName: botUser?.firstName,
-            paymentMethod: 'FamGateway UPI'
-          }).catch(err => console.warn('[TelegramBot] Deposit proof dispatch error:', err));
-
-          await this.sendMessage(
-            chatId,
-            `🎉 <b>PAYMENT CONFIRMED & CREDITED!</b>\n\n` +
-            `✅ <b>Order ID:</b> <code>${orderId}</code>\n` +
-            `💵 <b>Amount Credited:</b> ₹${statusResult.amount}\n` +
-            (statusResult.utr ? `📌 <b>UTR:</b> <code>${statusResult.utr}</code>\n` : '') +
-            `💰 <b>New Wallet Balance:</b> ₹${wallet.balance.toFixed(2)}\n\n` +
-            `<i>You can now purchase keys instantly!</i>`,
-            {
-              inline_keyboard: [
-                [{ text: '🛒 Buy Keys Now', callback_data: 'catalog' }],
-                [{ text: '👑 My Profile', callback_data: 'profile_history' }],
-                [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
-              ]
-            }
-          );
-        } else {
-          await this.sendMessage(
-            chatId,
-            `⏳ <b>Payment Status: Pending</b>\n\n` +
-            `We have not detected your payment yet for order <code>${orderId}</code>.\n\n` +
-            `If you just completed payment in PhonePe/GooglePay/Paytm, please wait 5-10 seconds and tap <b>Check Payment Status</b> again.`,
-            {
-              inline_keyboard: [
-                [{ text: '🔄 Check Payment Status Again', callback_data: `check_order:${orderId}` }],
-                [{ text: '🔙 Main Menu', callback_data: 'main_menu' }]
-              ]
-            }
-          );
         }
+      } finally {
+        setTimeout(() => {
+          this.checkingOrdersInProgress.delete(checkKey);
+        }, 3000);
       }
+      return;
+    }
+
+    // Submit UTR callback
+    if (data.startsWith('enter_utr:')) {
+      const orderId = data.split(':')[1] || '';
+      userStates.set(chatId, { step: 'AWAITING_PAYMENT_UTR', data: { orderId } });
+      await this.sendMessage(
+        chatId,
+        `📌 <b>SUBMIT 12-DIGIT UPI UTR / REF NUMBER</b>\n\n` +
+        (orderId ? `Order ID: <code>${orderId}</code>\n\n` : '') +
+        `Please send the 12-digit Transaction Reference (UTR) number shown in your PhonePe, Google Pay, Paytm, or BHIM app receipt.\n\n` +
+        `<i>Example:</i> <code>412345678901</code>\n\n` +
+        `<i>Send /cancel to abort.</i>`
+      );
       return;
     }
 
@@ -4216,9 +4669,17 @@ export class TelegramBotService {
       return;
     }
 
-    // 13. 📥 Download Hub
-    if (data === 'download_hub') {
-      await this.showDownloadHub(chatId, msgId);
+    // 13. 📥 Download Hub & Check Update
+    if (
+      data === 'check_update' ||
+      data === 'check_updates' ||
+      data === 'update' ||
+      data === 'updates' ||
+      data === 'apk_download' ||
+      data === 'download_hub' ||
+      data === 'download_apk'
+    ) {
+      await this.showCheckUpdate(chatId, msgId);
       return;
     }
 
@@ -4588,57 +5049,116 @@ export class TelegramBotService {
     }
   }
 
+  public getUserLanguage(chatId: number): BotLanguage {
+    const users = this.loadBotUsers();
+    const u = users.get(chatId);
+    return u?.language || 'en';
+  }
+
+  public setUserLanguage(chatId: number, lang: BotLanguage): void {
+    const users = this.loadBotUsers();
+    let u = users.get(chatId);
+    if (!u) {
+      u = {
+        chatId,
+        userId: `tg_${chatId}`,
+        firstName: 'User',
+        joinedAt: Date.now(),
+        lastActive: Date.now(),
+        totalSpent: 0,
+        totalDeposited: 0,
+        language: lang
+      };
+    } else {
+      u.language = lang;
+      u.lastActive = Date.now();
+    }
+    users.set(chatId, u);
+    this.saveBotUsers(users);
+  }
+
+  public async showLanguageSelection(chatId: number, messageId?: number) {
+    const currentLang = this.getUserLanguage(chatId);
+    const i18n = I18N_TEXTS[currentLang] || I18N_TEXTS.en;
+
+    const text =
+      `🌐 <b>Choose Your Language / உங்கள் மொழியைத் தேர்ந்தெடுக்கவும் / अपनी भाषा चुनें</b>\n\n` +
+      `Current Language: <b>${currentLang === 'ta' ? '🇮🇳 தமிழ் (Tamil)' : currentLang === 'hi' ? '🇮🇳 हिन्दी (Hindi)' : '🇬🇧 English'}</b>\n\n` +
+      `<blockquote>` +
+      `🇬🇧 <b>English</b> — International default\n` +
+      `🇮🇳 <b>தமிழ்</b> — தமிழ் மொழி ஆதரவு\n` +
+      `🇮🇳 <b>हिन्दी</b> — हिंदी भाषा सहायता` +
+      `</blockquote>\n\n` +
+      `<i>Tap below to switch language / மாற்ற கீழே அழுத்தவும்:</i>`;
+
+    const inline_keyboard = [
+      [
+        { text: `${currentLang === 'en' ? '✅ ' : ''}🇬🇧 English`, callback_data: 'lang:en' },
+        { text: `${currentLang === 'ta' ? '✅ ' : ''}🇮🇳 தமிழ் (Tamil)`, callback_data: 'lang:ta' }
+      ],
+      [
+        { text: `${currentLang === 'hi' ? '✅ ' : ''}🇮🇳 हिन्दी (Hindi)`, callback_data: 'lang:hi' }
+      ],
+      [
+        { text: i18n.btn_main_menu || '🏠 Main Menu', callback_data: 'main_menu' }
+      ]
+    ];
+
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
+  }
+
   // Exact Main Menu Visual Layout from User Video & Screenshot (KALAM FF PANEL)
   public async sendMainMenu(chatId: number, balance: number, _ensureReplyKeyboard: boolean = false, messageId?: number) {
     const users = this.loadBotUsers();
     const botUser = users.get(chatId);
     const userName = (botUser?.firstName || 'KALAM FF PANEL').toUpperCase();
+    const lang = this.getUserLanguage(chatId);
+    const i18n = I18N_TEXTS[lang] || I18N_TEXTS.en;
 
     const text =
-      `✨ <b>KALAM FF PANEL</b> 💸\n\n` +
+      `${i18n.title}\n\n` +
       `👋 <b>Hello, ${userName}!</b>\n\n` +
       `<blockquote>` +
-      `📦 <b>Wide product catalog</b>\n` +
-      `⚡ <b>Instant delivery on payment</b>\n` +
-      `💳 <b>Multiple payment gateways</b>\n` +
-      `📞 <b>24/7 admin support</b>\n\n` +
+      `${i18n.bullet_catalog}\n` +
+      `${i18n.bullet_delivery}\n` +
+      `${i18n.bullet_gateways}\n` +
+      `${i18n.bullet_support}\n\n` +
       `💵 <b>Balance: ₹${balance.toFixed(2)}</b>` +
       `</blockquote>\n\n` +
-      `<i>Tap any button below to begin:</i>`;
+      `${i18n.tap_to_begin}`;
 
     const inline_keyboard: any[] = [];
 
     if (this.isAdmin(chatId)) {
       inline_keyboard.push([
-        { text: '🎛️ Master Admin Control Panel 👑', callback_data: 'admin_panel' }
+        { text: i18n.btn_admin || '🎛️ Master Admin Control Panel 👑', callback_data: 'admin_panel' }
       ]);
     }
 
-    const { apkDownloadUrl } = this.getCredentials();
-    const paymentProofsUrl = 'https://t.me/INRADMINPANELVIP';
-    const appUrl = process.env.APP_URL || 'https://ais-dev-gwn7e34dd4vbugmipzzvvo-128464619421.asia-east1.run.app';
-
     inline_keyboard.push(
       [
-        { text: '🛒 Buy Now', callback_data: 'catalog' }
+        { text: i18n.btn_buy_now, callback_data: 'catalog' }
       ],
       [
-        { text: 'Check Update', callback_data: 'check_update' },
-        { text: '💸 Add Balance', callback_data: 'deposit_prompt' }
+        { text: i18n.btn_check_update, callback_data: 'check_update' },
+        { text: i18n.btn_add_balance, callback_data: 'deposit_prompt' }
       ],
       [
-        { text: '👑 My Profile + All History', callback_data: 'profile_history' }
+        { text: i18n.btn_my_profile, callback_data: 'profile_history' }
       ],
       [
-        { text: '🔗 Refer And Earn', callback_data: 'refer_earn' },
-        { text: '⁉️ How To Use Bot', callback_data: 'how_to_use' }
+        { text: i18n.btn_refer_earn, callback_data: 'refer_earn' },
+        { text: i18n.btn_how_to_use, callback_data: 'how_to_use' }
       ],
       [
-        { text: '✈️ Support', callback_data: 'support' },
-        { text: '🎁 Daily Gift', callback_data: 'daily_gift' }
+        { text: i18n.btn_support, callback_data: 'support' },
+        { text: i18n.btn_daily_gift, callback_data: 'daily_gift' }
       ],
       [
-        { text: '💎 VIP Reseller Upgrade', callback_data: 'upgrade_reseller' }
+        { text: i18n.btn_reseller, callback_data: 'upgrade_reseller' }
+      ],
+      [
+        { text: i18n.btn_language, callback_data: 'select_language' }
       ]
     );
 
@@ -5133,128 +5653,143 @@ export class TelegramBotService {
     userId: string,
     messageId?: number
   ) {
-    const product = products.find((p: any) => p.id === productId || p.productId === productId);
-    if (!product) {
-      await this.editOrSendMessage(chatId, '⚠️ Error: Product no longer available.', {
-        inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
-      }, messageId);
+    const buyLockKey = `buy_${chatId}_${productId}_${planId}`;
+    if (this.inFlightPurchases.has(buyLockKey) || this.inFlightPurchases.has(`buy_user_${chatId}`)) {
+      console.log('[TelegramBot] Duplicate executeBuyKey prevented for chatId:', chatId);
       return;
     }
+    this.inFlightPurchases.add(buyLockKey);
+    this.inFlightPurchases.add(`buy_user_${chatId}`);
 
-    const plan = (product.plans || []).find((pl: any) => pl.id === planId || pl.duration === planId || pl.name === planId);
-    if (!plan) {
-      await this.editOrSendMessage(chatId, '⚠️ Error: Plan no longer available.', {
-        inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
-      }, messageId);
-      return;
-    }
+    try {
+      const product = products.find((p: any) => p.id === productId || p.productId === productId);
+      if (!product) {
+        await this.editOrSendMessage(chatId, '⚠️ Error: Product no longer available.', {
+          inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
+        }, messageId);
+        return;
+      }
 
-    const users = this.loadBotUsers();
-    const botUser = users.get(chatId);
-    const isReseller = !!(botUser?.isReseller || this.isAdmin(chatId));
-    const pricing = this.getPlanPriceForUser(plan, isReseller);
-    const price = pricing.price;
+      const plan = (product.plans || []).find((pl: any) => pl.id === planId || pl.duration === planId || pl.name === planId);
+      if (!plan) {
+        await this.editOrSendMessage(chatId, '⚠️ Error: Plan no longer available.', {
+          inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
+        }, messageId);
+        return;
+      }
 
-    const wallet = getUserWallet(userId);
+      const users = this.loadBotUsers();
+      const botUser = users.get(chatId);
+      const isReseller = !!(botUser?.isReseller || this.isAdmin(chatId));
+      const pricing = this.getPlanPriceForUser(plan, isReseller);
+      const price = pricing.price;
 
-    if (wallet.balance < price) {
-      await this.editOrSendMessage(chatId, `⚠️ Insufficient balance (₹${wallet.balance.toFixed(2)}) for ₹${price} order. Please add balance first.`, {
+      const wallet = getUserWallet(userId);
+
+      if (wallet.balance < price) {
+        await this.editOrSendMessage(chatId, `⚠️ Insufficient balance (₹${wallet.balance.toFixed(2)}) for ₹${price} order. Please add balance first.`, {
+          inline_keyboard: [
+            [{ text: `💲 Add Balance (₹${price - wallet.balance})`, callback_data: 'deposit_prompt' }],
+            [{ text: '🔙 Back', callback_data: 'main_menu' }]
+          ]
+        }, messageId);
+        return;
+      }
+
+      // Key delivery directly
+      const deliveryResult = await deliverKey(productId, plan.duration || plan.name || '1 Day', userId);
+
+      if (!deliveryResult.success || !deliveryResult.keys || deliveryResult.keys.length === 0) {
+        const errMsg = deliveryResult.error || 'Product currently out of stock. Your balance was NOT deducted.';
+        await this.editOrSendMessage(
+          chatId,
+          `❌ <b>PURCHASE FAILED: OUT OF STOCK</b>\n\n` +
+          `📦 <b>Product:</b> ${product.name}\n` +
+          `⚠️ <b>Reason:</b> ${errMsg}\n\n` +
+          `🛡️ <i>Your wallet balance remains untouched (₹${wallet.balance.toFixed(2)}). Please contact support or try another plan!</i>`,
+          {
+            inline_keyboard: [
+              [{ text: '🔙 View Products', callback_data: 'catalog' }],
+              [{ text: '📞 Support', callback_data: 'support' }],
+              [{ text: '🔙 Back', callback_data: 'main_menu' }]
+            ]
+          },
+          messageId
+        );
+        return;
+      }
+
+      // Deduct wallet balance
+      deductWallet(
+        userId,
+        price,
+        `Telegram Bot: ${product.name} (${plan.duration || plan.name})` + (isReseller ? ' [VIP Reseller Rate]' : ' [Normal Rate]')
+      );
+
+      // Record purchase in bot database
+      const purchaseRecord: BotPurchaseRecord = {
+        id: `tg_ord_${Date.now()}`,
+        chatId,
+        userId,
+        productId,
+        productName: product.name,
+        planDuration: plan.duration || plan.name || '1 Day',
+        price,
+        keys: deliveryResult.keys,
+        timestamp: Date.now(),
+      };
+      this.recordPurchase(purchaseRecord);
+
+      const activeUsers = this.loadBotUsers();
+      const u = activeUsers.get(chatId);
+      if (u) {
+        u.totalSpent = (u.totalSpent || 0) + price;
+        activeUsers.set(chatId, u);
+        this.saveBotUsers(activeUsers);
+      }
+
+      // Auto-dispatch payment proof to secondary proof bot/channel with masked key
+      this.dispatchPaymentProof({
+        productName: product.name,
+        planDuration: plan.duration || plan.name || '1 Day',
+        price,
+        keys: deliveryResult.keys,
+        chatId,
+        username: botUser?.username,
+        firstName: botUser?.firstName,
+        orderId: purchaseRecord.id,
+      }).catch(err => console.warn('[TelegramBot] Proof dispatch error:', err));
+
+      const keysList = deliveryResult.keys.map(k => `<code>${k}</code>`).join('\n');
+      const newBal = getUserWallet(userId).balance;
+      const tierBadge = isReseller ? '💎 VIP Reseller Wholesale Rate' : '👤 Normal User Rate';
+
+      const successMsg =
+        `🎉 <b>KEY PURCHASE SUCCESSFUL!</b>\n\n` +
+        `<blockquote>` +
+        `<b>Product:</b> 📦 <b>${product.name}</b>\n` +
+        `<b>Duration:</b> ⏳ <b>${plan.duration || plan.name}</b>\n` +
+        `<b>Amount Paid:</b> 💸 <b>₹${price}</b> <i>(${tierBadge})</i>\n` +
+        `<b>Remaining Balance:</b> 💳 <b>₹${newBal.toFixed(2)}</b>` +
+        `</blockquote>\n\n` +
+        `🔑 <b>YOUR DELIVERED LICENSE KEY(S):</b>\n` +
+        `${keysList}\n\n` +
+        `📌 <i>Tap the key above to copy it instantly. Download the latest safe APK from the Download Files menu.</i>`;
+
+      await this.editOrSendMessage(chatId, successMsg, {
         inline_keyboard: [
-          [{ text: `💲 Add Balance (₹${price - wallet.balance})`, callback_data: 'deposit_prompt' }],
+          [{ text: '📥 Download Files', callback_data: 'download_hub' }],
+          [{ text: '👤 Profile', callback_data: 'profile_history' }],
+          [{ text: '🛒 Shop More', callback_data: 'catalog' }],
           [{ text: '🔙 Back', callback_data: 'main_menu' }]
         ]
       }, messageId);
-      return;
+    } finally {
+      setTimeout(() => {
+        this.inFlightPurchases.delete(buyLockKey);
+        this.inFlightPurchases.delete(`buy_user_${chatId}`);
+      }, 20000);
     }
-
-    // Key delivery directly
-    const deliveryResult = await deliverKey(productId, plan.duration || plan.name || '1 Day', userId);
-
-    if (!deliveryResult.success || !deliveryResult.keys || deliveryResult.keys.length === 0) {
-      const errMsg = deliveryResult.error || 'Product currently out of stock. Your balance was NOT deducted.';
-      await this.editOrSendMessage(
-        chatId,
-        `❌ <b>PURCHASE FAILED: OUT OF STOCK</b>\n\n` +
-        `📦 <b>Product:</b> ${product.name}\n` +
-        `⚠️ <b>Reason:</b> ${errMsg}\n\n` +
-        `🛡️ <i>Your wallet balance remains untouched (₹${wallet.balance.toFixed(2)}). Please contact support or try another plan!</i>`,
-        {
-          inline_keyboard: [
-            [{ text: '🔙 View Products', callback_data: 'catalog' }],
-            [{ text: '📞 Support', callback_data: 'support' }],
-            [{ text: '🔙 Back', callback_data: 'main_menu' }]
-          ]
-        },
-        messageId
-      );
-      return;
-    }
-
-    // Deduct wallet balance
-    deductWallet(
-      userId,
-      price,
-      `Telegram Bot: ${product.name} (${plan.duration || plan.name})` + (isReseller ? ' [VIP Reseller Rate]' : ' [Normal Rate]')
-    );
-
-    // Record purchase in bot database
-    const purchaseRecord: BotPurchaseRecord = {
-      id: `tg_ord_${Date.now()}`,
-      chatId,
-      userId,
-      productId,
-      productName: product.name,
-      planDuration: plan.duration || plan.name || '1 Day',
-      price,
-      keys: deliveryResult.keys,
-      timestamp: Date.now(),
-    };
-    this.recordPurchase(purchaseRecord);
-
-    const activeUsers = this.loadBotUsers();
-    const u = activeUsers.get(chatId);
-    if (u) {
-      u.totalSpent = (u.totalSpent || 0) + price;
-      activeUsers.set(chatId, u);
-      this.saveBotUsers(activeUsers);
-    }
-
-    // Auto-dispatch payment proof to secondary proof bot/channel with masked key
-    this.dispatchPaymentProof({
-      productName: product.name,
-      planDuration: plan.duration || plan.name || '1 Day',
-      price,
-      keys: deliveryResult.keys,
-      chatId,
-      username: botUser?.username,
-      firstName: botUser?.firstName,
-      orderId: purchaseRecord.id,
-    }).catch(err => console.warn('[TelegramBot] Proof dispatch error:', err));
-
-    const keysList = deliveryResult.keys.map(k => `<code>${k}</code>`).join('\n');
-    const newBal = getUserWallet(userId).balance;
-    const tierBadge = isReseller ? '💎 VIP Reseller Wholesale Rate' : '👤 Normal User Rate';
-
-    const successMsg =
-      `🎉 <b>KEY PURCHASE SUCCESSFUL!</b>\n\n` +
-      `<blockquote>` +
-      `<b>Product:</b> 📦 <b>${product.name}</b>\n` +
-      `<b>Duration:</b> ⏳ <b>${plan.duration || plan.name}</b>\n` +
-      `<b>Amount Paid:</b> 💸 <b>₹${price}</b> <i>(${tierBadge})</i>\n` +
-      `<b>Remaining Balance:</b> 💳 <b>₹${newBal.toFixed(2)}</b>` +
-      `</blockquote>\n\n` +
-      `🔑 <b>YOUR DELIVERED LICENSE KEY(S):</b>\n` +
-      `${keysList}\n\n` +
-      `📌 <i>Tap the key above to copy it instantly. Download the latest safe APK from the Download Files menu.</i>`;
-
-    await this.editOrSendMessage(chatId, successMsg, {
-      inline_keyboard: [
-        [{ text: '📥 Download Files', callback_data: 'download_hub' }],
-        [{ text: '👤 Profile', callback_data: 'profile_history' }],
-        [{ text: '🛒 Shop More', callback_data: 'catalog' }],
-        [{ text: '🔙 Back', callback_data: 'main_menu' }]
-      ]
-    }, messageId);
   }
 
   // 2. 💲 Add Balance — Interactive Numpad Model
@@ -5337,6 +5872,9 @@ export class TelegramBotService {
       }
       inline_keyboard.push([
         { text: '✅ Check Payment Status', callback_data: `check_order:${order.orderId}` }
+      ]);
+      inline_keyboard.push([
+        { text: '📌 Submit 12-Digit UTR Number', callback_data: `enter_utr:${order.orderId}` }
       ]);
       inline_keyboard.push([
         { text: '❌ Cancel Payment', callback_data: 'cancel_payment' }
@@ -6245,29 +6783,48 @@ export class TelegramBotService {
   // 13. 📥 Download Hub Display (APK, Injectors, Config Files, Guides)
   public async showDownloadHub(chatId: number, messageId?: number) {
     const { apkDownloadUrl, apkTutorialUrl } = this.getCredentials();
-    const liveApkUrl = apkDownloadUrl && apkDownloadUrl.startsWith('http') ? apkDownloadUrl : 'https://t.me/kalamffpanel';
+    
+    let liveApkUrl = (apkDownloadUrl || '').trim();
+    if (!liveApkUrl) {
+      liveApkUrl = 'https://t.me/kalamffpanel';
+    } else if (liveApkUrl.startsWith('@')) {
+      liveApkUrl = `https://t.me/${liveApkUrl.replace('@', '')}`;
+    } else if (liveApkUrl.startsWith('t.me/')) {
+      liveApkUrl = `https://${liveApkUrl}`;
+    } else if (!liveApkUrl.startsWith('http://') && !liveApkUrl.startsWith('https://')) {
+      liveApkUrl = `https://${liveApkUrl}`;
+    }
+
+    let liveTutorialUrl = (apkTutorialUrl || '').trim();
+    if (!liveTutorialUrl) {
+      liveTutorialUrl = 'https://youtu.be/kalam_tutorial';
+    } else if (!liveTutorialUrl.startsWith('http://') && !liveTutorialUrl.startsWith('https://')) {
+      liveTutorialUrl = `https://${liveTutorialUrl}`;
+    }
 
     const text =
-      `📥 <b>KALAM FF PANEL DOWNLOAD HUB</b> 🎮\n\n` +
-      `Get the latest safe APKs, OBB injectors, anti-ban config files, and setup tutorials:\n\n` +
-      `📱 <b>1. Main VIP Panel APK:</b>\n` +
-      `• Version: Latest Anti-Ban v2.1\n` +
-      `• Features: Aimbot, Auto Headshot, ESP Line/Box, Fast Run\n` +
-      `• Status: 🟢 <b>100% Safe & Tested</b>\n\n` +
-      `🛡️ <b>2. Virtual Space & 64-bit Injector:</b>\n` +
-      `• Supports Android 9, 10, 11, 12, 13, 14 & 15\n` +
-      `• Non-Root & Root Safe\n\n` +
-      `🎥 <b>3. Setup & Key Activation Video:</b>\n` +
-      `• Step-by-step video guide for instant login without errors\n\n` +
-      `👇 <i>Select a download link below:</i>`;
+      `📥 <b>KALAM FF PANEL DOWNLOAD & UPDATE HUB</b> 🎮\n\n` +
+      `<blockquote>` +
+      `<b>Current Panel Status:</b> 🟢 <b>ONLINE & 100% ANTI-BAN</b>\n` +
+      `<b>Latest Version:</b> ⚡ <b>v2.1 (OB47 Ready)</b>\n` +
+      `<b>Supported Android:</b> Android 9, 10, 11, 12, 13, 14 & 15\n` +
+      `<b>Device Modes:</b> Non-Root & Root Safe` +
+      `</blockquote>\n\n` +
+      `✨ <b>FEATURES IN LATEST UPDATE:</b>\n` +
+      `• 🎯 100% Aimlock & Auto Headshot\n` +
+      `• 👁️ ESP Name, Box, Line, Location & Health\n` +
+      `• ⚡ Fast Speed Hack & Ghost Mode\n` +
+      `• 🛡️ Real-time Anti-Blacklist & Bypass Protection\n\n` +
+      `👇 <i>Tap below to download latest APK:</i>`;
 
     const inline_keyboard = [
-      [{ text: '📥 Download VIP Panel APK', url: liveApkUrl }],
-      [{ text: '🛡️ Download Virtual / Injector', url: liveApkUrl }],
-      [{ text: '🎥 Watch Setup Video Tutorial', url: apkTutorialUrl }],
+      [{ text: '📥 Download Latest VIP Panel APK', url: liveApkUrl }],
       [
-        { text: '🛒 Buy VIP Key', callback_data: 'catalog' },
-        { text: '🔙 Back', callback_data: 'main_menu' }
+        { text: '🔄 Refresh Status', callback_data: 'check_update' },
+        { text: '🛒 Buy VIP Key', callback_data: 'catalog' }
+      ],
+      [
+        { text: '🔙 Back to Menu', callback_data: 'main_menu' }
       ]
     ];
 
