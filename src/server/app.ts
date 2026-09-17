@@ -1150,6 +1150,15 @@ export async function sendTelegramKeyPurchaseAlert(info: {
   return sendTelegramMessage(msg);
 }
 
+export async function sendTelegramLowStockAlert(productOrId?: any, options?: { force?: boolean; reason?: string }) {
+  try {
+    return await telegramBotService.checkAndDispatchLowStockAlert(productOrId, options);
+  } catch (err: any) {
+    console.warn('[TelegramLowStockAlert] Error dispatching alert:', err.message);
+    return { alerted: false, count: 0, error: err.message };
+  }
+}
+
 // Initialize products from disk storage
 let globalProductsCache: any[] = loadProductsFromDisk();
 if (globalProductsCache.length === 0 && Array.isArray(INITIAL_PRODUCTS) && INITIAL_PRODUCTS.length > 0) {
@@ -1292,50 +1301,55 @@ app.all('/api/admin/stats', (req: Request, res: Response) => {
   }
 });
 
-// Endpoint: Inventory Low Stock Notification
+// Endpoint: Inventory Low Stock Notification & Query
 app.get('/api/admin/inventory/low-stock', (req: Request, res: Response) => {
   try {
-    const products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
-    const LOW_STOCK_THRESHOLD = 5;
-    const lowStockProducts = products.map((p: any) => {
-      let keysRemaining = 0;
-      if (p.planKeys && typeof p.planKeys === 'object') {
-        for (const keys of Object.values(p.planKeys)) {
-          if (Array.isArray(keys)) keysRemaining += keys.length;
-        }
-      }
-      if (Array.isArray(p.keys) && p.keys.length > 0) {
-        keysRemaining = Math.max(keysRemaining, p.keys.length);
-      }
-      if (Array.isArray(p.plans)) {
-        let plansSum = 0;
-        p.plans.forEach((pl: any) => {
-          if (Array.isArray(pl.keys)) plansSum += pl.keys.length;
-          else if (typeof pl.keysCount === 'number') plansSum += pl.keysCount;
-        });
-        keysRemaining = Math.max(keysRemaining, plansSum);
-      }
-      if (keysRemaining === 0 && typeof p.stock === 'number') {
-        keysRemaining = p.stock;
-      }
-
-      return {
-        id: p.id,
-        name: p.name,
-        game: p.game || 'Free Fire',
-        category: p.category || 'CONFIG PROXY',
-        status: p.status || 'ACTIVE',
-        keysRemaining,
-        isLowStock: keysRemaining < LOW_STOCK_THRESHOLD,
-        isOutOfStock: keysRemaining === 0,
-      };
-    }).filter((item: any) => item.isLowStock);
+    const threshold = telegramBotService.getLowStockThreshold();
+    const lowStockProducts = telegramBotService.getLowStockProducts(threshold);
 
     res.json({
       success: true,
-      lowStockThreshold: LOW_STOCK_THRESHOLD,
+      lowStockThreshold: threshold,
       count: lowStockProducts.length,
       products: lowStockProducts,
+      timestamp: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint: Manually trigger / test low stock automated Telegram alerts
+app.post('/api/admin/inventory/low-stock/trigger', async (req: Request, res: Response) => {
+  try {
+    const { productId, force } = req.body || {};
+    const result = await telegramBotService.checkAndDispatchLowStockAlert(productId, {
+      force: force !== false,
+      reason: 'Manual Admin Inventory Audit via API'
+    });
+    res.json({
+      success: true,
+      ...result,
+      threshold: telegramBotService.getLowStockThreshold(),
+      timestamp: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint: Configure low stock alert threshold
+app.post('/api/admin/inventory/low-stock/threshold', (req: Request, res: Response) => {
+  try {
+    const { threshold } = req.body || {};
+    const parsed = parseInt(String(threshold), 10);
+    if (isNaN(parsed) || parsed < 0) {
+      return res.status(400).json({ success: false, error: 'Invalid threshold number' });
+    }
+    const ok = telegramBotService.setLowStockThreshold(parsed);
+    res.json({
+      success: ok,
+      threshold: telegramBotService.getLowStockThreshold(),
       timestamp: Date.now()
     });
   } catch (err: any) {
@@ -1422,6 +1436,198 @@ app.post('/api/products', (req: Request, res: Response) => {
       });
     }
     return res.status(400).json({ success: false, error: 'Expected products array' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================================
+// PRODUCT MAINTENANCE MODE MANAGEMENT APIS (ON / OFF / BULK)
+// ==========================================================
+
+// 1. Get Maintenance Status for All Products + Store
+app.get(['/api/admin/products/maintenance', '/api/products/maintenance-status'], (req: Request, res: Response) => {
+  try {
+    const products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    const storeData = loadStoreDataFromDisk();
+    const isStoreMaintenance = !!storeData.storeSettings?.maintenanceMode;
+
+    const maintenanceProducts = products.filter((p: any) => p && (p.status === 'MAINTENANCE' || p.status === 'maintenance'));
+    const activeProducts = products.filter((p: any) => p && (p.status === 'ACTIVE' || p.status === 'active' || !p.status));
+    const disabledProducts = products.filter((p: any) => p && (p.status === 'DISABLED' || p.status === 'disabled'));
+
+    return res.json({
+      success: true,
+      storeMaintenanceMode: isStoreMaintenance,
+      totalProducts: products.length,
+      maintenanceCount: maintenanceProducts.length,
+      activeCount: activeProducts.length,
+      disabledCount: disabledProducts.length,
+      products: products.map((p: any) => ({
+        id: p.id || p.productId,
+        name: p.name || 'Unnamed Product',
+        category: p.category || 'General',
+        status: p.status || 'ACTIVE',
+        isMaintenance: p.status === 'MAINTENANCE' || p.status === 'maintenance',
+        stock: Array.isArray(p.keys) ? p.keys.length : (p.stock || 0)
+      }))
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. Set Specific Product Maintenance Mode ON or OFF
+app.post(['/api/admin/products/:id/maintenance', '/api/products/:id/maintenance'], (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { maintenance, isMaintenance, status } = req.body;
+    
+    // Determine target maintenance boolean
+    let shouldBeMaintenance = false;
+    if (typeof maintenance === 'boolean') {
+      shouldBeMaintenance = maintenance;
+    } else if (typeof isMaintenance === 'boolean') {
+      shouldBeMaintenance = isMaintenance;
+    } else if (typeof status === 'string') {
+      shouldBeMaintenance = status.toUpperCase() === 'MAINTENANCE';
+    } else if (req.body.mode === 'on' || req.body.action === 'enable') {
+      shouldBeMaintenance = true;
+    } else if (req.body.mode === 'off' || req.body.action === 'disable') {
+      shouldBeMaintenance = false;
+    }
+
+    if (globalProductsCache.length === 0) {
+      globalProductsCache = loadProductsFromDisk();
+    }
+
+    const cleanId = String(id).trim().toLowerCase();
+    const product = globalProductsCache.find((p: any) => 
+      String(p.id || '').toLowerCase() === cleanId || 
+      String(p.productId || '').toLowerCase() === cleanId ||
+      String(p.name || '').toLowerCase() === cleanId
+    );
+
+    if (!product) {
+      return res.status(404).json({ success: false, error: `Product with ID or Name "${id}" not found.` });
+    }
+
+    const newStatus = shouldBeMaintenance ? 'MAINTENANCE' : 'ACTIVE';
+    product.status = newStatus;
+
+    // Sync to disk
+    saveProductsToDisk(globalProductsCache);
+    isProductsInitialized = true;
+
+    console.log(`[ProductMaintenance] Product "${product.name}" (${product.id}) maintenance mode is now: ${newStatus}`);
+
+    return res.json({
+      success: true,
+      message: `Product "${product.name}" maintenance mode is now ${shouldBeMaintenance ? 'ON' : 'OFF'}`,
+      productId: product.id,
+      productName: product.name,
+      status: newStatus,
+      isMaintenance: shouldBeMaintenance
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Toggle Specific Product Maintenance Mode (1-Click Toggle)
+app.post(['/api/admin/products/:id/toggle-maintenance', '/api/products/:id/toggle-maintenance'], (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (globalProductsCache.length === 0) {
+      globalProductsCache = loadProductsFromDisk();
+    }
+
+    const cleanId = String(id).trim().toLowerCase();
+    const product = globalProductsCache.find((p: any) => 
+      String(p.id || '').toLowerCase() === cleanId || 
+      String(p.productId || '').toLowerCase() === cleanId ||
+      String(p.name || '').toLowerCase() === cleanId
+    );
+
+    if (!product) {
+      return res.status(404).json({ success: false, error: `Product with ID or Name "${id}" not found.` });
+    }
+
+    const currentStatus = (product.status || 'ACTIVE').toUpperCase();
+    const willBeMaintenance = currentStatus !== 'MAINTENANCE';
+    const newStatus = willBeMaintenance ? 'MAINTENANCE' : 'ACTIVE';
+    product.status = newStatus;
+
+    saveProductsToDisk(globalProductsCache);
+    isProductsInitialized = true;
+
+    console.log(`[ProductMaintenance] Toggled product "${product.name}" (${product.id}) to: ${newStatus}`);
+
+    return res.json({
+      success: true,
+      message: `Product "${product.name}" maintenance mode is now ${willBeMaintenance ? 'ON' : 'OFF'}`,
+      productId: product.id,
+      productName: product.name,
+      status: newStatus,
+      isMaintenance: willBeMaintenance
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Bulk Set Products Maintenance Mode
+app.post(['/api/admin/products/bulk-maintenance', '/api/products/bulk-maintenance'], (req: Request, res: Response) => {
+  try {
+    const { action, productIds, isMaintenance, maintenance } = req.body;
+    if (globalProductsCache.length === 0) {
+      globalProductsCache = loadProductsFromDisk();
+    }
+
+    let targetIsMaintenance = false;
+    if (action === 'ALL_MAINTENANCE' || action === 'ENABLE_ALL' || req.body.mode === 'all_on') {
+      targetIsMaintenance = true;
+    } else if (action === 'ALL_ACTIVE' || action === 'DISABLE_ALL' || req.body.mode === 'all_off') {
+      targetIsMaintenance = false;
+    } else if (typeof isMaintenance === 'boolean') {
+      targetIsMaintenance = isMaintenance;
+    } else if (typeof maintenance === 'boolean') {
+      targetIsMaintenance = maintenance;
+    }
+
+    const targetStatus = targetIsMaintenance ? 'MAINTENANCE' : 'ACTIVE';
+    let updatedCount = 0;
+
+    if (Array.isArray(productIds) && productIds.length > 0) {
+      const idSet = new Set(productIds.map((id: string) => String(id).toLowerCase().trim()));
+      globalProductsCache.forEach((p: any) => {
+        const pid = String(p.id || '').toLowerCase().trim();
+        const pProductId = String(p.productId || '').toLowerCase().trim();
+        if (idSet.has(pid) || idSet.has(pProductId)) {
+          p.status = targetStatus;
+          updatedCount++;
+        }
+      });
+    } else {
+      // Set all products
+      globalProductsCache.forEach((p: any) => {
+        p.status = targetStatus;
+        updatedCount++;
+      });
+    }
+
+    saveProductsToDisk(globalProductsCache);
+    isProductsInitialized = true;
+
+    console.log(`[ProductMaintenance] Bulk updated ${updatedCount} products to status: ${targetStatus}`);
+
+    return res.json({
+      success: true,
+      message: `Updated ${updatedCount} product(s) maintenance mode to ${targetIsMaintenance ? 'ON' : 'OFF'}`,
+      updatedCount,
+      isMaintenance: targetIsMaintenance,
+      status: targetStatus
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1693,8 +1899,8 @@ app.post('/api/telegram-config', async (req: Request, res: Response) => {
   }
 });
 
-// Live Test Telegram Bot Connection & Dispatch Test Alert
-app.post('/api/admin/telegram/test', async (req: Request, res: Response) => {
+// Live Test Telegram Bot Connection & Dispatch Test Alert (Measures exact response time & success status)
+app.post(['/api/admin/telegram/test', '/api/admin/telegram/test-connectivity', '/api/telegram/test-connectivity'], async (req: Request, res: Response) => {
   try {
     const dataFile = path.join(DATA_DIR, 'telegram_config.json');
     let botToken = (req.body.botToken || '').trim();
@@ -1713,52 +1919,18 @@ app.post('/api/admin/telegram/test', async (req: Request, res: Response) => {
     botToken = botToken || process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g';
     chatId = chatId || process.env.TELEGRAM_CHAT_ID || '7768975239';
 
-    if (!botToken) {
-      return res.status(400).json({ success: false, error: 'Telegram Bot Token is required' });
-    }
+    const result = await telegramBotService.testConnectivityAlert({
+      botToken,
+      chatId,
+      reason: 'Admin Settings UI Manual Connectivity Test'
+    });
 
-    // Call Telegram getMe
-    const getMeRes = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
-    const getMeData: any = await getMeRes.json();
-    if (!getMeData.ok) {
-      return res.status(400).json({
-        success: false,
-        error: `Telegram Bot API Error: ${getMeData.description || 'Invalid Bot Token'}`
-      });
-    }
-
-    const botInfo = getMeData.result;
-    let messageSent = false;
-
-    if (chatId) {
-      const sendRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `🤖 <b>KALAM STORE Bot Connection Test</b>\n\n` +
-            `✅ <b>Status:</b> Connected & Verified\n` +
-            `👤 <b>Bot:</b> ${botInfo.first_name} (@${botInfo.username})\n` +
-            `🆔 <b>Admin Chat ID:</b> <code>${chatId}</code>\n` +
-            `⏱ <b>Timestamp:</b> ${new Date().toLocaleString('en-IN')}\n\n` +
-            `<i>Your Telegram bot notification link is operational!</i>`,
-          parse_mode: 'HTML'
-        })
-      });
-      const sendData: any = await sendRes.json();
-      messageSent = !!sendData.ok;
-    }
-
-    return res.json({
-      success: true,
-      botUsername: botInfo.username,
-      botFirstName: botInfo.first_name,
-      botId: botInfo.id,
-      messageSent,
-      message: `Connected to @${botInfo.username}! ${messageSent ? `Test notification sent to chat ID ${chatId}.` : ''}`
+    return res.status(result.success ? 200 : (result.error ? 400 : 200)).json({
+      ...result,
+      serverTime: new Date().toISOString()
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err.message, responseTimeMs: 0, status: 'ERROR' });
   }
 });
 
@@ -6296,6 +6468,11 @@ export async function deliverKeyForTelegram(
         email: userEmail
       }).catch(e => console.warn('[TelegramAutoAlert] telegram purchase error:', e));
 
+      // Automated Low-Stock Inventory Check & Alert dispatch to Admin
+      telegramBotService.checkAndDispatchLowStockAlert(product, {
+        reason: `Key Delivered to ${userEmail || 'Customer'} (${product.name} - ${planDuration})`
+      }).catch(e => console.warn('[TelegramLowStockAlert] dispatch error:', e));
+
       return { success: true, keys: [deliveredKey], source: 'INVENTORY' };
     }
 
@@ -6883,7 +7060,11 @@ app.get(['/tg-app', '/telegram-app', '/miniapp', '/app/tg'], (req: Request, res:
         let list = '<div class="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">';
         if (PRODUCTS && PRODUCTS.length > 0) {
           PRODUCTS.forEach(p => {
-            list += '<div class="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 flex justify-between items-center"><div><div class="font-bold text-white text-xs">' + (p.name || 'VIP Key') + '</div><div class="text-[10px] text-zinc-400">' + (p.plans?.length || 0) + ' plans available</div></div><span class="text-xs text-emerald-400 font-mono font-bold">Instant Key ⚡</span></div>';
+            const isMaint = p.status === 'MAINTENANCE' || p.status === 'maintenance';
+            const badge = isMaint
+              ? '<span class="text-[10px] text-amber-300 font-bold bg-amber-950/80 px-2 py-0.5 rounded border border-amber-500/40">🛠️ Maintenance</span>'
+              : '<span class="text-xs text-emerald-400 font-mono font-bold">Instant Key ⚡</span>';
+            list += '<div class="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 flex justify-between items-center"><div><div class="font-bold text-white text-xs">' + (p.name || 'VIP Key') + '</div><div class="text-[10px] text-zinc-400">' + (p.plans?.length || 0) + ' plans available</div></div>' + badge + '</div>';
           });
         } else {
           list += '<div class="text-zinc-400 text-xs">No active keys in stock right now.</div>';

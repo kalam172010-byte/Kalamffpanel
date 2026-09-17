@@ -41,6 +41,19 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isPinging, setIsPinging] = useState<boolean>(false);
+  const [isTestingConnectivity, setIsTestingConnectivity] = useState<boolean>(false);
+  const [connectivityResult, setConnectivityResult] = useState<{
+    success: boolean;
+    responseTimeMs: number;
+    latencyMs?: number;
+    status: string;
+    botUsername?: string;
+    botFirstName?: string;
+    messageSent?: boolean;
+    chatId?: string;
+    message: string;
+    timestamp: string;
+  } | null>(null);
   const [isRecycling, setIsRecycling] = useState<boolean>(false);
   const [lastPingResult, setLastPingResult] = useState<TelegramDiagnosticResult | null>(null);
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState<boolean>(true);
@@ -175,6 +188,29 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
       setErrorMessage(err.message || 'Diagnostic ping failed');
     } finally {
       setIsPinging(false);
+    }
+  };
+
+  // Execute active connectivity test alert
+  const handleTestConnectivityAlert = async () => {
+    setIsTestingConnectivity(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/admin/telegram/test-connectivity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      setConnectivityResult(data);
+      if (data.status) {
+        await fetchHealthStatus(false);
+      }
+      setLastRefreshedAt(new Date());
+    } catch (err: any) {
+      console.error('[TelegramBotHealthCard] Connectivity alert error:', err);
+      setErrorMessage(err.message || 'Connectivity test alert failed');
+    } finally {
+      setIsTestingConnectivity(false);
     }
   };
 
@@ -391,15 +427,26 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
       {/* Action Toolbar & Diagnostic Ping */}
       <div className="relative z-10 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
         <div className="flex flex-wrap items-center gap-2">
+          {/* Test Telegram Connectivity Alert Button */}
+          <button
+            id="telegram-test-connectivity-btn"
+            onClick={handleTestConnectivityAlert}
+            disabled={isTestingConnectivity}
+            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-lg shadow-cyan-500/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+          >
+            <Zap className={`h-3.5 w-3.5 ${isTestingConnectivity ? 'animate-spin' : ''}`} />
+            <span>{isTestingConnectivity ? 'Testing Connectivity...' : '⚡ Test Telegram Connectivity'}</span>
+          </button>
+
           {/* Diagnostic Ping Button */}
           <button
             id="telegram-diagnostic-ping-btn"
             onClick={handleDiagnosticPing}
             disabled={isPinging}
-            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-pink-500 to-purple-600 px-3.5 py-2 text-xs font-semibold text-white shadow-lg shadow-pink-500/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-pink-500/30 bg-pink-500/10 px-3 py-2 text-xs font-semibold text-pink-300 transition-all hover:bg-pink-500/20 active:scale-95 disabled:opacity-50"
           >
-            <Zap className={`h-3.5 w-3.5 ${isPinging ? 'animate-spin' : ''}`} />
-            <span>{isPinging ? 'Measuring Latency...' : 'Diagnostic Test Ping'}</span>
+            <Activity className={`h-3.5 w-3.5 ${isPinging ? 'animate-spin' : ''}`} />
+            <span>{isPinging ? 'Pinging...' : 'Quick Socket Ping'}</span>
           </button>
 
           {/* Recycle Socket */}
@@ -440,6 +487,57 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
           </label>
         </div>
       </div>
+
+      {/* Connectivity Alert Test Result Banner */}
+      {connectivityResult && (
+        <div
+          id="telegram-connectivity-result-banner"
+          className={`relative z-10 mt-3 rounded-xl border p-3.5 transition-all ${
+            connectivityResult.success
+              ? 'border-cyan-500/40 bg-cyan-950/30 text-cyan-200'
+              : 'border-rose-500/40 bg-rose-950/30 text-rose-200'
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {connectivityResult.success ? (
+                <CheckCircle2 className="h-4 w-4 text-cyan-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+              )}
+              <span className="text-xs font-bold">
+                {connectivityResult.success
+                  ? 'Telegram Connectivity Alert Test: PASSED'
+                  : 'Telegram Connectivity Alert Test: FAILED'}
+              </span>
+              <span
+                className={`rounded px-2 py-0.5 text-[10px] font-mono font-bold uppercase ${
+                  connectivityResult.success
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                }`}
+              >
+                ● Status: {connectivityResult.status}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded bg-cyan-500/20 px-2.5 py-0.5 text-xs font-mono font-bold text-cyan-300 border border-cyan-500/30">
+                ⚡ Response Time: {connectivityResult.responseTimeMs || connectivityResult.latencyMs || 0}ms
+              </span>
+              <button
+                type="button"
+                onClick={() => setConnectivityResult(null)}
+                className="rounded px-1.5 py-0.5 text-xs text-zinc-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-zinc-300 font-mono">
+            {connectivityResult.message}
+          </p>
+        </div>
+      )}
 
       {/* Diagnostic Result Banner (if test performed) */}
       {lastPingResult && (

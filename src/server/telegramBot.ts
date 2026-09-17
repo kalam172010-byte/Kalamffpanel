@@ -315,11 +315,19 @@ export class TelegramBotService {
     createFamOrder?: (amount: number, userIdentifier: string, userEmail?: string) => Promise<any>;
     queryFamOrder?: (orderId: string, userIdentifier: string) => Promise<any>;
   } | null = null;
+  private inFlightDeposits = new Set<number | string>();
+  private inFlightPurchases = new Set<string>();
+  private checkingOrdersInProgress = new Set<string>();
+  private confirmedDepositOrders = new Set<string>();
+  private lastLowStockAlertSent = new Map<string, { stock: number; timestamp: number; isOutOfStock: boolean }>();
+  private lowStockCheckTimer: NodeJS.Timeout | null = null;
 
   private constructor() {
     this.lastUpdateId = this.loadLastUpdateId();
     this.processedKeys = this.loadProcessedKeys();
+    this.confirmedDepositOrders = this.loadConfirmedOrders();
     this.initSupervisor();
+    this.initLowStockMonitor();
   }
 
   public static getInstance(): TelegramBotService {
@@ -327,6 +335,30 @@ export class TelegramBotService {
       TelegramBotService.instance = new TelegramBotService();
     }
     return TelegramBotService.instance;
+  }
+
+  private loadConfirmedOrders(): Set<string> {
+    const set = new Set<string>();
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_confirmed_orders.json');
+      if (fs.existsSync(filePath)) {
+        const arr = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (Array.isArray(arr)) {
+          for (const item of arr) {
+            if (typeof item === 'string') set.add(item);
+          }
+        }
+      }
+    } catch {}
+    return set;
+  }
+
+  private saveConfirmedOrders() {
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_confirmed_orders.json');
+      const arr = Array.from(this.confirmedDepositOrders).slice(-2000);
+      fs.writeFileSync(filePath, JSON.stringify(arr), 'utf8');
+    } catch {}
   }
 
   private loadLastUpdateId(): number {
@@ -485,9 +517,6 @@ export class TelegramBotService {
   private dispatchedOrderIds = new Set<string>();
   private inFlightProofPromises = new Map<string, Promise<boolean>>();
   private lastProofDispatchTime = 0;
-  private checkingOrdersInProgress = new Set<string>();
-  private inFlightPurchases = new Set<string>();
-  private inFlightDeposits = new Set<number>();
 
   private loadDispatchedProofCache() {
     try {
@@ -1297,6 +1326,9 @@ export class TelegramBotService {
 
     this.saveProductsToDisk(products);
 
+    // Clear low stock alert suppression cache for this product since it has been restocked
+    this.lastLowStockAlertSent.delete(String(product.id || product.name));
+
     return {
       success: true,
       addedCount: validNewKeys.length,
@@ -1449,6 +1481,12 @@ export class TelegramBotService {
 
     this.saveProductsToDisk(products);
 
+    // Trigger low-stock alert immediately if stock dropped below threshold
+    this.checkAndDispatchLowStockAlert(product, {
+      force: true,
+      reason: `Stock Cleared by Admin (${product.name} - ${planDuration})`
+    }).catch(err => console.warn('[TelegramBot] Clear stock low alert error:', err));
+
     return {
       success: true,
       productName: product.name,
@@ -1572,6 +1610,55 @@ export class TelegramBotService {
     return { success: true, isMaintenance };
   }
 
+  // 8.1 Product Maintenance Mode (Per Product & Bulk)
+  public setProductMaintenance(productId: string, isMaintenance: boolean): { success: boolean; product?: any; isMaintenance: boolean; error?: string } {
+    const products = this.loadProductsFromDisk();
+    const cleanId = String(productId || '').trim().toLowerCase();
+    const product = products.find((p: any) => 
+      String(p.id || '').toLowerCase() === cleanId || 
+      String(p.productId || '').toLowerCase() === cleanId ||
+      String(p.name || '').toLowerCase() === cleanId
+    );
+
+    if (!product) {
+      return { success: false, isMaintenance, error: 'Product not found' };
+    }
+
+    product.status = isMaintenance ? 'MAINTENANCE' : 'ACTIVE';
+    this.saveProductsToDisk(products);
+    return { success: true, product, isMaintenance };
+  }
+
+  public toggleProductMaintenance(productId: string): { success: boolean; product?: any; isMaintenance: boolean; error?: string } {
+    const products = this.loadProductsFromDisk();
+    const cleanId = String(productId || '').trim().toLowerCase();
+    const product = products.find((p: any) => 
+      String(p.id || '').toLowerCase() === cleanId || 
+      String(p.productId || '').toLowerCase() === cleanId ||
+      String(p.name || '').toLowerCase() === cleanId
+    );
+
+    if (!product) {
+      return { success: false, isMaintenance: false, error: 'Product not found' };
+    }
+
+    const currentStatus = (product.status || 'ACTIVE').toUpperCase();
+    const newMaintenance = currentStatus !== 'MAINTENANCE';
+    product.status = newMaintenance ? 'MAINTENANCE' : 'ACTIVE';
+    this.saveProductsToDisk(products);
+    return { success: true, product, isMaintenance: newMaintenance };
+  }
+
+  public setAllProductsMaintenance(isMaintenance: boolean): { success: boolean; count: number; isMaintenance: boolean } {
+    const products = this.loadProductsFromDisk();
+    const targetStatus = isMaintenance ? 'MAINTENANCE' : 'ACTIVE';
+    products.forEach((p: any) => {
+      p.status = targetStatus;
+    });
+    this.saveProductsToDisk(products);
+    return { success: true, count: products.length, isMaintenance };
+  }
+
   // 9. Detailed Store Stats
   public getDetailedStoreStats(): any {
     const users = this.loadBotUsers();
@@ -1623,6 +1710,333 @@ export class TelegramBotService {
   public getRecentOrdersList(limit: number = 10): BotPurchaseRecord[] {
     const purchases = this.loadPurchases();
     return purchases.slice(0, limit);
+  }
+
+  // ===== LOW-STOCK MONITORING & AUTOMATED ADMIN ALERT SYSTEM =====
+
+  public getLowStockThreshold(): number {
+    const storeData = this.loadStoreDataFromDisk();
+    const customThreshold = storeData?.storeSettings?.lowStockThreshold;
+    if (typeof customThreshold === 'number' && !isNaN(customThreshold) && customThreshold >= 0) {
+      return customThreshold;
+    }
+    return 5;
+  }
+
+  public setLowStockThreshold(threshold: number): boolean {
+    try {
+      const cleanThreshold = Math.max(0, Math.round(Number(threshold) || 5));
+      const storeData = this.loadStoreDataFromDisk();
+      if (!storeData.storeSettings) storeData.storeSettings = {};
+      storeData.storeSettings.lowStockThreshold = cleanThreshold;
+      this.saveStoreDataToDisk(storeData);
+      return true;
+    } catch (err: any) {
+      console.warn('[TelegramBot] Error saving low stock threshold:', err.message);
+      return false;
+    }
+  }
+
+  public calculateProductStock(p: any): {
+    totalStock: number;
+    plansBreakdown: Array<{
+      id: string;
+      name: string;
+      duration: string;
+      price: number;
+      resellerPrice: number;
+      keysCount: number;
+      isLowStock: boolean;
+      isOutOfStock: boolean;
+    }>;
+  } {
+    const threshold = this.getLowStockThreshold();
+    const plansBreakdown: Array<{
+      id: string;
+      name: string;
+      duration: string;
+      price: number;
+      resellerPrice: number;
+      keysCount: number;
+      isLowStock: boolean;
+      isOutOfStock: boolean;
+    }> = [];
+
+    let totalKeys = 0;
+    const plans = Array.isArray(p?.plans) && p.plans.length > 0 ? p.plans : [{ id: '1 Day', duration: '1 Day', name: '1 Day Pass', price: p?.price || 99 }];
+
+    for (const pl of plans) {
+      const planId = pl.id || pl.duration;
+      let count = 0;
+      if (p.planKeys && typeof p.planKeys === 'object' && Array.isArray(p.planKeys[planId])) {
+        count = p.planKeys[planId].length;
+      } else if (Array.isArray(pl.keys)) {
+        count = pl.keys.length;
+      } else if (typeof pl.keysCount === 'number') {
+        count = pl.keysCount;
+      }
+      totalKeys += count;
+      plansBreakdown.push({
+        id: planId,
+        name: pl.name || pl.duration || 'Standard Plan',
+        duration: pl.duration || pl.name || '1 Day',
+        price: Number(pl.price) || 0,
+        resellerPrice: Number(pl.resellerPrice) || Math.round((Number(pl.price) || 0) * 0.8),
+        keysCount: count,
+        isLowStock: count <= threshold,
+        isOutOfStock: count === 0,
+      });
+    }
+
+    if (totalKeys === 0 && Array.isArray(p?.keys) && p.keys.length > 0) {
+      totalKeys = p.keys.length;
+    } else if (totalKeys === 0 && typeof p?.stock === 'number') {
+      totalKeys = p.stock;
+    }
+
+    return {
+      totalStock: totalKeys,
+      plansBreakdown,
+    };
+  }
+
+  public getLowStockProducts(customThreshold?: number): Array<{
+    id: string;
+    name: string;
+    game: string;
+    category: string;
+    status: string;
+    keysRemaining: number;
+    threshold: number;
+    isLowStock: boolean;
+    isOutOfStock: boolean;
+    plansBreakdown: Array<{
+      id: string;
+      name: string;
+      duration: string;
+      price: number;
+      resellerPrice: number;
+      keysCount: number;
+      isLowStock: boolean;
+      isOutOfStock: boolean;
+    }>;
+  }> {
+    const products = this.loadProductsFromDisk();
+    const threshold = typeof customThreshold === 'number' ? customThreshold : this.getLowStockThreshold();
+
+    const lowStockList: any[] = [];
+    for (const p of products) {
+      const { totalStock, plansBreakdown } = this.calculateProductStock(p);
+      const isOut = totalStock === 0;
+      const isLow = totalStock <= threshold;
+
+      if (isLow) {
+        lowStockList.push({
+          id: p.id,
+          name: p.name || 'Unnamed Product',
+          game: p.game || 'Free Fire',
+          category: p.category || 'Injections',
+          status: p.status || 'ACTIVE',
+          keysRemaining: totalStock,
+          threshold,
+          isLowStock: isLow,
+          isOutOfStock: isOut,
+          plansBreakdown,
+        });
+      }
+    }
+
+    return lowStockList;
+  }
+
+  public async checkAndDispatchLowStockAlert(
+    productOrId?: any,
+    options?: { force?: boolean; reason?: string; targetChatId?: number | string }
+  ): Promise<{ alerted: boolean; count: number; details?: any }> {
+    const threshold = this.getLowStockThreshold();
+    const { defaultChatId } = this.getCredentials();
+    const adminChatId = options?.targetChatId || defaultChatId || '7768975239';
+
+    if (productOrId) {
+      let product = productOrId;
+      if (typeof productOrId === 'string') {
+        const products = this.loadProductsFromDisk();
+        product = products.find((p: any) => p.id === productOrId || p.productId === productOrId || p.name === productOrId);
+      }
+      if (!product) return { alerted: false, count: 0 };
+
+      const { totalStock, plansBreakdown } = this.calculateProductStock(product);
+      const isOutOfStock = totalStock <= 0;
+      const isLowStock = totalStock <= threshold;
+
+      if (!isLowStock && !options?.force) {
+        return { alerted: false, count: 0 };
+      }
+
+      const pId = String(product.id || product.name);
+      const now = Date.now();
+      const lastAlert = this.lastLowStockAlertSent.get(pId);
+
+      // Suppress duplicate alerts unless forced, or stock has dropped further, or out of stock transition, or >30 minutes elapsed
+      if (!options?.force && lastAlert) {
+        const elapsed = now - lastAlert.timestamp;
+        const stockDecreased = totalStock < lastAlert.stock;
+        const becameZero = isOutOfStock && !lastAlert.isOutOfStock;
+        if (!stockDecreased && !becameZero && elapsed < 30 * 60 * 1000) {
+          return { alerted: false, count: 0, details: 'Suppressed duplicate alert within cooldown period' };
+        }
+      }
+
+      this.lastLowStockAlertSent.set(pId, {
+        stock: totalStock,
+        timestamp: now,
+        isOutOfStock,
+      });
+
+      const time = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const statusTitle = isOutOfStock
+        ? '🚨 <b>CRITICAL INVENTORY ALERT: OUT OF STOCK!</b> 🔴'
+        : '⚠️ <b>AUTOMATED INVENTORY ALERT: LOW STOCK!</b> 🟡';
+
+      let planBreakdownText = '';
+      if (plansBreakdown.length > 0) {
+        planBreakdownText = '\n\n<b>📋 Plan-by-Plan Key Inventory:</b>\n' + plansBreakdown.map(pl => {
+          const kCount = pl.keysCount;
+          const badge = kCount === 0 ? '🔴 <b>0 keys (EMPTY)</b>' : (kCount <= 2 ? `⚠️ <b>${kCount} key(s) left</b>` : `✅ <b>${kCount} keys</b>`);
+          return `• <b>${pl.duration || pl.name}:</b> ${badge}`;
+        }).join('\n');
+      }
+
+      const triggerNote = options?.reason ? `\n📝 <b>Trigger Event:</b> <i>${options.reason}</i>` : '';
+
+      const alertMessage =
+        `${statusTitle}\n\n` +
+        `<blockquote>` +
+        `📦 <b>Product:</b> <b>${product.name}</b>\n` +
+        `🆔 <b>Product ID:</b> <code>${product.id}</code>\n` +
+        (product.game ? `🎮 <b>Game:</b> ${product.game}\n` : '') +
+        (product.category ? `🏷️ <b>Category:</b> ${product.category}\n` : '') +
+        `🔑 <b>Current Total Stock:</b> <b>${totalStock} key(s) remaining</b>\n` +
+        `📉 <b>Low Stock Threshold:</b> <b>${threshold} key(s)</b>\n` +
+        `🕒 <b>Time:</b> ${time}` +
+        triggerNote +
+        planBreakdownText +
+        `</blockquote>\n\n` +
+        `⚡ <b>Urgent Action:</b> Stock is below the defined threshold of <b>${threshold}</b> keys. Restock now to prevent checkout delivery failures.`;
+
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            { text: '➕ Restock Keys Now', callback_data: 'admin_action:add_keys_prompt' },
+            { text: '📦 View Stock Hub', callback_data: 'admin_menu:products' }
+          ],
+          [
+            { text: '📉 View All Low Stock', callback_data: 'admin_menu:low_stock' },
+            { text: '🎛️ Admin Control Panel', callback_data: 'admin_panel' }
+          ]
+        ]
+      };
+
+      await this.sendMessage(adminChatId, alertMessage, replyMarkup);
+      return { alerted: true, count: 1, details: product.name };
+    }
+
+    // Otherwise check all products
+    const lowStockProducts = this.getLowStockProducts(threshold);
+    if (lowStockProducts.length === 0) {
+      if (options?.force) {
+        await this.sendMessage(
+          adminChatId,
+          `✅ <b>INVENTORY HEALTH CHECK: ALL GOOD!</b> 🟢\n\n` +
+          `All products in the store catalog currently have healthy stock levels above the defined threshold of <b>${threshold}</b> keys.`,
+          { inline_keyboard: [[{ text: '📦 View Products', callback_data: 'admin_menu:products' }]] }
+        );
+      }
+      return { alerted: false, count: 0 };
+    }
+
+    let alertCount = 0;
+    for (const p of lowStockProducts) {
+      const res = await this.checkAndDispatchLowStockAlert(p, options);
+      if (res.alerted) alertCount++;
+    }
+
+    return { alerted: alertCount > 0, count: alertCount };
+  }
+
+  public async auditAndAlertLowStock() {
+    try {
+      const lowStockProducts = this.getLowStockProducts();
+      for (const p of lowStockProducts) {
+        await this.checkAndDispatchLowStockAlert(p);
+      }
+    } catch (err: any) {
+      console.warn('[TelegramBot] Periodic low stock check error:', err.message);
+    }
+  }
+
+  private initLowStockMonitor() {
+    if (this.lowStockCheckTimer) {
+      clearInterval(this.lowStockCheckTimer);
+    }
+    // Check every 20 minutes for low stock in background
+    this.lowStockCheckTimer = setInterval(() => {
+      this.auditAndAlertLowStock();
+    }, 20 * 60 * 1000);
+  }
+
+  public async showAdminLowStockMenu(chatId: number, messageId?: number) {
+    if (!this.isAdmin(chatId)) return;
+    const threshold = this.getLowStockThreshold();
+    const lowStockItems = this.getLowStockProducts(threshold);
+    const totalProducts = this.loadProductsFromDisk().length;
+
+    let text =
+      `⚠️ <b>LOW-STOCK INVENTORY MONITOR & ALERTS</b> 📉\n\n` +
+      `<blockquote>〰️〰️ <b>INVENTORY HEALTH STATUS</b> 〰️〰️\n` +
+      `📉 <b>Defined Low-Stock Threshold:</b> <b>${threshold} keys</b>\n` +
+      `📦 <b>Total Products Catalog:</b> <b>${totalProducts}</b>\n` +
+      `🚨 <b>Products Below Threshold:</b> <b>${lowStockItems.length}</b>\n` +
+      `〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️</blockquote>\n\n`;
+
+    if (lowStockItems.length === 0) {
+      text += `🟢 <b>All Products Fully Stocked!</b>\n` +
+              `No items are currently below the threshold of ${threshold} keys. Automated alerts are armed and monitoring.\n\n` +
+              `⚙️ <i>To adjust the alert threshold, tap "Set Threshold" below.</i>`;
+    } else {
+      text += `<b>🔴 CRITICAL & LOW-STOCK ITEMS LIST:</b>\n\n`;
+      lowStockItems.forEach((p, idx) => {
+        const isOut = p.keysRemaining === 0;
+        const badge = isOut ? '🔴 <b>OUT OF STOCK (0)</b>' : `⚠️ <b>${p.keysRemaining} keys left</b>`;
+        const plansList = p.plansBreakdown.map((pl: any) => {
+          const kCount = pl.keysCount;
+          const plBadge = kCount === 0 ? '🔴 0' : (kCount <= 2 ? `⚠️ ${kCount}` : `✅ ${kCount}`);
+          return `${pl.duration || pl.name}: ${plBadge}`;
+        }).join(' | ');
+
+        text += `<b>${idx + 1}. ${p.name}</b> (ID: <code>${p.id}</code>)\n` +
+                `   • Status: ${badge}\n` +
+                `   • Plans: <code>${plansList}</code>\n` +
+                `   • Restock: <code>/addkeys ${p.id} 1 Day KEY1, KEY2</code>\n\n`;
+      });
+      text += `📋 <i>Tap any /addkeys command above to copy it instantly and restock keys.</i>`;
+    }
+
+    const inline_keyboard = [
+      [
+        { text: '➕ Restock Keys', callback_data: 'admin_action:add_keys_prompt' },
+        { text: '📉 Set Threshold', callback_data: 'admin_action:set_lowstock_prompt' }
+      ],
+      [
+        { text: '🔔 Test / Send Alert Now', callback_data: 'admin_action:trigger_lowstock_audit' },
+        { text: '📦 Full Products Catalog', callback_data: 'admin_menu:products' }
+      ],
+      [
+        { text: '🔙 Back to Admin Hub', callback_data: 'admin_panel' }
+      ]
+    ];
+
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   // Real-time synchronization hook called whenever store settings or payment configs update
@@ -1728,6 +2142,16 @@ export class TelegramBotService {
   public async sendPhotoExtended(chatId: string | number, photoInput: string | Buffer, caption?: string, replyMarkup?: any): Promise<boolean> {
     const { botToken } = this.getCredentials();
     if (!botToken) return false;
+
+    // Deduplication filter: prevent duplicate photo sending to same chat within 2500ms
+    const cleanCap = (caption || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
+    const photoKey = `${chatId}:photo:${cleanCap}`;
+    const lastSent = this.recentOutgoingMessages.get(photoKey) || 0;
+    const now = Date.now();
+    if (now - lastSent < 2500) {
+      return true;
+    }
+    this.recentOutgoingMessages.set(photoKey, now);
 
     try {
       const sanitizedMarkup = sanitizeReplyMarkup(replyMarkup);
@@ -2368,6 +2792,139 @@ export class TelegramBotService {
     }
   }
 
+  public async testConnectivityAlert(options?: { botToken?: string; chatId?: string; reason?: string }): Promise<{
+    success: boolean;
+    responseTimeMs: number;
+    latencyMs: number;
+    botUsername?: string;
+    botFirstName?: string;
+    botId?: number | string;
+    chatId?: string;
+    messageSent?: boolean;
+    status: 'OPERATIONAL' | 'OFFLINE' | 'PARTIAL' | 'ERROR';
+    message: string;
+    error?: string;
+    timestamp: string;
+  }> {
+    const startTime = Date.now();
+    const creds = this.getCredentials();
+    const token = (options?.botToken || creds.botToken || '').trim();
+    const targetChatId = (options?.chatId || creds.defaultChatId || '').trim();
+
+    if (!token) {
+      return {
+        success: false,
+        status: 'OFFLINE',
+        responseTimeMs: 0,
+        latencyMs: 0,
+        message: 'Telegram bot token is not configured in settings.',
+        error: 'No Telegram bot token found.',
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    try {
+      const abortCtrl = new AbortController();
+      const timeoutId = setTimeout(() => abortCtrl.abort(), 9000);
+
+      // 1. Query Telegram API getMe
+      const meRes = await fetch(`https://api.telegram.org/bot${token}/getMe`, {
+        signal: abortCtrl.signal,
+        headers: { 'User-Agent': 'KalamFFPanel-ConnectivityTest/1.0' }
+      });
+      const meData: any = await meRes.json().catch(() => ({}));
+
+      if (!meData.ok) {
+        clearTimeout(timeoutId);
+        const duration = Date.now() - startTime;
+        return {
+          success: false,
+          status: 'ERROR',
+          responseTimeMs: duration,
+          latencyMs: duration,
+          error: meData.description || 'Invalid Bot Token or Telegram API unreachable',
+          message: `Telegram API Error (${duration}ms): ${meData.description || 'Invalid token'}`,
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      const botInfo = meData.result;
+      if (botInfo.username) {
+        this.botUsername = botInfo.username;
+      }
+
+      let messageSent = false;
+      let sendError: string | undefined;
+
+      // 2. Dispatch Live Test Alert Message if Chat ID is configured
+      if (targetChatId) {
+        const istTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+        const handshakeMs = Date.now() - startTime;
+        const testText =
+          `⚡ <b>KALAM FF PANEL • TELEGRAM CONNECTIVITY TEST ALERT</b> ⚡\n\n` +
+          `<blockquote>` +
+          `🟢 <b>Connectivity Status:</b> OPERATIONAL & ONLINE\n` +
+          `⚡ <b>Response Time:</b> ~${handshakeMs}ms (API Handshake)\n` +
+          `🤖 <b>Bot Identity:</b> ${botInfo.first_name} (@${botInfo.username})\n` +
+          `🆔 <b>Target Admin Chat ID:</b> <code>${targetChatId}</code>\n` +
+          `🕒 <b>Timestamp:</b> ${istTime} (IST)\n` +
+          `</blockquote>\n\n` +
+          `✅ <i>Verified: Telegram Bot API gateway is operational and instant admin notification alerts are delivering successfully!</i>`;
+
+        const sendRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: targetChatId,
+            text: testText,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true
+          }),
+          signal: abortCtrl.signal
+        });
+
+        const sendData: any = await sendRes.json().catch(() => ({}));
+        if (sendData.ok) {
+          messageSent = true;
+        } else {
+          sendError = sendData.description || 'Failed to dispatch alert message';
+        }
+      }
+
+      clearTimeout(timeoutId);
+      const totalDuration = Date.now() - startTime;
+
+      return {
+        success: true,
+        status: messageSent ? 'OPERATIONAL' : (targetChatId ? 'PARTIAL' : 'OPERATIONAL'),
+        responseTimeMs: totalDuration,
+        latencyMs: totalDuration,
+        botUsername: botInfo.username,
+        botFirstName: botInfo.first_name,
+        botId: botInfo.id,
+        chatId: targetChatId || undefined,
+        messageSent,
+        message: targetChatId
+          ? (messageSent
+              ? `✅ Bot Connected: @${botInfo.username} (${botInfo.first_name}) — Test alert delivered to Chat ID ${targetChatId} in ${totalDuration}ms!`
+              : `⚠️ Bot Connected (@${botInfo.username}), but alert message failed (${sendError}) [${totalDuration}ms]`)
+          : `✅ Bot Connected: @${botInfo.username} (${botInfo.first_name}) in ${totalDuration}ms!`,
+        timestamp: new Date().toISOString()
+      };
+    } catch (err: any) {
+      const duration = Date.now() - startTime;
+      return {
+        success: false,
+        status: 'ERROR',
+        responseTimeMs: duration,
+        latencyMs: duration,
+        error: err.name === 'AbortError' ? `Test timed out after 9000ms` : err.message,
+        message: `❌ Connectivity Test Failed (${duration}ms): ${err.name === 'AbortError' ? 'Request timed out' : err.message}`,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
   public getRecentDetectedChats(): Array<{
     chatId: string;
     type: string;
@@ -2962,6 +3519,25 @@ export class TelegramBotService {
           return;
         }
 
+        // Deduplication check: if this UTR or Order was already processed
+        if (this.confirmedDepositOrders.has(inputUtr) || (targetOrderId && this.confirmedDepositOrders.has(targetOrderId))) {
+          const updatedWallet = getUserWallet(userId);
+          await this.sendMessage(
+            chatId,
+            `✅ <b>UTR ALREADY VERIFIED & CREDITED!</b>\n\n` +
+            `This UTR (<code>${inputUtr}</code>) has already been processed and added to your balance.\n\n` +
+            `💳 <b>Current Wallet Balance:</b> <b>₹${updatedWallet.balance.toFixed(2)}</b>`,
+            {
+              inline_keyboard: [
+                [{ text: '🛒 Buy Keys Now', callback_data: 'catalog' }],
+                [{ text: '👑 My Profile', callback_data: 'profile_history' }],
+                [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+              ]
+            }
+          );
+          return;
+        }
+
         await this.sendMessage(chatId, `🔍 <i>Verifying UTR <code>${inputUtr}</code> with payment gateway in real-time...</i>`);
 
         try {
@@ -2984,6 +3560,10 @@ export class TelegramBotService {
           }
 
           if (isVerified) {
+            this.confirmedDepositOrders.add(inputUtr);
+            if (targetOrderId) this.confirmedDepositOrders.add(targetOrderId);
+            this.saveConfirmedOrders();
+
             const updatedWallet = getUserWallet(userId);
             const allUsers = this.loadBotUsers();
             const u = allUsers.get(chatId) || botUser;
@@ -3011,7 +3591,7 @@ export class TelegramBotService {
               `🆔 <b>Order ID:</b> <code>${targetOrderId}</code>\n` +
               `💳 <b>New Wallet Balance:</b> <b>₹${updatedWallet.balance.toFixed(2)}</b>` +
               `</blockquote>\n\n` +
-              `⚡ <i>Your wallet has been topped up in real-time! You can now purchase VIP keys instantly.</i>`,
+              `⚡ <i>Your wallet has been topped up in real-time! You can now purchase VIP keys instantly!</i>`,
               {
                 inline_keyboard: [
                   [{ text: '🛒 Buy Keys Now', callback_data: 'catalog' }],
@@ -3483,6 +4063,64 @@ export class TelegramBotService {
         await this.sendMessage(chatId, `✅ <b>SUPPORT CONTACT UPDATED!</b>\n\nNew Support: <code>${support}</code>`);
         return;
       }
+
+      // Admin Set Low Stock Threshold state
+      if (currentState.step === 'AWAITING_ADMIN_LOW_STOCK_THRESHOLD' && this.isAdmin(chatId)) {
+        userStates.delete(chatId);
+        const num = parseInt(rawText.trim(), 10);
+        if (!isNaN(num) && num >= 0) {
+          this.setLowStockThreshold(num);
+          await this.sendMessage(
+            chatId,
+            `✅ <b>LOW-STOCK THRESHOLD CONFIGURED!</b> 📉\n\n` +
+            `• <b>New Alert Threshold:</b> <b>${num} keys</b>\n\n` +
+            `The bot will automatically dispatch an instant notification alert to this chat whenever any product's stock drops to or below <b>${num}</b> keys.`
+          );
+        } else {
+          await this.sendMessage(chatId, `❌ Invalid number. Please enter a valid number (e.g. <code>5</code>).`);
+        }
+        return;
+      }
+    }
+
+    // Direct Admin commands: /lowstock, /low_stock, /low, /stockalert, /stockalerts
+    if (
+      (cleanCmd === '/lowstock' ||
+        cleanCmd === '/low_stock' ||
+        cleanCmd === '/low' ||
+        cleanCmd === '/stockalert' ||
+        cleanCmd === '/stockalerts' ||
+        cleanCmd === '/inventory') &&
+      this.isAdmin(chatId)
+    ) {
+      await this.showAdminLowStockMenu(chatId);
+      return;
+    }
+
+    // Direct Admin command: /setlowstock <number> or /setthreshold <number>
+    if (
+      (cleanCmd.startsWith('/setlowstock') ||
+        cleanCmd.startsWith('/setthreshold') ||
+        cleanCmd.startsWith('/lowstockthreshold')) &&
+      this.isAdmin(chatId)
+    ) {
+      const parts = cleanCmd.split(/\s+/);
+      if (parts.length >= 2) {
+        const num = parseInt(parts[1], 10);
+        if (!isNaN(num) && num >= 0) {
+          this.setLowStockThreshold(num);
+          await this.sendMessage(
+            chatId,
+            `✅ <b>LOW-STOCK THRESHOLD UPDATED!</b> 📉\n\n` +
+            `• <b>New Alert Threshold:</b> <b>${num} keys</b>\n\n` +
+            `The bot will automatically dispatch an immediate admin alert whenever any product's stock falls to or below <b>${num}</b> keys.`
+          );
+          return;
+        }
+      }
+      userStates.set(chatId, { step: 'AWAITING_ADMIN_LOW_STOCK_THRESHOLD' });
+      await this.sendMessage(chatId, `📉 Send the new low-stock alert threshold number (e.g. <code>5</code> or <code>10</code>):`);
+      return;
     }
 
     // Direct Admin commands: /setapk <url>, /setupdatelink <url>, /setupdate <url>, or /apkurl <url>
@@ -3943,6 +4581,54 @@ export class TelegramBotService {
       this.setWebsiteNoticeBanner('', false);
       await this.sendMessage(chatId, `✅ Notice banner hidden/cleared from website.`);
       return;
+    }
+
+    // Direct Admin Product Maintenance: /prodmaint or /pmaintenance [productId/all] [on|off]
+    if ((cleanCmd.startsWith('/prodmaint') || cleanCmd.startsWith('/pmaintenance') || cleanCmd.startsWith('/productmaintenance')) && this.isAdmin(chatId)) {
+      const rest = cleanCmd.replace(/^\/(prodmaint|pmaintenance|productmaintenance)\s*/i, '').trim();
+      if (!rest) {
+        await this.showAdminMaintenanceMenu(chatId);
+        return;
+      }
+      const parts = rest.split(/\s+/);
+      const target = parts[0].toLowerCase();
+      const mode = (parts[1] || '').toLowerCase();
+
+      if (target === 'all') {
+        const turnOn = mode === 'on' || mode === 'enable' || mode === '1';
+        this.setAllProductsMaintenance(turnOn);
+        await this.sendMessage(chatId, turnOn ? `🔴 <b>ALL Products have been placed in MAINTENANCE Mode.</b>` : `🟢 <b>ALL Products are now ACTIVE and available for purchase.</b>`);
+        return;
+      }
+
+      if (mode === 'on' || mode === 'enable' || mode === '1') {
+        const res = this.setProductMaintenance(target, true);
+        if (res.success) {
+          await this.sendMessage(chatId, `🔴 <b>Product "${res.product?.name || target}" Maintenance Mode is now ON.</b>`);
+        } else {
+          await this.sendMessage(chatId, `❌ Product not found matching "<code>${target}</code>".`);
+        }
+        return;
+      } else if (mode === 'off' || mode === 'disable' || mode === '0') {
+        const res = this.setProductMaintenance(target, false);
+        if (res.success) {
+          await this.sendMessage(chatId, `🟢 <b>Product "${res.product?.name || target}" Maintenance Mode is now OFF (Active).</b>`);
+        } else {
+          await this.sendMessage(chatId, `❌ Product not found matching "<code>${target}</code>".`);
+        }
+        return;
+      } else {
+        const res = this.toggleProductMaintenance(target);
+        if (res.success) {
+          await this.sendMessage(chatId, res.isMaintenance 
+            ? `🔴 <b>Product "${res.product?.name || target}" Maintenance Mode is now ON.</b>` 
+            : `🟢 <b>Product "${res.product?.name || target}" Maintenance Mode is now OFF (Active).</b>`
+          );
+        } else {
+          await this.sendMessage(chatId, `❌ Product not found matching "<code>${target}</code>".`);
+        }
+        return;
+      }
     }
 
     // Direct Admin Maintenance: /maintenance on|off
@@ -4602,6 +5288,32 @@ export class TelegramBotService {
     if (data.startsWith('check_order:')) {
       const orderId = data.split(':')[1];
       const checkKey = `${chatId}_${orderId}`;
+
+      // Check if already confirmed/credited in the past
+      if (this.confirmedDepositOrders.has(orderId)) {
+        const wallet = getUserWallet(userId);
+        await this.answerCallback(cb.id, '✅ Payment already credited!');
+        await this.editOrSendMessage(
+          chatId,
+          `✅ <b>PAYMENT ALREADY CREDITED!</b> 💰\n\n` +
+          `<blockquote>` +
+          `🆔 <b>Order ID:</b> <code>${orderId}</code>\n` +
+          `💳 <b>Current Balance:</b> <b>₹${wallet.balance.toFixed(2)}</b>\n` +
+          `⚡ <b>Status:</b> Already Verified & Added to your Account` +
+          `</blockquote>\n\n` +
+          `<i>You can use your wallet balance to purchase VIP keys right now!</i>`,
+          {
+            inline_keyboard: [
+              [{ text: '🛒 Buy Keys Now', callback_data: 'catalog' }],
+              [{ text: '👑 My Profile', callback_data: 'profile_history' }],
+              [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+            ]
+          },
+          msgId
+        );
+        return;
+      }
+
       if (this.checkingOrdersInProgress.has(checkKey)) {
         await this.answerCallback(cb.id, '⏳ Verification in progress, please wait...');
         return;
@@ -4612,6 +5324,13 @@ export class TelegramBotService {
           await this.answerCallback(cb.id, '🔍 Verifying with FamGateway...');
           const statusResult = await queryFamOrder(orderId, userId);
           if (statusResult.isPaid) {
+            // Mark as confirmed immediately to prevent duplicate triggers
+            this.confirmedDepositOrders.add(orderId);
+            if (statusResult.utr) {
+              this.confirmedDepositOrders.add(statusResult.utr);
+            }
+            this.saveConfirmedOrders();
+
             const wallet = getUserWallet(userId);
 
             // Update user deposit stats
@@ -4833,6 +5552,34 @@ export class TelegramBotService {
       return;
     }
 
+    if (data === 'admin_menu:low_stock') {
+      await this.showAdminLowStockMenu(chatId, msgId);
+      return;
+    }
+
+    if (data === 'admin_action:set_lowstock_prompt' && this.isAdmin(chatId)) {
+      userStates.set(chatId, { step: 'AWAITING_ADMIN_LOW_STOCK_THRESHOLD' });
+      const current = this.getLowStockThreshold();
+      await this.sendMessage(
+        chatId,
+        `📉 <b>SET LOW-STOCK ALERT THRESHOLD</b>\n\n` +
+        `Current Alert Threshold: <b>${current} keys</b>\n\n` +
+        `Enter the new threshold number (e.g. <code>5</code>, <code>10</code>, <code>3</code>):\n` +
+        `<i>Whenever any product's stock falls to or below this number, you will automatically receive an instant Telegram notification alert.</i>\n\n` +
+        `<i>Send /cancel to abort.</i>`
+      );
+      return;
+    }
+
+    if (data === 'admin_action:trigger_lowstock_audit' && this.isAdmin(chatId)) {
+      await this.answerCallback(cb.id, '🔍 Running automated low-stock audit...');
+      const res = await this.checkAndDispatchLowStockAlert(undefined, { force: true, targetChatId: chatId });
+      if (res.count === 0) {
+        await this.sendMessage(chatId, `✅ <b>Inventory Stock Healthy:</b> All catalog products are currently above the threshold of <b>${this.getLowStockThreshold()}</b> keys.`);
+      }
+      return;
+    }
+
     if (data === 'admin_menu:gateways') {
       await this.showAdminGatewaysMenu(chatId, msgId);
       return;
@@ -4912,7 +5659,29 @@ export class TelegramBotService {
     if (data.startsWith('admin_toggle_maint:') && this.isAdmin(chatId)) {
       const targetMode = data.replace('admin_toggle_maint:', '') === 'on';
       this.setWebsiteMaintenance(targetMode);
-      await this.answerCallback(cb.id, targetMode ? '🔴 Maintenance Mode Turned ON' : '🟢 Maintenance Mode Turned OFF');
+      await this.answerCallback(cb.id, targetMode ? '🔴 Website Maintenance Mode Turned ON' : '🟢 Website Maintenance Mode Turned OFF');
+      await this.showAdminMaintenanceMenu(chatId, msgId);
+      return;
+    }
+
+    // Toggle Product Maintenance Mode 1-tap
+    if (data.startsWith('admin_toggle_prod_maint:') && this.isAdmin(chatId)) {
+      const prodId = data.replace('admin_toggle_prod_maint:', '');
+      const res = this.toggleProductMaintenance(prodId);
+      if (res.success) {
+        await this.answerCallback(cb.id, res.isMaintenance ? `🔴 ${res.product?.name || 'Product'} Maintenance ON` : `🟢 ${res.product?.name || 'Product'} is now ACTIVE`);
+      } else {
+        await this.answerCallback(cb.id, '❌ Product not found');
+      }
+      await this.showAdminMaintenanceMenu(chatId, msgId);
+      return;
+    }
+
+    // Bulk Products Maintenance Mode 1-tap
+    if (data.startsWith('admin_prod_maint_all:') && this.isAdmin(chatId)) {
+      const isMaint = data.replace('admin_prod_maint_all:', '') === 'on';
+      this.setAllProductsMaintenance(isMaint);
+      await this.answerCallback(cb.id, isMaint ? '🔴 ALL Products placed in MAINTENANCE' : '🟢 ALL Products set to ACTIVE');
       await this.showAdminMaintenanceMenu(chatId, msgId);
       return;
     }
@@ -5637,7 +6406,8 @@ export class TelegramBotService {
         }
       }
 
-      const label = `🛒 ${displayName}${priceSnippet}`;
+      const isMaint = p.status === 'MAINTENANCE' || p.status === 'maintenance';
+      const label = isMaint ? `🛠️ ${displayName} [MAINTENANCE]` : `🛒 ${displayName}${priceSnippet}`;
 
       inline_keyboard.push([
         {
@@ -5667,6 +6437,26 @@ export class TelegramBotService {
       await this.editOrSendMessage(chatId, '⚠️ Product not found.', {
         inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
       }, messageId);
+      return;
+    }
+
+    if (product.status === 'MAINTENANCE' || product.status === 'maintenance') {
+      const isAdm = this.isAdmin(chatId);
+      const maintText =
+        `🛠️ <b>${product.name.toUpperCase()} IS CURRENTLY UNDER MAINTENANCE</b> 🛠️\n\n` +
+        `<blockquote>` +
+        `⚠️ <b>Status:</b> Maintenance Mode (Active)\n` +
+        `💡 <i>Purchases for this specific product are temporarily disabled while our team performs updates.</i>\n` +
+        `</blockquote>\n\n` +
+        (isAdm ? `👑 <i>Admin: Tap below or use /prodmaint to toggle maintenance off.</i>` : `<i>Please check back later or choose from our other active products!</i>`);
+
+      const maintKeyboard = [
+        isAdm ? [{ text: '🟢 Turn OFF Maintenance (Make Active)', callback_data: `admin_toggle_prod_maint:${product.id || productId}` }] : [],
+        [{ text: '🔙 Back to Products', callback_data: 'catalog' }],
+        [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+      ].filter(r => r.length > 0);
+
+      await this.editOrSendMessage(chatId, maintText, { inline_keyboard: maintKeyboard }, messageId);
       return;
     }
 
@@ -5809,6 +6599,13 @@ export class TelegramBotService {
         return;
       }
 
+      if (product.status === 'MAINTENANCE' || product.status === 'maintenance') {
+        await this.editOrSendMessage(chatId, `⚠️ <b>${product.name || 'Product'} is currently under maintenance.</b>\n\nPurchases are temporarily paused while maintenance is in progress. Please choose another product or check back shortly.`, {
+          inline_keyboard: [[{ text: '🔙 Back to Products', callback_data: 'catalog' }]]
+        }, messageId);
+        return;
+      }
+
       const plan = (product.plans || []).find((pl: any) => pl.id === planId || pl.duration === planId || pl.name === planId);
       if (!plan) {
         await this.editOrSendMessage(chatId, '⚠️ Error: Plan no longer available.', {
@@ -5898,6 +6695,11 @@ export class TelegramBotService {
         firstName: botUser?.firstName,
         orderId: purchaseRecord.id,
       }).catch(err => console.warn('[TelegramBot] Proof dispatch error:', err));
+
+      // Automated Low-Stock Inventory Check & Alert dispatch to Admin
+      this.checkAndDispatchLowStockAlert(product, {
+        reason: `Telegram Bot Order by ${botUser?.firstName || chatId} (${product.name} - ${plan.duration || plan.name})`
+      }).catch(err => console.warn('[TelegramBot] Low stock auto-check error:', err));
 
       const keysList = deliveryResult.keys.map(k => `<code>${k}</code>`).join('\n');
       const newBal = getUserWallet(userId).balance;
@@ -6303,12 +7105,15 @@ export class TelegramBotService {
     const stats = this.getDetailedStoreStats();
     const { apkDownloadUrl } = this.getCredentials();
     const resellerFee = this.getResellerUpgradeAmount();
+    const threshold = this.getLowStockThreshold();
+    const lowStockItems = this.getLowStockProducts(threshold);
 
     const text =
       `🎛️ <b>WEBSITE & BOT MASTER ADMIN PANEL</b> 👑\n\n` +
       `<blockquote>〰️〰️ <b>LIVE STORE METRICS</b> 〰️〰️\n` +
       `👥 <b>Users:</b> <b>${stats.totalUsers}</b> | 💎 <b>VIP Resellers:</b> <b>${stats.resellerCount}</b>\n` +
       `📦 <b>Products:</b> <b>${stats.totalProductsCount}</b> | 🔑 <b>Keys in Stock:</b> <b>${stats.totalKeysInStock}</b>\n` +
+      `⚠️ <b>Low Stock Items:</b> <b>${lowStockItems.length}</b> (Threshold: ${threshold} keys)\n` +
       `🛍️ <b>Total Orders:</b> <b>${stats.totalSalesCount}</b> (₹${stats.totalSalesAmount.toFixed(2)})\n` +
       `💳 <b>Active Gateway:</b> <code>${stats.activeGateway}</code>\n` +
       `🏷️ <b>Merchant UPI:</b> <code>${stats.activeUpiId}</code>\n` +
@@ -6319,22 +7124,23 @@ export class TelegramBotService {
 
     const inline_keyboard = [
       [
-        { text: '📦 Products & Keys Stock', callback_data: 'admin_menu:products' },
-        { text: '💳 Payment Gateways', callback_data: 'admin_menu:gateways' }
+        { text: `📦 Products & Keys (${stats.totalKeysInStock})`, callback_data: 'admin_menu:products' },
+        { text: lowStockItems.length > 0 ? `⚠️ Low Stock (${lowStockItems.length})` : '📉 Low Stock Monitor', callback_data: 'admin_menu:low_stock' }
       ],
       [
-        { text: '👥 Users & Reseller Hub', callback_data: 'admin_menu:users' },
-        { text: '🎟️ Promo Codes & Coupons', callback_data: 'admin_menu:promos' }
+        { text: '💳 Payment Gateways', callback_data: 'admin_menu:gateways' },
+        { text: '👥 Users & Reseller Hub', callback_data: 'admin_menu:users' }
       ],
       [
-        { text: '📢 Broadcast & Notice Banner', callback_data: 'admin_menu:broadcast' },
-        { text: '📥 APK, Tutorial & Links', callback_data: 'admin_menu:links' }
+        { text: '🎟️ Promo Codes & Coupons', callback_data: 'admin_menu:promos' },
+        { text: '📢 Broadcast & Notice Banner', callback_data: 'admin_menu:broadcast' }
       ],
       [
-        { text: '📊 Sales & Order History', callback_data: 'admin_menu:stats' },
-        { text: '⚙️ Maintenance Mode', callback_data: 'admin_menu:maintenance' }
+        { text: '📥 APK, Tutorial & Links', callback_data: 'admin_menu:links' },
+        { text: '📊 Sales & Live Analytics', callback_data: 'admin_menu:stats' }
       ],
       [
+        { text: '⚙️ Maintenance Mode', callback_data: 'admin_menu:maintenance' },
         { text: '🏠 Back to Main Menu', callback_data: 'main_menu' }
       ]
     ];
@@ -6346,10 +7152,12 @@ export class TelegramBotService {
   public async showAdminProductsMenu(chatId: number, getProducts?: () => any[], messageId?: number) {
     if (!this.isAdmin(chatId)) return;
     const products = getProducts ? getProducts() : this.loadProductsFromDisk();
+    const threshold = this.getLowStockThreshold();
+    const lowStockItems = this.getLowStockProducts(threshold);
 
     let stockText =
       `📦 <b>PRODUCTS & LICENSE KEYS STOCK</b>\n\n` +
-      `<blockquote><b>Current Catalog Breakdown:</b>\n`;
+      `<blockquote><b>Current Catalog Breakdown (Threshold: ${threshold} keys):</b>\n`;
 
     let totalKeys = 0;
     products.forEach((p: any, idx: number) => {
@@ -6359,14 +7167,18 @@ export class TelegramBotService {
         const pId = pl.id || pl.duration;
         const kCount = (p.planKeys && Array.isArray(p.planKeys[pId])) ? p.planKeys[pId].length : 0;
         prodKeys += kCount;
-        planDetails.push(`${pl.duration || pl.name}: <b>${kCount} keys</b> (₹${pl.price}/₹${pl.resellerPrice || Math.round(pl.price * 0.8)})`);
+        const lowBadge = kCount <= threshold ? (kCount === 0 ? ' [🔴 EMPTY]' : ' [⚠️ LOW]') : '';
+        planDetails.push(`${pl.duration || pl.name}: <b>${kCount} keys</b>${lowBadge} (₹${pl.price}/₹${pl.resellerPrice || Math.round(pl.price * 0.8)})`);
       });
       totalKeys += prodKeys;
       stockText += `\n${idx + 1}. <b>${p.name}</b> (ID: <code>${p.id}</code>)\n   • ${planDetails.join('\n   • ')}\n`;
     });
 
-    stockText += `\n🔑 <b>Total Available Keys:</b> ${totalKeys}</blockquote>\n\n` +
+    stockText += `\n🔑 <b>Total Available Keys:</b> ${totalKeys}\n` +
+                 `⚠️ <b>Low Stock Items:</b> ${lowStockItems.length} product(s)</blockquote>\n\n` +
                  `💡 <i>Quick Slash Commands:</i>\n` +
+                 `• <code>/lowstock</code> (View low stock items & dispatch alerts)\n` +
+                 `• <code>/setlowstock &lt;threshold&gt;</code> (Set low-stock alert threshold)\n` +
                  `• <code>/addkeys &lt;product&gt; &lt;duration&gt; &lt;keys...&gt;</code>\n` +
                  `• <code>/setprice &lt;product&gt; &lt;duration&gt; &lt;price&gt; [reseller_price]</code>\n` +
                  `• <code>/addproduct &lt;name&gt; | &lt;category&gt; | &lt;game&gt;</code>\n` +
@@ -6375,14 +7187,21 @@ export class TelegramBotService {
     const inline_keyboard = [
       [
         { text: '➕ Add Keys to Plan', callback_data: 'admin_action:add_keys_prompt' },
-        { text: '💲 Change Plan Price', callback_data: 'admin_action:set_price_prompt' }
+        { text: lowStockItems.length > 0 ? `⚠️ Low Stock (${lowStockItems.length})` : '📉 Low Stock Monitor', callback_data: 'admin_menu:low_stock' }
+      ],
+      [
+        { text: '💲 Change Plan Price', callback_data: 'admin_action:set_price_prompt' },
+        { text: `📉 Set Alert Threshold (${threshold})`, callback_data: 'admin_action:set_lowstock_prompt' }
       ],
       [
         { text: '📦 Add New Product', callback_data: 'admin_action:add_product_prompt' },
-        { text: '🗑️ Clear Plan Stock', callback_data: 'admin_action:clear_stock_prompt' }
+        { text: '🛠️ Product Maintenance', callback_data: 'admin_menu:maintenance' }
       ],
       [
-        { text: '🔄 Refresh Stock List', callback_data: 'admin_menu:products' },
+        { text: '🗑️ Clear Plan Stock', callback_data: 'admin_action:clear_stock_prompt' },
+        { text: '🔄 Refresh Stock List', callback_data: 'admin_menu:products' }
+      ],
+      [
         { text: '🔙 Back to Admin Hub', callback_data: 'admin_panel' }
       ]
     ];
@@ -6621,29 +7440,82 @@ export class TelegramBotService {
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  // 9.8 ⚙️ Maintenance Mode Submenu
+  // 9.8 ⚙️ Maintenance Mode Submenu (Website & Products Control Hub)
   public async showAdminMaintenanceMenu(chatId: number, messageId?: number) {
     if (!this.isAdmin(chatId)) return;
     const storeData = this.loadStoreDataFromDisk();
     const isMaintenance = !!storeData.storeSettings?.maintenanceMode;
+    const products = this.loadProductsFromDisk();
 
-    const text =
-      `⚙️ <b>WEBSITE MAINTENANCE MODE</b>\n\n` +
-      `<blockquote><b>Current Status:</b>\n` +
-      `• <b>Maintenance Mode:</b> ${isMaintenance ? '🔴 <b>ACTIVE (Website Closed)</b>' : '🟢 <b>OFF (Website Open & Running)</b>'}\n` +
+    const maintProds = products.filter((p: any) => p && (p.status === 'MAINTENANCE' || p.status === 'maintenance'));
+    const activeProds = products.filter((p: any) => p && p.status !== 'MAINTENANCE' && p.status !== 'maintenance');
+
+    let text =
+      `⚙️ <b>MAINTENANCE MODE CONTROL HUB</b>\n\n` +
+      `<blockquote><b>🌐 Storewide Website Status:</b>\n` +
+      `• <b>Website Maintenance:</b> ${isMaintenance ? '🔴 <b>ON (Store Closed to Public)</b>' : '🟢 <b>OFF (Store Active & Open)</b>'}\n` +
       `</blockquote>\n\n` +
-      `When maintenance mode is ON, visitors to the website see a maintenance notice while store admins can still access and manage everything.\n\n` +
-      `💡 <i>Toggle status below:</i>`;
+      `<blockquote><b>📦 Products Maintenance Breakdown:</b>\n` +
+      `• <b>Total Products:</b> <b>${products.length}</b>\n` +
+      `• 🟢 <b>Active & Purchasable:</b> <b>${activeProds.length}</b>\n` +
+      `• 🔴 <b>Under Maintenance:</b> <b>${maintProds.length}</b>\n` +
+      `</blockquote>\n\n` +
+      `<b>📋 Product Status Breakdown:</b>\n`;
 
-    const inline_keyboard = [
-      [
-        { text: '🔴 Turn ON Maintenance', callback_data: 'admin_toggle_maint:on' },
-        { text: '🟢 Turn OFF Maintenance', callback_data: 'admin_toggle_maint:off' }
-      ],
-      [
-        { text: '🔙 Back to Admin Hub', callback_data: 'admin_panel' }
-      ]
-    ];
+    if (products.length === 0) {
+      text += `<i>No products in catalog.</i>\n`;
+    } else {
+      products.forEach((p: any, idx: number) => {
+        const isM = p.status === 'MAINTENANCE' || p.status === 'maintenance';
+        const badge = isM ? '🔴 <b>[UNDER MAINTENANCE]</b>' : '🟢 <b>[ACTIVE]</b>';
+        text += `${idx + 1}. ${badge} <b>${p.name}</b> (<code>${p.id}</code>)\n`;
+      });
+    }
+
+    text += `\n💡 <i>Tap any product button below to toggle its maintenance mode instantly:</i>\n` +
+            `<i>Or use command: <code>/prodmaint &lt;id/all&gt; on|off</code></i>`;
+
+    const inline_keyboard: any[] = [];
+
+    // Storewide buttons
+    inline_keyboard.push([
+      { text: isMaintenance ? '🟢 Turn OFF Website Maint' : '🔴 Turn ON Website Maint', callback_data: `admin_toggle_maint:${isMaintenance ? 'off' : 'on'}` }
+    ]);
+
+    // Product buttons
+    for (let i = 0; i < products.length; i += 2) {
+      const row: any[] = [];
+      const p1 = products[i];
+      const isM1 = p1.status === 'MAINTENANCE' || p1.status === 'maintenance';
+      let name1 = (p1.name || 'Product').slice(0, 14);
+      row.push({
+        text: `${isM1 ? '🔴' : '🟢'} ${name1} ${isM1 ? '(Maint)' : ''}`,
+        callback_data: `admin_toggle_prod_maint:${p1.id || p1.productId}`
+      });
+
+      if (i + 1 < products.length) {
+        const p2 = products[i + 1];
+        const isM2 = p2.status === 'MAINTENANCE' || p2.status === 'maintenance';
+        let name2 = (p2.name || 'Product').slice(0, 14);
+        row.push({
+          text: `${isM2 ? '🔴' : '🟢'} ${name2} ${isM2 ? '(Maint)' : ''}`,
+          callback_data: `admin_toggle_prod_maint:${p2.id || p2.productId}`
+        });
+      }
+      inline_keyboard.push(row);
+    }
+
+    // Bulk buttons
+    inline_keyboard.push([
+      { text: '🔴 Put ALL Products in Maint', callback_data: 'admin_prod_maint_all:on' },
+      { text: '🟢 Put ALL Products Active', callback_data: 'admin_prod_maint_all:off' }
+    ]);
+
+    // Navigation buttons
+    inline_keyboard.push([
+      { text: '🔄 Refresh Status', callback_data: 'admin_menu:maintenance' },
+      { text: '🔙 Back to Admin Hub', callback_data: 'admin_panel' }
+    ]);
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }

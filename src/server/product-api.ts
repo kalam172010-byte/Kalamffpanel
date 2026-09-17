@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import path from 'path';
+import { TelegramBotService } from './telegramBot';
 
 export const productApiRouter = Router();
 export const productApiAdminRouter = Router();
@@ -480,6 +481,13 @@ const handleCreateOrder = async (req: Request, res: Response) => {
 
     if (modifiedStock) {
       saveProductsToDisk(products);
+      try {
+        TelegramBotService.getInstance().checkAndDispatchLowStockAlert(product, {
+          reason: `API Key Order (${apiKeyRecord.name || 'API Client'}) - Delivered ${keys.length} key(s)`
+        }).catch(err => console.warn('[ProductAPI] Low stock check error:', err));
+      } catch (err) {
+        console.warn('[ProductAPI] Failed to trigger TelegramBotService alert:', err);
+      }
     }
 
     const orderId = `ORD_API_${Date.now()}_${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
