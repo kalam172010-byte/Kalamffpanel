@@ -278,3 +278,156 @@ export interface TelegramDiagnosticResult {
   timestamp: string;
   serverTime?: string;
 }
+
+export interface UpstreamLogEntry {
+  id: string;
+  timestamp: string;
+  formattedTime: string;
+  apiName: string;
+  providerType: 'adminpanels' | 'custom_api2' | 'supplier_restock' | 'product_sync' | 'diagnostic' | 'other';
+  callerContext: string;
+  url: string;
+  method: string;
+  requestHeaders: Record<string, string>;
+  requestBodyRaw: string;
+  requestBodyParsed?: Record<string, any>;
+  responseStatus: number;
+  responseStatusText?: string;
+  responseBodyRaw: string;
+  responseBodyParsed?: Record<string, any>;
+  success: boolean;
+  latencyMs: number;
+  attempts: number;
+  maxRetries: number;
+  deliveredKey?: string;
+  productInfo?: {
+    productId?: string;
+    productName?: string;
+    duration?: string;
+    quantity?: number;
+    price?: number;
+    userEmail?: string;
+    chatId?: number | string;
+    androidId?: string;
+  };
+  errorMessage?: string;
+  networkError?: string;
+}
+
+export interface UpstreamLogStats {
+  totalRequests: number;
+  successCount: number;
+  failCount: number;
+  successRatePercent: number;
+  avgLatencyMs: number;
+  deliveredKeysCount: number;
+  todayRequestsCount: number;
+  providerCounts: Record<string, number>;
+  statusCounts: Record<string, number>;
+  callerCounts: Record<string, number>;
+  lastRequestTime?: string;
+  lastError?: string;
+}
+
+export interface TelegramActivityEvent {
+  id: string;
+  timestamp: number;
+  isoTime: string;
+  type: 'INCOMING_MESSAGE' | 'CALLBACK_QUERY' | 'OUTGOING_MESSAGE' | 'KEY_DELIVERY' | 'DEPOSIT_ORDER' | 'WALLET_CREDIT' | 'ADMIN_ALERT' | 'BOT_LIFECYCLE' | 'ERROR';
+  category: 'message' | 'callback' | 'order' | 'key' | 'system' | 'error';
+  severity: 'info' | 'success' | 'warning' | 'error';
+  userId?: string | number;
+  chatId?: string | number;
+  chatType?: string;
+  chatTitle?: string;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  action?: string;
+  summary: string;
+  details?: string;
+  payload?: any;
+  responseStatus?: string;
+  durationMs?: number;
+}
+
+export interface TelegramActivityFeedStats {
+  totalEvents: number;
+  totalMessages: number;
+  totalCallbacks: number;
+  totalKeysDelivered: number;
+  totalDeposits: number;
+  totalErrors: number;
+  activeUsersCount: number;
+  lastActiveTime: number;
+  isPolling: boolean;
+  isWebhookActive: boolean;
+  botUsername: string;
+  uptimeSeconds: number;
+}
+
+export interface TelegramActivityFeedResponse {
+  success: boolean;
+  activities: TelegramActivityEvent[];
+  stats: TelegramActivityFeedStats;
+  serverTime: number;
+  error?: string;
+}
+
+export interface TelegramNotificationTypeMeta {
+  id: string;
+  key: string;
+  title: string;
+  description: string;
+  category: 'users' | 'orders' | 'inventory' | 'security' | 'system';
+  icon: string;
+  defaultEnabled: boolean;
+  samplePayload?: string;
+}
+
+export interface TelegramNotificationSettings {
+  masterNotificationsEnabled: boolean;
+  adminChatIdOverride?: string;
+  alertChannelId?: string;
+  soundEnabledGlobally: boolean;
+  types: {
+    // Users & Resellers
+    newRegistration: boolean;
+    resellerUpgrade: boolean;
+    userLogin: boolean;
+    passwordReset: boolean;
+
+    // Orders & Financials
+    newOrder: boolean;
+    upiDepositPending: boolean;
+    upiDepositApproved: boolean;
+    upiDepositFailed: boolean;
+    walletManualAdjustment: boolean;
+    dailySpinReward: boolean;
+    referralBonusClaimed: boolean;
+
+    // Inventory & Restock
+    lowStockAlert: boolean;
+    outOfStockAlert: boolean;
+    supplierAutoRestock: boolean;
+    manualStockAddition: boolean;
+
+    // System & Upstream
+    upstreamApiError: boolean;
+    botLifecycleStatus: boolean;
+    broadcastCompleted: boolean;
+    highFailureRateAlert: boolean;
+  };
+  lowStockThreshold: number;
+  highFailureRateThresholdPercent: number;
+  minDepositNotificationAmount: number;
+  includeUserBalanceInAlerts: boolean;
+  includeIpAddress: boolean;
+  includeQuickActionButtons: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  lastUpdated?: string;
+}
+
+

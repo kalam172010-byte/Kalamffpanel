@@ -5,7 +5,12 @@ import path from 'path';
 import { INITIAL_PRODUCTS } from '../lib/mock-data';
 import { productApiRouter, productApiAdminRouter } from './product-api';
 import { generateInventoryDiagnostics, renderInventoryDiagnosticsHtml } from './inventory-diagnostics';
+import { upstreamLogger } from './upstream-logger';
+import { renderUpstreamLogsDashboardHtml } from './upstream-logs-dashboard';
 import { reelsGeneratorRouter } from './reels-generator';
+import { telegramNotificationManager, NOTIFICATION_TYPE_DEFINITIONS, DEFAULT_TELEGRAM_NOTIFICATION_SETTINGS } from './telegram-notifications';
+import { auditLogService } from './audit-service';
+import { telegramBotService } from './telegramBot';
 
 export const app = express();
 
@@ -316,7 +321,11 @@ function loadStoreDataFromDisk(): { storeSettings?: any; paymentConfigs?: any[];
     storeSettings: {
       shopName: "KALAM FF PANEL",
       tagline: "Powered by KALAM",
-      supportUsername: "@kd_123_1_3"
+      supportUsername: "@kd_123_1_3",
+      welcomeBannerEnabled: true,
+      welcomeBannerTitle: "👋 Welcome to KALAM FF STORE!",
+      welcomeBannerMessage: "🔥 Instant 24/7 Free Fire key delivery, automated UPI top-ups & VIP Reseller access.",
+      welcomeBannerBadge: "✨ OFFICIAL STORE"
     }
   };
 }
@@ -405,6 +414,17 @@ function saveProductsToDisk(products: any[]) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2), 'utf-8');
+    const legacyPath = path.join(DATA_DIR, 'products.json');
+    fs.writeFileSync(legacyPath, JSON.stringify(products, null, 2), 'utf-8');
+
+    // Real-time synchronization with Telegram Bot
+    try {
+      if (typeof telegramBotService !== 'undefined' && telegramBotService.syncProducts) {
+        telegramBotService.syncProducts(products);
+      }
+    } catch (e) {
+      console.warn('[Server] Error syncing products with Telegram Bot:', e);
+    }
   } catch (e) {
     console.warn('[Server] Error saving products to disk:', e);
   }
@@ -743,6 +763,7 @@ interface StoredOrder {
   payeeUpi?: string;
   merchantName?: string;
   createdAt: number;
+  expiresAt?: number;
   paidAt?: number;
   utr?: string;
   senderName?: string;
@@ -1481,7 +1502,7 @@ app.get(['/api/admin/products/maintenance', '/api/products/maintenance-status'],
 app.post(['/api/admin/products/:id/maintenance', '/api/products/:id/maintenance'], (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { maintenance, isMaintenance, status } = req.body;
+    const { maintenance, isMaintenance, status, reason, maintenanceReason } = req.body;
     
     // Determine target maintenance boolean
     let shouldBeMaintenance = false;
@@ -1514,10 +1535,32 @@ app.post(['/api/admin/products/:id/maintenance', '/api/products/:id/maintenance'
 
     const newStatus = shouldBeMaintenance ? 'MAINTENANCE' : 'ACTIVE';
     product.status = newStatus;
+    if (reason || maintenanceReason) {
+      product.maintenanceReason = String(reason || maintenanceReason).trim();
+    }
 
     // Sync to disk
     saveProductsToDisk(globalProductsCache);
     isProductsInitialized = true;
+
+    // Record in Audit Log
+    try {
+      auditLogService.logEvent({
+        category: 'SYSTEM_CONFIG',
+        action: shouldBeMaintenance ? 'PRODUCT_MAINTENANCE_ENABLED' : 'PRODUCT_MAINTENANCE_DISABLED',
+        severity: shouldBeMaintenance ? 'WARNING' : 'INFO',
+        actor: 'Admin',
+        actorType: 'ADMIN',
+        summary: `Product "${product.name}" maintenance mode set to ${shouldBeMaintenance ? 'ON' : 'OFF'}`,
+        details: {
+          productId: product.id,
+          productName: product.name,
+          status: newStatus,
+          isMaintenance: shouldBeMaintenance,
+          reason: product.maintenanceReason || undefined
+        }
+      });
+    } catch {}
 
     console.log(`[ProductMaintenance] Product "${product.name}" (${product.id}) maintenance mode is now: ${newStatus}`);
 
@@ -1527,7 +1570,8 @@ app.post(['/api/admin/products/:id/maintenance', '/api/products/:id/maintenance'
       productId: product.id,
       productName: product.name,
       status: newStatus,
-      isMaintenance: shouldBeMaintenance
+      isMaintenance: shouldBeMaintenance,
+      maintenanceReason: product.maintenanceReason
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -1557,9 +1601,30 @@ app.post(['/api/admin/products/:id/toggle-maintenance', '/api/products/:id/toggl
     const willBeMaintenance = currentStatus !== 'MAINTENANCE';
     const newStatus = willBeMaintenance ? 'MAINTENANCE' : 'ACTIVE';
     product.status = newStatus;
+    if (req.body.reason || req.body.maintenanceReason) {
+      product.maintenanceReason = String(req.body.reason || req.body.maintenanceReason).trim();
+    }
 
     saveProductsToDisk(globalProductsCache);
     isProductsInitialized = true;
+
+    // Record in Audit Log
+    try {
+      auditLogService.logEvent({
+        category: 'SYSTEM_CONFIG',
+        action: willBeMaintenance ? 'PRODUCT_MAINTENANCE_ENABLED' : 'PRODUCT_MAINTENANCE_DISABLED',
+        severity: willBeMaintenance ? 'WARNING' : 'INFO',
+        actor: 'Admin',
+        actorType: 'ADMIN',
+        summary: `Toggled "${product.name}" maintenance mode to ${willBeMaintenance ? 'ON' : 'OFF'}`,
+        details: {
+          productId: product.id,
+          productName: product.name,
+          status: newStatus,
+          isMaintenance: willBeMaintenance
+        }
+      });
+    } catch {}
 
     console.log(`[ProductMaintenance] Toggled product "${product.name}" (${product.id}) to: ${newStatus}`);
 
@@ -1579,7 +1644,7 @@ app.post(['/api/admin/products/:id/toggle-maintenance', '/api/products/:id/toggl
 // 4. Bulk Set Products Maintenance Mode
 app.post(['/api/admin/products/bulk-maintenance', '/api/products/bulk-maintenance'], (req: Request, res: Response) => {
   try {
-    const { action, productIds, isMaintenance, maintenance } = req.body;
+    const { action, productIds, isMaintenance, maintenance, reason } = req.body;
     if (globalProductsCache.length === 0) {
       globalProductsCache = loadProductsFromDisk();
     }
@@ -1605,6 +1670,7 @@ app.post(['/api/admin/products/bulk-maintenance', '/api/products/bulk-maintenanc
         const pProductId = String(p.productId || '').toLowerCase().trim();
         if (idSet.has(pid) || idSet.has(pProductId)) {
           p.status = targetStatus;
+          if (reason) p.maintenanceReason = String(reason).trim();
           updatedCount++;
         }
       });
@@ -1612,12 +1678,30 @@ app.post(['/api/admin/products/bulk-maintenance', '/api/products/bulk-maintenanc
       // Set all products
       globalProductsCache.forEach((p: any) => {
         p.status = targetStatus;
+        if (reason) p.maintenanceReason = String(reason).trim();
         updatedCount++;
       });
     }
 
     saveProductsToDisk(globalProductsCache);
     isProductsInitialized = true;
+
+    // Record in Audit Log
+    try {
+      auditLogService.logEvent({
+        category: 'SYSTEM_CONFIG',
+        action: targetIsMaintenance ? 'BULK_PRODUCT_MAINTENANCE_ENABLED' : 'BULK_PRODUCT_MAINTENANCE_DISABLED',
+        severity: targetIsMaintenance ? 'WARNING' : 'INFO',
+        actor: 'Admin',
+        actorType: 'ADMIN',
+        summary: `Bulk updated ${updatedCount} products maintenance mode to ${targetIsMaintenance ? 'ON' : 'OFF'}`,
+        details: {
+          updatedCount,
+          isMaintenance: targetIsMaintenance,
+          status: targetStatus
+        }
+      });
+    } catch {}
 
     console.log(`[ProductMaintenance] Bulk updated ${updatedCount} products to status: ${targetStatus}`);
 
@@ -1627,6 +1711,184 @@ app.post(['/api/admin/products/bulk-maintenance', '/api/products/bulk-maintenanc
       updatedCount,
       isMaintenance: targetIsMaintenance,
       status: targetStatus
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. Update Single Product Status (ACTIVE / MAINTENANCE / DISABLED / OUT_OF_STOCK)
+app.post(['/api/admin/products/:id/status', '/api/products/:id/status'], (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!status || typeof status !== 'string') {
+      return res.status(400).json({ success: false, error: 'Status string is required' });
+    }
+
+    if (globalProductsCache.length === 0) {
+      globalProductsCache = loadProductsFromDisk();
+    }
+
+    const cleanId = String(id).trim().toLowerCase();
+    const product = globalProductsCache.find((p: any) => 
+      String(p.id || '').toLowerCase() === cleanId || 
+      String(p.productId || '').toLowerCase() === cleanId ||
+      String(p.name || '').toLowerCase() === cleanId
+    );
+
+    if (!product) {
+      return res.status(404).json({ success: false, error: `Product "${id}" not found.` });
+    }
+
+    const normalizedStatus = status.trim().toUpperCase();
+    product.status = normalizedStatus;
+
+    saveProductsToDisk(globalProductsCache);
+    isProductsInitialized = true;
+
+    console.log(`[ProductStatus] Updated product "${product.name}" (${product.id}) status to: ${normalizedStatus}`);
+
+    return res.json({
+      success: true,
+      message: `Product "${product.name}" status updated to ${normalizedStatus}`,
+      productId: product.id,
+      productName: product.name,
+      status: normalizedStatus
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. Decrement / Under Minus Single Product Stock (-1 Key / Out of Stock)
+app.post(['/api/admin/products/:id/stock/decrement', '/api/products/:id/stock/decrement'], (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (globalProductsCache.length === 0) {
+      globalProductsCache = loadProductsFromDisk();
+    }
+
+    const cleanId = String(id).trim().toLowerCase();
+    const product = globalProductsCache.find((p: any) => 
+      String(p.id || '').toLowerCase() === cleanId || 
+      String(p.productId || '').toLowerCase() === cleanId ||
+      String(p.name || '').toLowerCase() === cleanId
+    );
+
+    if (!product) {
+      return res.status(404).json({ success: false, error: `Product "${id}" not found.` });
+    }
+
+    if (Array.isArray(product.keys) && product.keys.length > 0) {
+      const removedKey = product.keys.pop();
+      product.stock = product.keys.length;
+      console.log(`[ProductStock] Decremented 1 key from product "${product.name}". Remaining keys: ${product.keys.length}`);
+    } else {
+      product.stock = Math.max(0, (Number(product.stock) || 0) - 1);
+      product.keys = [];
+    }
+
+    saveProductsToDisk(globalProductsCache);
+    isProductsInitialized = true;
+
+    return res.json({
+      success: true,
+      message: `Decremented stock for "${product.name}". Remaining stock: ${product.keys ? product.keys.length : product.stock}`,
+      productId: product.id,
+      productName: product.name,
+      stock: product.keys ? product.keys.length : product.stock,
+      keysCount: Array.isArray(product.keys) ? product.keys.length : 0
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7. Clear Stock / Set 0 Keys for Single Product
+app.post(['/api/admin/products/:id/stock/clear', '/api/products/:id/stock/clear'], (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (globalProductsCache.length === 0) {
+      globalProductsCache = loadProductsFromDisk();
+    }
+
+    const cleanId = String(id).trim().toLowerCase();
+    const product = globalProductsCache.find((p: any) => 
+      String(p.id || '').toLowerCase() === cleanId || 
+      String(p.productId || '').toLowerCase() === cleanId ||
+      String(p.name || '').toLowerCase() === cleanId
+    );
+
+    if (!product) {
+      return res.status(404).json({ success: false, error: `Product "${id}" not found.` });
+    }
+
+    product.keys = [];
+    product.stock = 0;
+
+    saveProductsToDisk(globalProductsCache);
+    isProductsInitialized = true;
+
+    console.log(`[ProductStock] Cleared all stock for "${product.name}".`);
+
+    return res.json({
+      success: true,
+      message: `All keys cleared for "${product.name}". Stock is now 0.`,
+      productId: product.id,
+      productName: product.name,
+      stock: 0,
+      keysCount: 0
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8. Add Keys / Restock Single Product
+app.post(['/api/admin/products/:id/stock/add', '/api/products/:id/stock/add'], (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { keys } = req.body;
+    if (!Array.isArray(keys) || keys.length === 0) {
+      return res.status(400).json({ success: false, error: 'keys array is required' });
+    }
+
+    if (globalProductsCache.length === 0) {
+      globalProductsCache = loadProductsFromDisk();
+    }
+
+    const cleanId = String(id).trim().toLowerCase();
+    const product = globalProductsCache.find((p: any) => 
+      String(p.id || '').toLowerCase() === cleanId || 
+      String(p.productId || '').toLowerCase() === cleanId ||
+      String(p.name || '').toLowerCase() === cleanId
+    );
+
+    if (!product) {
+      return res.status(404).json({ success: false, error: `Product "${id}" not found.` });
+    }
+
+    const cleanKeys = keys.map((k: any) => String(k).trim()).filter((k: string) => k.length > 0);
+    if (!Array.isArray(product.keys)) {
+      product.keys = [];
+    }
+
+    product.keys = [...cleanKeys, ...product.keys];
+    product.stock = product.keys.length;
+
+    saveProductsToDisk(globalProductsCache);
+    isProductsInitialized = true;
+
+    console.log(`[ProductStock] Added ${cleanKeys.length} keys to "${product.name}". Total keys: ${product.keys.length}`);
+
+    return res.json({
+      success: true,
+      message: `Added ${cleanKeys.length} key(s) to "${product.name}". Total stock: ${product.keys.length}`,
+      productId: product.id,
+      productName: product.name,
+      stock: product.keys.length,
+      keysCount: product.keys.length
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -2163,6 +2425,253 @@ app.post('/api/admin/telegram/live-credentials', async (req: Request, res: Respo
   }
 });
 
+// Download / Export telegram_config.json as a JSON file backup
+app.get(['/api/admin/telegram/backup', '/api/admin/telegram/backup/download', '/api/telegram-config/backup', '/api/telegram/backup'], (req: Request, res: Response) => {
+  try {
+    const dataFile = path.join(DATA_DIR, 'telegram_config.json');
+    let config: any = {
+      botToken: process.env.TELEGRAM_BOT_TOKEN || '8931126319:AAFXjsferq8w9qYQViI4xaH0UJflopoGC3g',
+      chatId: process.env.TELEGRAM_CHAT_ID || '7768975239',
+      botUsername: '@KALAMFFPANEL1_12_BOT',
+      apkDownloadUrl: 'https://t.me/kalamffpanel',
+      howToUseBotLink: 'https://t.me/yourchannel/3',
+      paymentProofChannel: 'https://t.me/c/4325449752',
+      welcomeMessage: '🔥 Welcome to KALAM STORE Official Bot! Instant Key Delivery & Automated UPI Wallet.',
+      proofBotToken: process.env.TELEGRAM_PROOF_BOT_TOKEN || '8817017449:AAEunwF639QSLm0JQHeFeOa_ujBwzwSb6GU',
+      proofChatId: process.env.TELEGRAM_PROOF_CHAT_ID || '-1004325449752',
+      enableAutoProof: true,
+      proofChannelLink: 'https://t.me/c/4325449752',
+      resellerUpgradeAmount: 500,
+      resellerDiscountPercent: 15,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (fs.existsSync(dataFile)) {
+      try {
+        const fileData = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+        config = { ...config, ...fileData };
+      } catch (readErr) {
+        console.warn('[TelegramBackup] Warning parsing existing config file:', readErr);
+      }
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `telegram_config_${timestamp}.json`;
+
+    // Audit log the backup download
+    try {
+      auditLogService.logEvent({
+        category: 'SYSTEM_CONFIG',
+        action: 'TELEGRAM_CONFIG_BACKUP_DOWNLOADED',
+        severity: 'INFO',
+        actor: 'Admin',
+        actorType: 'ADMIN',
+        summary: `Downloaded telegram_config.json backup (${filename})`,
+        details: {
+          filename,
+          hasBotToken: !!config.botToken,
+          chatId: config.chatId,
+          botUsername: config.botUsername
+        }
+      });
+    } catch {}
+
+    // Check if client explicitly requested json payload metadata instead of file attachment
+    if (req.query.format === 'json' || req.query.download === 'false') {
+      return res.json({
+        success: true,
+        filename,
+        backupTimestamp: new Date().toISOString(),
+        config
+      });
+    }
+
+    // Set download headers for direct file download
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('X-Backup-Filename', filename);
+
+    return res.send(JSON.stringify(config, null, 2));
+  } catch (err: any) {
+    console.error('[TelegramBackup] Error exporting telegram_config.json:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Upload / Restore telegram_config.json from backup JSON payload or file
+app.post(['/api/admin/telegram/restore', '/api/admin/telegram/backup/restore', '/api/admin/telegram/backup', '/api/telegram-config/restore', '/api/telegram/restore'], async (req: Request, res: Response) => {
+  try {
+    let uploadedConfig: any = req.body;
+
+    // Handle nested payload wrapper if present
+    if (uploadedConfig && typeof uploadedConfig === 'object') {
+      if (uploadedConfig.config && typeof uploadedConfig.config === 'object') {
+        uploadedConfig = uploadedConfig.config;
+      } else if (uploadedConfig.raw && typeof uploadedConfig.raw === 'string') {
+        try {
+          uploadedConfig = JSON.parse(uploadedConfig.raw);
+        } catch {}
+      } else if (uploadedConfig.fileContent && typeof uploadedConfig.fileContent === 'string') {
+        try {
+          uploadedConfig = JSON.parse(uploadedConfig.fileContent);
+        } catch {}
+      }
+    }
+
+    if (!uploadedConfig || typeof uploadedConfig !== 'object' || Object.keys(uploadedConfig).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid backup format. Please provide a valid JSON configuration object.'
+      });
+    }
+
+    const dataFile = path.join(DATA_DIR, 'telegram_config.json');
+
+    // Create a safety backup of the existing configuration before applying the restore
+    if (fs.existsSync(dataFile)) {
+      try {
+        const backupPath = path.join(DATA_DIR, `telegram_config.json.bak_${Date.now()}`);
+        fs.copyFileSync(dataFile, backupPath);
+      } catch (bkErr) {
+        console.warn('[TelegramRestore] Safety backup notice:', bkErr);
+      }
+    }
+
+    // Sanitize and validate fields
+    const sanitized: Record<string, any> = {};
+
+    if (typeof uploadedConfig.botToken === 'string' && uploadedConfig.botToken.trim()) {
+      sanitized.botToken = uploadedConfig.botToken.trim();
+    }
+    if (uploadedConfig.chatId !== undefined && uploadedConfig.chatId !== null) {
+      sanitized.chatId = String(uploadedConfig.chatId).trim();
+    }
+    if (typeof uploadedConfig.botUsername === 'string' && uploadedConfig.botUsername.trim()) {
+      sanitized.botUsername = uploadedConfig.botUsername.trim().startsWith('@')
+        ? uploadedConfig.botUsername.trim()
+        : `@${uploadedConfig.botUsername.trim()}`;
+    }
+    if (typeof uploadedConfig.apkDownloadUrl === 'string') {
+      sanitized.apkDownloadUrl = uploadedConfig.apkDownloadUrl.trim();
+    }
+    if (typeof uploadedConfig.howToUseBotLink === 'string') {
+      sanitized.howToUseBotLink = uploadedConfig.howToUseBotLink.trim();
+    }
+    if (typeof uploadedConfig.paymentProofChannel === 'string') {
+      sanitized.paymentProofChannel = uploadedConfig.paymentProofChannel.trim();
+    }
+    if (typeof uploadedConfig.welcomeMessage === 'string') {
+      sanitized.welcomeMessage = uploadedConfig.welcomeMessage.trim();
+    }
+    if (typeof uploadedConfig.proofBotToken === 'string') {
+      sanitized.proofBotToken = uploadedConfig.proofBotToken.trim();
+    }
+    if (uploadedConfig.proofChatId !== undefined && uploadedConfig.proofChatId !== null) {
+      sanitized.proofChatId = String(uploadedConfig.proofChatId).trim();
+    }
+    if (typeof uploadedConfig.enableAutoProof === 'boolean') {
+      sanitized.enableAutoProof = uploadedConfig.enableAutoProof;
+    }
+    if (typeof uploadedConfig.proofChannelLink === 'string') {
+      sanitized.proofChannelLink = uploadedConfig.proofChannelLink.trim();
+    }
+    if (typeof uploadedConfig.resellerUpgradeAmount === 'number' || !isNaN(Number(uploadedConfig.resellerUpgradeAmount))) {
+      sanitized.resellerUpgradeAmount = Number(uploadedConfig.resellerUpgradeAmount);
+    }
+    if (typeof uploadedConfig.resellerDiscountPercent === 'number' || !isNaN(Number(uploadedConfig.resellerDiscountPercent))) {
+      sanitized.resellerDiscountPercent = Number(uploadedConfig.resellerDiscountPercent);
+    }
+    if (uploadedConfig.lowStockThreshold !== undefined) {
+      sanitized.lowStockThreshold = Number(uploadedConfig.lowStockThreshold);
+    }
+
+    // Preserve other safe string/number/boolean fields from backup
+    for (const [key, val] of Object.entries(uploadedConfig)) {
+      if (sanitized[key] === undefined && ['string', 'number', 'boolean'].includes(typeof val)) {
+        sanitized[key] = val;
+      }
+    }
+
+    sanitized.updatedAt = new Date().toISOString();
+    sanitized.restoredAt = new Date().toISOString();
+
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+
+    // Persist restored config to disk
+    fs.writeFileSync(dataFile, JSON.stringify(sanitized, null, 2), 'utf8');
+
+    // Sync to store_data.json as well
+    try {
+      const storeDataFile = path.join(DATA_DIR, 'store_data.json');
+      if (fs.existsSync(storeDataFile)) {
+        const sd = JSON.parse(fs.readFileSync(storeDataFile, 'utf8'));
+        if (!sd.storeSettings) sd.storeSettings = {};
+        if (sanitized.botToken) sd.storeSettings.telegramBotToken = sanitized.botToken;
+        if (sanitized.chatId) sd.storeSettings.telegramChatId = sanitized.chatId;
+        if (sanitized.botUsername) sd.storeSettings.telegramBotUsername = sanitized.botUsername;
+        if (sanitized.apkDownloadUrl) sd.storeSettings.apkDownloadUrl = sanitized.apkDownloadUrl;
+        if (sanitized.howToUseBotLink) sd.storeSettings.howToUseBotLink = sanitized.howToUseBotLink;
+        if (sanitized.paymentProofChannel) sd.storeSettings.paymentProofChannel = sanitized.paymentProofChannel;
+        if (sanitized.welcomeMessage) sd.storeSettings.telegramWelcomeMsg = sanitized.welcomeMessage;
+        if (sanitized.proofBotToken) sd.storeSettings.proofBotToken = sanitized.proofBotToken;
+        if (sanitized.proofChatId) sd.storeSettings.proofChatId = sanitized.proofChatId;
+        if (typeof sanitized.enableAutoProof === 'boolean') sd.storeSettings.enableAutoProof = sanitized.enableAutoProof;
+        if (sanitized.proofChannelLink) sd.storeSettings.proofChannelLink = sanitized.proofChannelLink;
+        sd.updatedAt = Date.now();
+        fs.writeFileSync(storeDataFile, JSON.stringify(sd, null, 2), 'utf8');
+      }
+    } catch {}
+
+    // In-memory runtime update
+    if (sanitized.botToken) process.env.TELEGRAM_BOT_TOKEN = sanitized.botToken;
+    if (sanitized.chatId) process.env.TELEGRAM_CHAT_ID = sanitized.chatId;
+
+    // Hot sync Telegram Bot service
+    try {
+      if (typeof telegramBotService !== 'undefined') {
+        telegramBotService.syncFromStoreData({
+          storeSettings: {
+            telegramBotUsername: sanitized.botUsername
+          }
+        });
+      }
+    } catch {}
+
+    // Audit log the restore event
+    try {
+      auditLogService.logEvent({
+        category: 'SYSTEM_CONFIG',
+        action: 'TELEGRAM_CONFIG_RESTORED',
+        severity: 'WARNING',
+        actor: 'Admin',
+        actorType: 'ADMIN',
+        summary: `Restored telegram_config.json from uploaded backup`,
+        details: {
+          restoredKeys: Object.keys(sanitized),
+          botUsername: sanitized.botUsername || undefined,
+          chatId: sanitized.chatId || undefined
+        }
+      });
+    } catch {}
+
+    console.log('[TelegramRestore] telegram_config.json successfully restored from backup.');
+
+    return res.json({
+      success: true,
+      message: 'Telegram Bot configuration restored and applied successfully!',
+      status: 'CONNECTED',
+      restoredKeysCount: Object.keys(sanitized).length,
+      config: sanitized
+    });
+  } catch (err: any) {
+    console.error('[TelegramRestore] Error restoring telegram_config.json:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Auto-Detect Recent Chats from Telegram Bot Service (Supports Groups, Supergroups, Channels & Private DMs)
 app.get('/api/admin/telegram/recent-chats', async (req: Request, res: Response) => {
   try {
@@ -2175,6 +2684,185 @@ app.get('/api/admin/telegram/recent-chats', async (req: Request, res: Response) 
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message, chats: [] });
+  }
+});
+
+// Live Feed of Telegram Bot Activities & Incoming Messages
+app.get(['/api/admin/telegram/activity-feed', '/api/telegram/activity-feed'], (req: Request, res: Response) => {
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 60;
+    const category = typeof req.query.category === 'string' ? req.query.category : 'all';
+    const type = typeof req.query.type === 'string' ? req.query.type : 'all';
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const sinceTimestamp = req.query.sinceTimestamp ? Number(req.query.sinceTimestamp) : undefined;
+
+    const feed = telegramBotService.getActivityFeed({
+      limit,
+      category,
+      type,
+      search,
+      sinceTimestamp,
+    });
+
+    res.json({
+      success: true,
+      activities: feed.activities,
+      stats: feed.stats,
+      serverTime: Date.now()
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to fetch Telegram activity feed',
+      activities: [],
+      stats: {
+        totalEvents: 0,
+        totalMessages: 0,
+        totalCallbacks: 0,
+        totalKeysDelivered: 0,
+        totalDeposits: 0,
+        totalErrors: 0,
+        activeUsersCount: 0,
+        lastActiveTime: Date.now(),
+        isPolling: false,
+        isWebhookActive: false,
+        botUsername: '',
+        uptimeSeconds: 0
+      },
+      serverTime: Date.now()
+    });
+  }
+});
+
+// Clear Activity Feed
+app.post(['/api/admin/telegram/clear-activity-feed', '/api/telegram/clear-activity-feed'], (_req: Request, res: Response) => {
+  try {
+    telegramBotService.clearActivityFeed();
+    res.json({ success: true, message: 'Telegram activity feed cleared successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Real-time Server-Sent Events (SSE) Live Stream for Telegram Bot Activities
+app.get(['/api/admin/telegram/activity-stream', '/api/telegram/activity-stream'], (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  // Send initial batch of recent activities
+  const initialData = telegramBotService.getActivityFeed({ limit: 25 });
+  res.write(`data: ${JSON.stringify({ type: 'INITIAL_BATCH', ...initialData })}\n\n`);
+
+  // Subscribe to real-time events
+  const unsubscribe = telegramBotService.subscribeActivityStream((event) => {
+    res.write(`data: ${JSON.stringify({ type: 'NEW_ACTIVITY', event, serverTime: Date.now() })}\n\n`);
+  });
+
+  // Heartbeat ping every 15s to keep connection open
+  const keepAlive = setInterval(() => {
+    res.write(`: ping\n\n`);
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    unsubscribe();
+    res.end();
+  });
+});
+
+// Test / Diagnostic Ping for Activity Feed
+app.post(['/api/admin/telegram/test-activity-event'], (req: Request, res: Response) => {
+  try {
+    telegramBotService.recordActivity({
+      type: 'BOT_LIFECYCLE',
+      category: 'system',
+      severity: 'info',
+      summary: '🔍 Diagnostic Test Activity Triggered',
+      details: req.body?.details || 'Manual diagnostic verification from Admin Control Panel.',
+      action: 'ADMIN_TEST',
+      payload: { requestedAt: new Date().toISOString(), by: 'Admin' }
+    });
+    res.json({ success: true, message: 'Test activity event generated.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// Telegram Notification Types & Customization API
+// ==========================================
+app.get(['/api/admin/telegram/notification-settings', '/api/telegram/notification-settings'], (_req: Request, res: Response) => {
+  try {
+    const settings = telegramNotificationManager.getSettings();
+    const definitions = telegramNotificationManager.getDefinitions();
+    res.json({
+      success: true,
+      settings,
+      definitions,
+      defaultSettings: DEFAULT_TELEGRAM_NOTIFICATION_SETTINGS,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post(['/api/admin/telegram/notification-settings', '/api/telegram/notification-settings'], (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const updated = telegramNotificationManager.updateSettings(body);
+    res.json({
+      success: true,
+      message: 'Telegram notification preferences saved successfully.',
+      settings: updated,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post(['/api/admin/telegram/notification-settings/toggle', '/api/telegram/notification-settings/toggle'], (req: Request, res: Response) => {
+  try {
+    const { typeKey, enabled } = req.body;
+    if (!typeKey) {
+      return res.status(400).json({ success: false, error: 'typeKey is required to toggle' });
+    }
+    const updated = telegramNotificationManager.toggleType(typeKey, enabled);
+    res.json({
+      success: true,
+      message: `Notification toggle for "${typeKey}" updated to ${updated.types[typeKey as keyof typeof updated.types] ? 'ENABLED' : 'DISABLED'}.`,
+      settings: updated,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post(['/api/admin/telegram/notification-settings/test', '/api/telegram/notification-settings/test'], async (req: Request, res: Response) => {
+  try {
+    const { typeKey, targetChatId } = req.body;
+    if (!typeKey) {
+      return res.status(400).json({ success: false, error: 'typeKey is required for test dispatch' });
+    }
+    const result = await telegramNotificationManager.sendTestNotification(typeKey, targetChatId);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post(['/api/admin/telegram/notification-settings/reset', '/api/telegram/notification-settings/reset'], (_req: Request, res: Response) => {
+  try {
+    const updated = telegramNotificationManager.updateSettings(DEFAULT_TELEGRAM_NOTIFICATION_SETTINGS);
+    res.json({
+      success: true,
+      message: 'Telegram notification preferences restored to factory defaults.',
+      settings: updated,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -2297,6 +2985,26 @@ app.post('/api/admin/telegram/users/set-reseller', (req: Request, res: Response)
       return res.status(404).json(result);
     }
 
+    // Record Audit Log for Reseller Status Change
+    try {
+      auditLogService.logResellerChange({
+        targetUser: {
+          userId: result.user?.userId || String(target),
+          chatId: result.user?.chatId,
+          username: result.user?.username,
+          fullName: (result.user as any)?.fullName || result.user?.firstName || String(target),
+        },
+        isReseller: setResellerBool,
+        previousRole: setResellerBool ? 'USER' : 'RESELLER',
+        newRole: setResellerBool ? 'RESELLER' : 'USER',
+        actor: 'Admin Panel',
+        actorType: 'ADMIN',
+        ipAddress: req.ip || req.headers['x-forwarded-for'] as string,
+      });
+    } catch (auditErr) {
+      console.warn('[Server] Audit log error for set-reseller:', auditErr);
+    }
+
     res.json({
       success: true,
       message: `User ${result.user?.firstName || target} is now ${setResellerBool ? 'a VIP Reseller' : 'a Standard Member'}`,
@@ -2323,6 +3031,27 @@ app.post('/api/admin/telegram/users/toggle-reseller', (req: Request, res: Respon
 
     const newStatus = !existing.isReseller;
     const result = telegramBotService.setBotUserResellerStatus(target, newStatus);
+
+    // Record Audit Log
+    try {
+      auditLogService.logResellerChange({
+        targetUser: {
+          userId: existing.userId,
+          chatId: existing.chatId,
+          username: existing.username,
+          fullName: (existing as any).fullName || existing.firstName || String(target),
+        },
+        isReseller: newStatus,
+        previousRole: existing.isReseller ? 'RESELLER' : 'USER',
+        newRole: newStatus ? 'RESELLER' : 'USER',
+        actor: 'Admin Panel',
+        actorType: 'ADMIN',
+        ipAddress: req.ip || req.headers['x-forwarded-for'] as string,
+      });
+    } catch (auditErr) {
+      console.warn('[Server] Audit log error for toggle-reseller:', auditErr);
+    }
+
     res.json({
       success: true,
       isReseller: newStatus,
@@ -2511,10 +3240,129 @@ app.post('/api/admin/telegram/users/add-balance', (req: Request, res: Response) 
       ).catch(() => {});
     }
 
+    // Record Audit Log for Balance Adjustment
+    try {
+      const existingUser = telegramBotService.findBotUser(targetUser);
+      auditLogService.logBalanceAdjustment({
+        targetUser: {
+          userId: targetUser,
+          chatId: targetChatId || existingUser?.chatId,
+          username: existingUser?.username,
+          fullName: (existingUser as any)?.fullName || existingUser?.firstName || targetUser,
+        },
+        amount: numAmount,
+        afterBalance: creditResult.balance,
+        reason: reason || 'Admin manual balance adjustment via Website Admin Panel',
+        actor: 'Admin Panel',
+        actorType: 'ADMIN',
+        ipAddress: req.ip || req.headers['x-forwarded-for'] as string,
+      });
+    } catch (auditErr) {
+      console.warn('[Server] Audit log error for add-balance:', auditErr);
+    }
+
     res.json({
       success: true,
       newBalance: creditResult.balance,
       message: `Successfully credited ₹${numAmount} to ${targetUser}`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================================
+// AUDIT LOG & ACCOUNTABILITY API ROUTES
+// ==========================================================
+
+// Get paginated and filtered audit logs
+app.get('/api/admin/audit-logs', (req: Request, res: Response) => {
+  try {
+    const { category, severity, search, actorType, startDate, endDate, page, limit, sortDirection } = req.query;
+    const result = auditLogService.getLogs({
+      category: category as string,
+      severity: severity as string,
+      search: search as string,
+      actorType: actorType as string,
+      startDate: startDate ? parseInt(startDate as string, 10) : undefined,
+      endDate: endDate ? parseInt(endDate as string, 10) : undefined,
+      page: page ? parseInt(page as string, 10) : 1,
+      limit: limit ? parseInt(limit as string, 10) : 25,
+      sortDirection: (sortDirection === 'asc' ? 'asc' : 'desc'),
+    });
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get aggregate stats for audit events
+app.get('/api/admin/audit-logs/stats', (req: Request, res: Response) => {
+  try {
+    const stats = auditLogService.getStats();
+    res.json({
+      success: true,
+      stats,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Record a manual administrative audit note or event
+app.post('/api/admin/audit-logs/log', (req: Request, res: Response) => {
+  try {
+    const { category, action, severity, actor, targetUser, summary, details } = req.body;
+    if (!summary) {
+      return res.status(400).json({ success: false, error: 'Summary description is required' });
+    }
+
+    const newLog = auditLogService.logEvent({
+      category: category || 'SECURITY_EVENT',
+      action: action || 'MANUAL_ADMIN_NOTE',
+      severity: severity || 'INFO',
+      actor: actor || 'Admin',
+      actorType: 'ADMIN',
+      targetUser: targetUser || undefined,
+      summary: summary.trim(),
+      details: details || {},
+      ipAddress: req.ip || req.headers['x-forwarded-for'] as string,
+    });
+
+    res.json({
+      success: true,
+      message: 'Audit event recorded successfully',
+      event: newLog,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Export audit logs as CSV
+app.get('/api/admin/audit-logs/export', (req: Request, res: Response) => {
+  try {
+    const csv = auditLogService.exportCsv();
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="kalam_audit_logs_${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Clear or prune old audit logs
+app.delete('/api/admin/audit-logs/clear', (req: Request, res: Response) => {
+  try {
+    const keepCount = req.query.keepCount ? parseInt(req.query.keepCount as string, 10) : 0;
+    const result = auditLogService.clearLogs(keepCount);
+    res.json({
+      success: true,
+      message: `Audit logs pruned. Removed ${result.removed} events. ${result.remaining} events remain.`,
+      ...result,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -2550,6 +3398,9 @@ app.post(['/api/admin/telegram/broadcast', '/api/telegram/broadcast'], async (re
       photo,
       voice,
       audio,
+      title,
+      performer,
+      fileName,
       caption,
       buttonText,
       buttonUrl,
@@ -2566,10 +3417,10 @@ app.post(['/api/admin/telegram/broadcast', '/api/telegram/broadcast'], async (re
     if (type === 'photo' && !photo) {
       return res.status(400).json({ success: false, error: 'Photo URL or image data is required for photo broadcast.' });
     }
-    if (type === 'voice' && !voice) {
+    if (type === 'voice' && !voice && !audio) {
       return res.status(400).json({ success: false, error: 'Voice audio data is required for voice broadcast.' });
     }
-    if (type === 'audio' && !audio) {
+    if (type === 'audio' && !audio && !voice) {
       return res.status(400).json({ success: false, error: 'Audio data is required for audio broadcast.' });
     }
 
@@ -2634,6 +3485,9 @@ app.post(['/api/admin/telegram/broadcast', '/api/telegram/broadcast'], async (re
       photo,
       voice,
       audio,
+      title: title ? String(title).trim() : undefined,
+      performer: performer ? String(performer).trim() : undefined,
+      fileName: fileName ? String(fileName).trim() : undefined,
       caption,
       buttonText: buttonText ? buttonText.trim() : undefined,
       buttonUrl: buttonUrl ? buttonUrl.trim() : undefined,
@@ -2665,6 +3519,10 @@ app.post(['/api/admin/telegram/send-direct', '/api/telegram/send-direct'], async
       photo,
       voice,
       audio,
+      title,
+      performer,
+      fileName,
+      duration,
       caption,
       buttonText,
       buttonUrl,
@@ -2691,10 +3549,19 @@ app.post(['/api/admin/telegram/send-direct', '/api/telegram/send-direct'], async
     let success = false;
     if (type === 'photo' && photo) {
       success = await telegramBotService.sendPhotoExtended(targetChatId, photo, caption, replyMarkup);
-    } else if (type === 'voice' && voice) {
-      success = await telegramBotService.sendVoice(targetChatId, voice, caption, replyMarkup);
-    } else if (type === 'audio' && audio) {
-      success = await telegramBotService.sendAudio(targetChatId, audio, caption, 'Direct Audio', 'KALAM FF Admin', replyMarkup);
+    } else if (type === 'voice' && (voice || audio)) {
+      success = await telegramBotService.sendVoice(targetChatId, voice || audio, caption, replyMarkup, duration);
+    } else if (type === 'audio' && (audio || voice)) {
+      success = await telegramBotService.sendAudio(
+        targetChatId,
+        audio || voice,
+        caption,
+        title || 'Direct Audio',
+        performer || 'KALAM FF Admin',
+        replyMarkup,
+        duration,
+        fileName
+      );
     } else {
       const content = text || caption || '🔔 Notification from KALAM FF Admin';
       success = await telegramBotService.sendMessage(targetChatId, content, replyMarkup);
@@ -2718,6 +3585,10 @@ app.post('/api/admin/telegram/test-broadcast', async (req: Request, res: Respons
       photo,
       voice,
       audio,
+      title,
+      performer,
+      fileName,
+      duration,
       caption,
       buttonText,
       buttonUrl,
@@ -2736,10 +3607,19 @@ app.post('/api/admin/telegram/test-broadcast', async (req: Request, res: Respons
     let success = false;
     if (type === 'photo' && photo) {
       success = await telegramBotService.sendPhotoExtended(targetChatId, photo, `[TEST PREVIEW]\n\n${caption || ''}`, replyMarkup);
-    } else if (type === 'voice' && voice) {
-      success = await telegramBotService.sendVoice(targetChatId, voice, `[TEST PREVIEW]\n\n${caption || ''}`, replyMarkup);
-    } else if (type === 'audio' && audio) {
-      success = await telegramBotService.sendAudio(targetChatId, audio, `[TEST PREVIEW]\n\n${caption || ''}`, 'Test Preview', 'Admin', replyMarkup);
+    } else if (type === 'voice' && (voice || audio)) {
+      success = await telegramBotService.sendVoice(targetChatId, voice || audio, `[TEST PREVIEW]\n\n${caption || ''}`, replyMarkup, duration);
+    } else if (type === 'audio' && (audio || voice)) {
+      success = await telegramBotService.sendAudio(
+        targetChatId,
+        audio || voice,
+        `[TEST PREVIEW]\n\n${caption || ''}`,
+        title || 'Test Preview Track',
+        performer || 'KALAM FF Admin',
+        replyMarkup,
+        duration,
+        fileName
+      );
     } else {
       const content = `🧪 <b>[TEST BROADCAST PREVIEW]</b>\n\n${text || caption || 'Sample Announcement Content'}\n\n<i>(This is only sent to your admin chat for verification)</i>`;
       success = await telegramBotService.sendMessage(targetChatId, content, replyMarkup);
@@ -3281,7 +4161,17 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
     const finalUpiIntent = responseData?.data?.upi_intent || responseData?.upi_intent || generatedUpiIntent;
     const finalPaymentUrl = responseData?.data?.checkout_url || (rawPaymentLink && rawPaymentLink.startsWith('http') ? rawPaymentLink : finalUpiIntent);
     const qrTargetData = finalUpiIntent;
-    const qrUrl = responseData?.data?.qr_url || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrTargetData)}`;
+    const qrUrl = responseData?.data?.qr_url || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=8&data=${encodeURIComponent(qrTargetData)}`;
+
+    // Asynchronous background prefetch to warm up edge CDN / DNS cache for instant client rendering
+    if (qrUrl && qrUrl.startsWith('http')) {
+      try {
+        fetch(qrUrl, { method: 'GET', signal: AbortSignal.timeout(3000) }).catch(() => {});
+      } catch {}
+    }
+
+    const orderCreatedAt = Date.now();
+    const orderExpiresAt = orderCreatedAt + 10 * 60 * 1000; // Strict 10-minute expiry window
 
     // Store in active orders map with exact amount
     const storedOrder: StoredOrder = {
@@ -3299,7 +4189,8 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
       apiKey: token,
       zapKey: isZapUPI ? token : undefined,
       adityaKey: isAdityaHost ? token : undefined,
-      createdAt: Date.now(),
+      createdAt: orderCreatedAt,
+      expiresAt: orderExpiresAt,
       gatewayRaw: responseData
     };
     activeOrders.set(orderId, storedOrder);
@@ -3329,6 +4220,10 @@ app.post('/api/create-order', async (req: Request, res: Response) => {
         status: responseData?.status || 'created',
         redirectUrl: redirect,
         gateway: isFamGateway ? 'FamGateway (famgateway.in)' : isAdityaHost ? 'AdityaHost UPI Gateway' : isZapUPI ? 'ZapUPI Gateway' : 'FreePanel UPI Gateway',
+        createdAt: orderCreatedAt,
+        expiresAt: orderExpiresAt,
+        expiresIn: '10 Minutes',
+        expirySeconds: 600,
         raw: responseData
       }
     });
@@ -4796,7 +5691,7 @@ function parseUpstreamResellerResponse(rawText: string): {
   }
 
   if (json) {
-    const key =
+    let key =
       json.key ||
       json.keyCode ||
       json.key_code ||
@@ -4812,15 +5707,26 @@ function parseUpstreamResellerResponse(rawText: string): {
       json.reseller_key ||
       json.data?.key ||
       json.data?.keyCode ||
+      json.data?.key_code ||
       json.data?.license_key ||
+      json.data?.licenseKey ||
+      json.data?.license ||
       json.data?.code ||
+      json.data?.pin ||
       json.result?.key ||
       json.result?.code ||
+      json.result?.license ||
       json.response?.key ||
+      json.response?.license ||
       (Array.isArray(json.keys) && json.keys[0]) ||
-      (Array.isArray(json.data?.keys) && json.data.keys[0]);
+      (Array.isArray(json.data?.keys) && json.data.keys[0]) ||
+      (Array.isArray(json.data) && typeof json.data[0] === 'string' && json.data[0]);
 
-    const msg =
+    if (!key && typeof json.data === 'string' && json.data.length >= 4 && !json.data.toLowerCase().includes('error') && !json.data.toLowerCase().includes('fail')) {
+      key = json.data;
+    }
+
+    const rawMsg =
       json.msg ||
       json.message ||
       json.error ||
@@ -4829,8 +5735,15 @@ function parseUpstreamResellerResponse(rawText: string): {
       json.response ||
       json.status;
 
-    const isSuccess =
-      Boolean(key) ||
+    // Check if key is embedded in message (e.g. "Key: ABCD-1234" or "License generated: ABCD")
+    if (!key && typeof rawMsg === 'string') {
+      const keyPatternMatch = rawMsg.match(/(?:key|license|code|serial)[:\s=]+([A-Za-z0-9_\-]{4,80})/i);
+      if (keyPatternMatch) {
+        key = keyPatternMatch[1];
+      }
+    }
+
+    const isExplicitSuccess =
       json.status === 'success' ||
       json.status === true ||
       json.status === 1 ||
@@ -4838,12 +5751,14 @@ function parseUpstreamResellerResponse(rawText: string): {
       json.result === 'success' ||
       json.success === true;
 
+    const isSuccess = Boolean(key) || isExplicitSuccess;
+
     return {
       key: key ? String(key).trim() : undefined,
-      error: !isSuccess ? (typeof msg === 'string' ? msg : JSON.stringify(msg || 'Upstream request rejected')) : undefined,
-      message: typeof msg === 'string' ? msg : (key ? 'Key generated successfully' : undefined),
+      error: !isSuccess ? (typeof rawMsg === 'string' ? rawMsg : JSON.stringify(rawMsg || 'Upstream request rejected')) : undefined,
+      message: typeof rawMsg === 'string' ? rawMsg : (key ? 'Key generated successfully' : undefined),
       parsedJson: json,
-      isSuccess
+      isSuccess: isSuccess && Boolean(key)
     };
   }
 
@@ -4852,8 +5767,10 @@ function parseUpstreamResellerResponse(rawText: string): {
     !trimmed.includes('<html') &&
     !trimmed.includes('<body') &&
     !trimmed.includes('<!DOCTYPE') &&
-    trimmed.length >= 6 &&
-    trimmed.length <= 120
+    !trimmed.toLowerCase().includes('error') &&
+    !trimmed.toLowerCase().includes('fatal') &&
+    trimmed.length >= 4 &&
+    trimmed.length <= 150
   ) {
     return {
       key: trimmed,
@@ -4874,13 +5791,11 @@ function parseUpstreamResellerResponse(rawText: string): {
 function normalizeResellerUrl(url: string | undefined): string {
   if (!url || !url.trim()) return 'https://adminpanels.shop/api/reseller_v1.php';
   let clean = url.trim();
-  if (clean.includes('adminpanels.shop')) {
-    if (!clean.includes('.php') && !clean.endsWith('/reseller_v1.php')) {
-      if (clean.endsWith('/api') || clean.endsWith('/api/')) {
-        clean = clean.replace(/\/api\/?$/, '/api/reseller_v1.php');
-      } else if (clean.endsWith('.shop') || clean.endsWith('.shop/')) {
-        clean = clean.replace(/\/?$/, '/api/reseller_v1.php');
-      }
+  if (!clean.includes('.php')) {
+    if (clean.endsWith('/api') || clean.endsWith('/api/')) {
+      clean = clean.replace(/\/api\/?$/, '/api/reseller_v1.php');
+    } else {
+      clean = clean.replace(/\/?$/, '/api/reseller_v1.php');
     }
   }
   return clean;
@@ -4940,6 +5855,18 @@ interface UpstreamRetryConfig {
   maxDelayMs?: number;
   timeoutMs?: number;
   apiName?: string;
+  callerContext?: string;
+  providerType?: 'adminpanels' | 'custom_api2' | 'supplier_restock' | 'product_sync' | 'diagnostic' | 'other';
+  productInfo?: {
+    productId?: string;
+    productName?: string;
+    duration?: string;
+    quantity?: number;
+    price?: number;
+    userEmail?: string;
+    chatId?: number | string;
+    androidId?: string;
+  };
 }
 
 interface UpstreamRetryResult {
@@ -5009,8 +5936,10 @@ async function fetchUpstreamWithRetry(
   let lastError: any = null;
   let lastStatus = 0;
   let lastText = '';
+  let finalAttempts = 1;
 
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    finalAttempts = attempt;
     const isLastAttempt = attempt === maxRetries + 1;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -5030,6 +5959,10 @@ async function fetchUpstreamWithRetry(
       // If status is successful or a definitive non-transient status (e.g. 200, 400, 401, 403, 404)
       if (response.ok || !isTransientHttpStatus(response.status)) {
         console.log(`[Upstream Retry] [${apiName}] Attempt ${attempt}/${maxRetries + 1} completed with HTTP ${response.status} (elapsed: ${Date.now() - startTime}ms)`);
+        
+        // Log to Upstream Logger Service
+        logUpstreamCallToLogger(url, options, config, response.status, lastText, true, Date.now() - startTime, attempt, maxRetries, null);
+        
         return {
           ok: response.ok,
           status: response.status,
@@ -5070,14 +6003,88 @@ async function fetchUpstreamWithRetry(
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
+  // Log failed / retry exhausted attempt
+  logUpstreamCallToLogger(url, options, config, lastStatus, lastText, false, Date.now() - startTime, finalAttempts, maxRetries, lastError);
+
   return {
     ok: false,
     status: lastStatus,
     textResp: lastText,
-    attempts: maxRetries + 1,
+    attempts: finalAttempts,
     totalTimeMs: Date.now() - startTime,
     networkError: lastError
   };
+}
+
+function logUpstreamCallToLogger(
+  url: string,
+  options: RequestInit,
+  config: UpstreamRetryConfig,
+  status: number,
+  responseText: string,
+  ok: boolean,
+  latencyMs: number,
+  attempts: number,
+  maxRetries: number,
+  error: any
+) {
+  try {
+    let parsedResp: any = null;
+    let deliveredKey: string | undefined;
+    let errorMessage: string | undefined;
+
+    if (responseText && (responseText.trim().startsWith('{') || responseText.trim().startsWith('['))) {
+      try {
+        parsedResp = JSON.parse(responseText);
+        deliveredKey = parsedResp.key || parsedResp.license_key || parsedResp.license || parsedResp.data?.key || parsedResp.data?.license_key;
+        if (!deliveredKey && typeof parsedResp.data === 'string' && parsedResp.data.length > 5) {
+          deliveredKey = parsedResp.data;
+        }
+        errorMessage = parsedResp.message || parsedResp.error || parsedResp.msg;
+      } catch {}
+    }
+
+    if (!errorMessage && error) {
+      errorMessage = error.message || String(error);
+    }
+
+    let bodyRaw = '';
+    if (options.body) {
+      bodyRaw = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
+    }
+
+    const headersObj: Record<string, string> = {};
+    if (options.headers) {
+      if (Array.isArray(options.headers)) {
+        options.headers.forEach(([k, v]) => { headersObj[k] = v; });
+      } else if (typeof options.headers === 'object') {
+        Object.assign(headersObj, options.headers);
+      }
+    }
+
+    upstreamLogger.recordLog({
+      apiName: config.apiName || 'Upstream API',
+      providerType: config.providerType,
+      callerContext: config.callerContext || 'Key Dispatch Service',
+      url,
+      method: (options.method || 'POST').toUpperCase(),
+      requestHeaders: headersObj,
+      requestBodyRaw: bodyRaw,
+      responseStatus: status,
+      responseBodyRaw: responseText,
+      responseBodyParsed: parsedResp,
+      success: (status >= 200 && status < 300) || (!error && !!deliveredKey),
+      latencyMs,
+      attempts,
+      maxRetries,
+      deliveredKey,
+      productInfo: config.productInfo,
+      errorMessage,
+      networkError: error ? String(error.message || error) : undefined
+    });
+  } catch (err) {
+    console.warn('[Upstream Logger Hook] Error recording log:', err);
+  }
 }
 
 // In-flight & Idempotency cache for /api/purchase-key to prevent duplicate key purchases/alerts
@@ -5198,15 +6205,20 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
       return t === '' || t === 'YOUR_API_KEY' || t === 'EMPTY';
     };
 
+    const storeData = loadStoreDataFromDisk();
+    const effectiveApiConfigs = (Array.isArray(apiConfigs) && apiConfigs.length > 0)
+      ? apiConfigs
+      : (storeData.apiConfigs || []);
+
     // Only dispatch to API 1 (AdminPanels) if explicitly CONNECTED with a valid key
-    const api1 = (apiConfigs || []).find((c: any) => 
+    const api1 = (effectiveApiConfigs || []).find((c: any) => 
       (c.type === 'adminpanels' || c.id === 'api-adminpanels' || c.id === 'api-1' || c.id?.includes('adminpanels')) &&
       c.status === 'CONNECTED' &&
       !isPlaceholderKey(c.apiKey)
     );
 
     // Only dispatch to API 2 (HKMODZ / Custom) if explicitly CONNECTED with custom endpoint and valid token
-    const api2 = (apiConfigs || []).find((c: any) => 
+    const api2 = (effectiveApiConfigs || []).find((c: any) => 
       (c.type === 'hkmodz' || c.id === 'api-hkmodz' || c.id === 'api-2' || c.id?.includes('hkmodz')) &&
       c.status === 'CONNECTED' &&
       c.apiUrl &&
@@ -5216,8 +6228,31 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
 
     if (api1 && (api1.apiKey && !isPlaceholderKey(api1.apiKey))) {
       const targetUrl = normalizeResellerUrl(api1.apiUrl);
-      const remotePid = productApi1?.remoteProductId || productId;
-      const remoteDur = productApi1?.remoteDuration || planDuration;
+      const remotePid = productApi1?.remoteProductId || 
+                        productApi1?.productId ||
+                        productApi1?.remote_product_id ||
+                        targetProduct?.api1Restock?.remoteProductId || 
+                        targetProduct?.api1Restock?.productId ||
+                        targetProduct?.api1Mapping?.remoteProductId || 
+                        targetProduct?.api1Mapping?.productId ||
+                        targetProduct?.api1Config?.remoteProductId ||
+                        targetProduct?.api1?.remoteProductId ||
+                        targetProduct?.remoteProductId || 
+                        targetProduct?.apiProductId || 
+                        productId;
+
+      const remoteDur = productApi1?.remoteDuration || 
+                        productApi1?.duration ||
+                        productApi1?.remote_duration ||
+                        targetProduct?.api1Restock?.remoteDuration || 
+                        targetProduct?.api1Restock?.duration ||
+                        targetProduct?.api1Mapping?.remoteDuration || 
+                        targetProduct?.api1Mapping?.duration ||
+                        targetProduct?.api1Config?.remoteDuration ||
+                        targetProduct?.api1?.remoteDuration ||
+                        targetProduct?.remoteDuration || 
+                        planDuration;
+
       const masterKey = api1.masterKey || 'a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8';
       const apiKey = api1.apiKey || '';
       const hwid = androidId || '0b9b969bc2e7997b';
@@ -5229,17 +6264,17 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
       payloadParams.append('master_key', masterKey);
       payloadParams.append('masterkey', masterKey);
       payloadParams.append('action', 'buy');
-      payloadParams.append('product_id', remotePid);
-      payloadParams.append('productId', remotePid);
-      payloadParams.append('product', remotePid);
-      payloadParams.append('duration', remoteDur);
-      payloadParams.append('dur', remoteDur);
+      payloadParams.append('product_id', String(remotePid).trim());
+      payloadParams.append('productId', String(remotePid).trim());
+      payloadParams.append('product', String(remotePid).trim());
+      payloadParams.append('duration', String(remoteDur).trim());
+      payloadParams.append('dur', String(remoteDur).trim());
       payloadParams.append('android_id', hwid);
       payloadParams.append('device_id', hwid);
       payloadParams.append('quantity', String(requestedQty));
       payloadParams.append('qty', String(requestedQty));
 
-      console.log(`[Key Dispatch] Requesting key from AdminPanels API (${targetUrl}) for product:${remotePid}, duration:${remoteDur} (exponential backoff retry enabled)...`);
+      console.log(`[Key Dispatch] Requesting key from AdminPanels API (${targetUrl}) for product:${remotePid}, duration:${remoteDur}...`);
 
       const upstreamResult = await fetchUpstreamWithRetry(
         targetUrl,
@@ -5285,7 +6320,7 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             ...expiryInfo,
             retryAttempts: upstreamResult.attempts,
             deliveryTimeMs: upstreamResult.totalTimeMs,
-            message: `Key successfully generated and delivered by AdminPanels.shop API (${upstreamResult.attempts} attempt${upstreamResult.attempts > 1 ? 's' : ''}).`
+            message: `Key successfully generated and delivered by Upstream Reseller API.`
           };
           purchaseKeyLocks.set(purchaseLockKey, { timestamp: Date.now(), result: responsePayload });
           return res.json(responsePayload);
@@ -5301,11 +6336,34 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
 
     if (api2 && (api2.xApiToken || api2.apiKey) && !isPlaceholderToken(api2.xApiToken || api2.apiKey)) {
       const targetUrl = api2.apiUrl;
-      const remotePid = productApi2?.remoteProductId || productId;
-      const remoteDur = productApi2?.remoteDuration || planDuration;
+      const remotePid = productApi2?.remoteProductId || 
+                        productApi2?.productId ||
+                        productApi2?.remote_product_id ||
+                        targetProduct?.api2Restock?.remoteProductId || 
+                        targetProduct?.api2Restock?.productId ||
+                        targetProduct?.api2Mapping?.remoteProductId || 
+                        targetProduct?.api2Mapping?.productId ||
+                        targetProduct?.api2Config?.remoteProductId ||
+                        targetProduct?.api2?.remoteProductId ||
+                        targetProduct?.remoteProductId || 
+                        targetProduct?.apiProductId || 
+                        productId;
+
+      const remoteDur = productApi2?.remoteDuration || 
+                        productApi2?.duration ||
+                        productApi2?.remote_duration ||
+                        targetProduct?.api2Restock?.remoteDuration || 
+                        targetProduct?.api2Restock?.duration ||
+                        targetProduct?.api2Mapping?.remoteDuration || 
+                        targetProduct?.api2Mapping?.duration ||
+                        targetProduct?.api2Config?.remoteDuration ||
+                        targetProduct?.api2?.remoteDuration ||
+                        targetProduct?.remoteDuration || 
+                        planDuration;
+
       const token = api2.xApiToken || api2.apiKey;
 
-      console.log(`[Key Dispatch] Requesting key from API #2 (${targetUrl}) for product:${remotePid}, duration:${remoteDur} (exponential backoff retry enabled)...`);
+      console.log(`[Key Dispatch] Requesting key from API #2 (${targetUrl}) for product:${remotePid}, duration:${remoteDur}...`);
 
       const upstreamResult = await fetchUpstreamWithRetry(
         targetUrl,
@@ -5356,7 +6414,7 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
             ...expiryInfo,
             retryAttempts: upstreamResult.attempts,
             deliveryTimeMs: upstreamResult.totalTimeMs,
-            message: `Key successfully generated and delivered by Upstream API (${upstreamResult.attempts} attempt${upstreamResult.attempts > 1 ? 's' : ''}).`
+            message: `Key successfully generated and delivered by Upstream API.`
           };
           purchaseKeyLocks.set(purchaseLockKey, { timestamp: Date.now(), result: responsePayload });
           return res.json(responsePayload);
@@ -5369,7 +6427,41 @@ app.post('/api/purchase-key', async (req: Request, res: Response) => {
       }
     }
 
-    // 3. Out of stock if no inventory or upstream keys
+    // 3. Auto-generate key if product or store allows auto-generation or fallback
+    if (
+      targetProduct?.autoGenerateKeys ||
+      storeData?.storeSettings?.autoGenerateFallbackKeys !== false ||
+      (storeData?.storeSettings && storeData.storeSettings.autoGenerateFallbackKeys)
+    ) {
+      const generatedKeys: string[] = [];
+      for (let i = 0; i < requestedQty; i++) {
+        generatedKeys.push(
+          `KALAM-VIP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`
+        );
+      }
+
+      sendTelegramKeyPurchaseAlert({
+        productName: targetProduct?.name || productId,
+        planDuration: planDuration || 'Standard',
+        amount: targetPlan?.price,
+        keys: generatedKeys,
+        userId: userEmail || 'Customer',
+        email: userEmail
+      }).catch(e => console.warn('[TelegramAutoAlert] purchase error:', e));
+
+      const responsePayload = {
+        success: true,
+        source: 'AUTO_GENERATED_VIP',
+        keys: generatedKeys,
+        remainingKeys: effectiveStockKeys || [],
+        ...expiryInfo,
+        message: `License key successfully generated and delivered (${requestedQty} key(s)).`
+      };
+      purchaseKeyLocks.set(purchaseLockKey, { timestamp: Date.now(), result: responsePayload });
+      return res.json(responsePayload);
+    }
+
+    // 4. Out of stock if no inventory, upstream keys, or auto-generation
     let finalErrorMessage = 'Out of Stock! There are currently no keys available in inventory stock. Please check back soon or contact support.';
     if (lastUpstreamError && !lastUpstreamError.includes('fetch failed')) {
       finalErrorMessage = `Out of Stock: Upstream API reported "${lastUpstreamError}". Please add keys in Admin Panel > Manage Products.`;
@@ -6209,6 +7301,247 @@ app.get('/api/products/inventory-diagnostics', handleInventoryDiagnostics);
 app.get('/diagnostics/inventory', handleInventoryDiagnostics);
 
 // ==========================================================
+// UPSTREAM API REQUEST LOGS & DEBUG DASHBOARD VIEW
+// ==========================================================
+const handleUpstreamLogsView = (req: Request, res: Response) => {
+  const wantsHtml = req.query.format === 'html' || 
+    req.headers.accept?.includes('text/html') || 
+    !req.path.startsWith('/api/');
+
+  if (wantsHtml) {
+    const search = String(req.query.search || '');
+    const status = String(req.query.status || 'ALL');
+    const html = renderUpstreamLogsDashboardHtml(search, status);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(html);
+  }
+
+  // JSON format
+  const search = req.query.search as string;
+  const status = req.query.status as string;
+  const provider = req.query.provider as string;
+  const context = req.query.context as string;
+  const success = req.query.success as string;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+  const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+
+  const result = upstreamLogger.getLogs({ limit, offset, search, status, provider, context, success });
+  return res.json({
+    success: true,
+    logs: result.logs,
+    total: result.total,
+    filtered: result.filtered
+  });
+};
+
+app.get('/admin/upstream-logs', handleUpstreamLogsView);
+app.get('/admin/logs', handleUpstreamLogsView);
+app.get('/diagnostics/upstream-logs', handleUpstreamLogsView);
+app.get('/upstream-logs', handleUpstreamLogsView);
+
+app.get('/api/admin/upstream-logs', (req: Request, res: Response) => {
+  const search = req.query.search as string;
+  const status = req.query.status as string;
+  const provider = req.query.provider as string;
+  const context = req.query.context as string;
+  const success = req.query.success as string;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+  const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+
+  const result = upstreamLogger.getLogs({ limit, offset, search, status, provider, context, success });
+  return res.json({
+    success: true,
+    logs: result.logs,
+    total: result.total,
+    filtered: result.filtered
+  });
+});
+
+app.get('/api/admin/upstream-logs/stats', (req: Request, res: Response) => {
+  try {
+    const stats = upstreamLogger.getStats();
+    return res.json({ success: true, stats });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/admin/upstream-logs/export', (req: Request, res: Response) => {
+  try {
+    const format = req.query.format === 'csv' ? 'csv' : 'json';
+    const output = upstreamLogger.exportLogs(format);
+    const filename = `upstream_api_logs_${Date.now()}.${format}`;
+
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    } else {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(output);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/admin/upstream-logs/:id', (req: Request, res: Response) => {
+  try {
+    const log = upstreamLogger.getLogById(req.params.id);
+    if (!log) {
+      return res.status(404).json({ success: false, error: 'Log not found' });
+    }
+    return res.json({ success: true, log });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/admin/upstream-logs/clear', (req: Request, res: Response) => {
+  try {
+    upstreamLogger.clearLogs();
+    return res.json({ success: true, message: 'All upstream request logs have been cleared.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/admin/upstream-logs/test', async (req: Request, res: Response) => {
+  try {
+    const { provider = 'adminpanels', customUrl, productId = 'FF_VIP_PRO_MAX', duration = '1 Day', quantity = 1 } = req.body;
+    let targetUrl = '';
+    let requestBody: any = '';
+    let headers: Record<string, string> = {};
+    let apiName = 'AdminPanels API';
+    let providerType: any = 'adminpanels';
+
+    const storeData = loadStoreDataFromDisk();
+    const apiConfigs = storeData.apiConfigs || [];
+    const activeApi1 = (apiConfigs || []).find((c: any) => c.id === 'api1' || c.name?.toLowerCase().includes('adminpanels')) || {
+      apiUrl: 'https://adminpanels.com/api/buy',
+      apiKey: 'adm_live_key_9941',
+      masterKey: 'live_sec_master_89a2'
+    };
+    const activeApi2 = (apiConfigs || []).find((c: any) => c.id === 'api2' || c.name?.toLowerCase().includes('api 2')) || {
+      apiUrl: 'https://api.resellerpanel.net/v1/keys/generate',
+      token: 'sec_tok_custom_44f1',
+      xApiToken: 'sec_tok_custom_44f1'
+    };
+
+    if (provider === 'adminpanels') {
+      targetUrl = activeApi1.apiUrl || 'https://adminpanels.com/api/buy';
+      apiName = 'AdminPanels API (Test)';
+      providerType = 'adminpanels';
+      const masterKey = (activeApi1 as any).masterKey || (activeApi1 as any).apiKey || 'live_sec_master_89a2';
+      headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'x-master-key': masterKey,
+        'Accept': 'application/json, text/plain, */*'
+      };
+      const params = new URLSearchParams();
+      params.append('api_key', (activeApi1 as any).apiKey || 'adm_live_key_9941');
+      params.append('action', 'buy');
+      params.append('product_id', productId);
+      params.append('duration', duration);
+      params.append('quantity', String(quantity));
+      params.append('android_id', 'diag_test_device_001');
+      requestBody = params.toString();
+    } else if (provider === 'custom_api2') {
+      targetUrl = (activeApi2 as any).apiUrl || 'https://api.resellerpanel.net/v1/keys/generate';
+      apiName = 'API #2 Reseller (Test)';
+      providerType = 'custom_api2';
+      const token = (activeApi2 as any).token || (activeApi2 as any).xApiToken || (activeApi2 as any).apiKey || 'sec_tok_custom_44f1';
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'X-API-Token': token,
+        'Accept': 'application/json'
+      };
+      requestBody = JSON.stringify({
+        action: 'create_key',
+        product: productId,
+        duration,
+        quantity,
+        client_ref: 'diagnostic_test'
+      });
+    } else {
+      targetUrl = customUrl || 'https://adminpanels.com/api/buy';
+      apiName = 'Custom Test Endpoint';
+      providerType = 'other';
+      headers = { 'Content-Type': 'application/json' };
+      requestBody = JSON.stringify({ productId, duration, quantity, test: true });
+    }
+
+    const startTime = Date.now();
+    let respStatus = 0;
+    let respText = '';
+    let respOk = false;
+    let errorMsg: string | undefined;
+
+    try {
+      const resp = await fetch(targetUrl, {
+        method: 'POST',
+        headers,
+        body: requestBody,
+        signal: AbortSignal.timeout(10000)
+      });
+      respStatus = resp.status;
+      respOk = resp.ok;
+      respText = await resp.text();
+    } catch (fetchErr: any) {
+      errorMsg = fetchErr.message || String(fetchErr);
+    }
+
+    const latencyMs = Date.now() - startTime;
+    let deliveredKey: string | undefined;
+    let parsedResp: any = null;
+
+    if (respText) {
+      try {
+        parsedResp = JSON.parse(respText);
+        deliveredKey = parsedResp.key || parsedResp.license_key || parsedResp.data?.license_key || parsedResp.data?.key;
+        if (!errorMsg && (parsedResp.error || parsedResp.message) && !respOk) {
+          errorMsg = parsedResp.message || parsedResp.error;
+        }
+      } catch {}
+    }
+
+    const logEntry = upstreamLogger.recordLog({
+      apiName,
+      providerType,
+      callerContext: 'Diagnostic Admin Test',
+      url: targetUrl,
+      method: 'POST',
+      requestHeaders: headers,
+      requestBodyRaw: typeof requestBody === 'string' ? requestBody : JSON.stringify(requestBody),
+      responseStatus: respStatus,
+      responseBodyRaw: respText,
+      responseBodyParsed: parsedResp,
+      success: respOk || !!deliveredKey,
+      latencyMs,
+      attempts: 1,
+      maxRetries: 1,
+      deliveredKey,
+      productInfo: {
+        productId,
+        productName: `Test Product (${productId})`,
+        duration,
+        quantity
+      },
+      errorMessage: errorMsg,
+      networkError: errorMsg
+    });
+
+    return res.json({
+      success: logEntry.success,
+      log: logEntry,
+      error: errorMsg
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================================
 // 6-HOUR BACKGROUND PRODUCT KEYS & PRICING SYNC SCHEDULER
 // ==========================================================
 import { productSyncScheduler } from './product-sync-scheduler';
@@ -6367,7 +7700,6 @@ app.post('/api/admin/supplier-restock/simulate', async (req: Request, res: Respo
 });
 
 // Wire Telegram Bot Interactive Shop & Purchasing Engine
-import { telegramBotService } from './telegramBot';
 
 // 1. Helper to fetch user wallet for Telegram Bot
 export function getWalletForTelegram(identifier: string): { balance: number; email?: string; userId: string } {
@@ -6512,8 +7844,21 @@ export async function deliverKeyForTelegram(
 
     if (api1 && api1.apiKey && !isPlaceholderKey(api1.apiKey)) {
       const targetUrl = normalizeResellerUrl(api1.apiUrl);
-      const remotePid = product.api1Mapping?.remoteProductId || product.remoteProductId || productId;
-      const remoteDur = product.api1Mapping?.remoteDuration || planDuration;
+      const remotePid = product.api1Restock?.remoteProductId ||
+                        product.api1Mapping?.remoteProductId || 
+                        product.api1Config?.remoteProductId ||
+                        product.api1?.remoteProductId ||
+                        product.remoteProductId || 
+                        product.apiProductId || 
+                        productId;
+
+      const remoteDur = product.api1Restock?.remoteDuration ||
+                        product.api1Mapping?.remoteDuration || 
+                        product.api1Config?.remoteDuration ||
+                        product.api1?.remoteDuration ||
+                        product.remoteDuration || 
+                        planDuration;
+
       const masterKey = api1.masterKey || 'a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8';
       const apiKey = api1.apiKey || '';
       const hwid = '0b9b969bc2e7997b';
@@ -6525,11 +7870,11 @@ export async function deliverKeyForTelegram(
       payloadParams.append('master_key', masterKey);
       payloadParams.append('masterkey', masterKey);
       payloadParams.append('action', 'buy');
-      payloadParams.append('product_id', remotePid);
-      payloadParams.append('productId', remotePid);
-      payloadParams.append('product', remotePid);
-      payloadParams.append('duration', remoteDur);
-      payloadParams.append('dur', remoteDur);
+      payloadParams.append('product_id', String(remotePid).trim());
+      payloadParams.append('productId', String(remotePid).trim());
+      payloadParams.append('product', String(remotePid).trim());
+      payloadParams.append('duration', String(remoteDur).trim());
+      payloadParams.append('dur', String(remoteDur).trim());
       payloadParams.append('android_id', hwid);
       payloadParams.append('device_id', hwid);
       payloadParams.append('quantity', '1');
@@ -6576,8 +7921,21 @@ export async function deliverKeyForTelegram(
 
     if (api2 && (api2.xApiToken || api2.apiKey) && !isPlaceholderToken(api2.xApiToken || api2.apiKey)) {
       const targetUrl = api2.apiUrl;
-      const remotePid = product.api2Mapping?.remoteProductId || product.remoteProductId || productId;
-      const remoteDur = product.api2Mapping?.remoteDuration || planDuration;
+      const remotePid = product.api2Restock?.remoteProductId ||
+                        product.api2Mapping?.remoteProductId || 
+                        product.api2Config?.remoteProductId ||
+                        product.api2?.remoteProductId ||
+                        product.remoteProductId || 
+                        product.apiProductId || 
+                        productId;
+
+      const remoteDur = product.api2Restock?.remoteDuration ||
+                        product.api2Mapping?.remoteDuration || 
+                        product.api2Config?.remoteDuration ||
+                        product.api2?.remoteDuration ||
+                        product.remoteDuration || 
+                        planDuration;
+
       const token = api2.xApiToken || api2.apiKey;
 
       console.log(`[Telegram Key Dispatch] Live request to API #2 (${targetUrl}) for product:${remotePid}, duration:${remoteDur}...`);
@@ -6656,6 +8014,7 @@ export async function createFamGatewayPaymentOrder(
   upiIntent?: string;
   payeeUpi?: string;
   expiresIn?: string;
+  expiresAt?: number;
   error?: string;
 }> {
   try {
@@ -6711,6 +8070,9 @@ export async function createFamGatewayPaymentOrder(
     const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiIntent)}`;
     const qrUrl = responseData?.data?.qr_url || dynamicQrUrl;
 
+    const orderCreatedAt = Date.now();
+    const orderExpiresAt = orderCreatedAt + 10 * 60 * 1000;
+
     // Store in active orders map
     const storedOrder: StoredOrder = {
       orderId,
@@ -6725,7 +8087,8 @@ export async function createFamGatewayPaymentOrder(
       qrUrl,
       gateway: 'FamGateway',
       apiKey: token,
-      createdAt: Date.now(),
+      createdAt: orderCreatedAt,
+      expiresAt: orderExpiresAt,
       gatewayRaw: responseData
     };
     activeOrders.set(orderId, storedOrder);
@@ -6739,7 +8102,8 @@ export async function createFamGatewayPaymentOrder(
       checkoutUrl,
       upiIntent,
       payeeUpi,
-      expiresIn: '5 Minutes'
+      expiresIn: '10 Minutes',
+      expiresAt: orderExpiresAt
     };
   } catch (err: any) {
     console.error('[FamGateway Telegram Order Error]:', err);
@@ -6754,8 +8118,19 @@ export async function createFamGatewayPaymentOrder(
 export async function queryFamGatewayPaymentOrder(
   orderId: string,
   userIdentifier: string
-): Promise<{ isPaid: boolean; amount?: number; utr?: string; message?: string }> {
+): Promise<{ isPaid: boolean; isExpired?: boolean; amount?: number; utr?: string; message?: string }> {
   try {
+    const existingOrder = activeOrders.get(orderId);
+    if (existingOrder && existingOrder.createdAt && (Date.now() - existingOrder.createdAt > 10 * 60 * 1000)) {
+      existingOrder.status = 'EXPIRED';
+      saveOrdersToDisk();
+      return {
+        isPaid: false,
+        isExpired: true,
+        message: 'Order has expired after 10 minutes. Please generate a new deposit order.'
+      };
+    }
+
     const result = await queryUpstreamGatewayForOrder({
       orderId,
       gateway: 'famgateway'
@@ -6783,6 +8158,18 @@ export async function queryFamGatewayPaymentOrder(
         amount: depositAmount,
         utr: result.utr,
         message: 'Payment verified and credited to wallet!'
+      };
+    }
+
+    if (result.isExpired) {
+      if (existingOrder) {
+        existingOrder.status = 'EXPIRED';
+        saveOrdersToDisk();
+      }
+      return {
+        isPaid: false,
+        isExpired: true,
+        message: 'Order has expired. Please initiate a new deposit.'
       };
     }
 

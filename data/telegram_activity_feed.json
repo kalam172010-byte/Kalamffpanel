@@ -1,0 +1,116 @@
+[
+  {
+    "id": "tg_act_1789825722114_hfs0g",
+    "timestamp": 1789825722114,
+    "isoTime": "2026-09-19T13:48:42.114Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ENGINE_START",
+    "summary": "🤖 Telegram Bot Engine Initialized",
+    "details": "Supervised polling & background activity monitoring engine active."
+  },
+  {
+    "id": "tg_act_1789825517835_rfdq3",
+    "timestamp": 1789825517835,
+    "isoTime": "2026-09-19T13:45:17.835Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ENGINE_START",
+    "summary": "🤖 Telegram Bot Engine Initialized",
+    "details": "Supervised polling & background activity monitoring engine active."
+  },
+  {
+    "id": "tg_act_1789825476908_184so",
+    "timestamp": 1789825476908,
+    "isoTime": "2026-09-19T13:44:36.908Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ENGINE_START",
+    "summary": "🤖 Telegram Bot Engine Initialized",
+    "details": "Supervised polling & background activity monitoring engine active."
+  },
+  {
+    "id": "tg_act_1789825003628_dlap1",
+    "timestamp": 1789825003628,
+    "isoTime": "2026-09-19T13:36:43.628Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ENGINE_START",
+    "summary": "🤖 Telegram Bot Engine Initialized",
+    "details": "Supervised polling & background activity monitoring engine active."
+  },
+  {
+    "id": "tg_act_1789824980753_pzno8",
+    "timestamp": 1789824980753,
+    "isoTime": "2026-09-19T13:36:20.753Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ENGINE_START",
+    "summary": "🤖 Telegram Bot Engine Initialized",
+    "details": "Supervised polling & background activity monitoring engine active."
+  },
+  {
+    "id": "tg_act_1789824527275_s9z5s",
+    "timestamp": 1789824527275,
+    "isoTime": "2026-09-19T13:28:47.275Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ENGINE_START",
+    "summary": "🤖 Telegram Bot Engine Initialized",
+    "details": "Supervised polling & background activity monitoring engine active."
+  },
+  {
+    "id": "tg_act_1789824524776_dwt8a",
+    "timestamp": 1789824524776,
+    "isoTime": "2026-09-19T13:28:44.776Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ENGINE_START",
+    "summary": "🤖 Telegram Bot Engine Initialized",
+    "details": "Supervised polling & background activity monitoring engine active."
+  },
+  {
+    "id": "tg_act_1789824509836_yp6wl",
+    "timestamp": 1789824509836,
+    "isoTime": "2026-09-19T13:28:29.836Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ENGINE_START",
+    "summary": "🤖 Telegram Bot Engine Initialized",
+    "details": "Supervised polling & background activity monitoring engine active."
+  },
+  {
+    "id": "tg_act_1789824377852_zvkyh",
+    "timestamp": 1789824377852,
+    "isoTime": "2026-09-19T13:26:17.852Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ADMIN_TEST",
+    "summary": "🔍 Diagnostic Test Activity Triggered",
+    "details": "Test message from CLI",
+    "payload": {
+      "requestedAt": "2026-09-19T13:26:17.852Z",
+      "by": "Admin"
+    }
+  },
+  {
+    "id": "tg_act_1789824369845_unzm5",
+    "timestamp": 1789824369845,
+    "isoTime": "2026-09-19T13:26:09.845Z",
+    "type": "BOT_LIFECYCLE",
+    "category": "system",
+    "severity": "info",
+    "action": "ENGINE_START",
+    "summary": "🤖 Telegram Bot Engine Initialized",
+    "details": "Supervised polling & background activity monitoring engine active."
+  }
+]

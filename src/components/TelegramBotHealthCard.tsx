@@ -22,9 +22,13 @@ import {
   WifiOff,
   Link,
   Save,
-  DownloadCloud
+  DownloadCloud,
+  UploadCloud,
+  FileJson,
+  Shield
 } from 'lucide-react';
 import type { TelegramBotHealthStatus, TelegramDiagnosticResult } from '../types';
+import { TelegramActivityFeed } from './TelegramActivityFeed';
 
 interface TelegramBotHealthCardProps {
   className?: string;
@@ -68,6 +72,11 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
   const [urlSaveSuccess, setUrlSaveSuccess] = useState<boolean>(false);
   const [urlSaveError, setUrlSaveError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
+
+  // Backup & Restore state
+  const [isDownloadingBackup, setIsDownloadingBackup] = useState<boolean>(false);
+  const [isRestoringBackup, setIsRestoringBackup] = useState<boolean>(false);
+  const [backupMessage, setBackupMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Fetch initial Telegram bot config including Check Update / APK URL
   const fetchTelegramConfig = useCallback(async () => {
@@ -130,6 +139,107 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
     navigator.clipboard.writeText(updateTelegramUrl);
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
+  };
+
+  // Download telegram_config.json backup
+  const handleDownloadBackup = async () => {
+    setIsDownloadingBackup(true);
+    setBackupMessage(null);
+    try {
+      const res = await fetch('/api/admin/telegram/backup');
+      if (!res.ok) throw new Error(`Download failed with HTTP ${res.status}`);
+      
+      const blob = await res.blob();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `telegram_config_${timestamp}.json`;
+      
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setBackupMessage({
+        type: 'success',
+        text: `✅ telegram_config.json downloaded successfully (${filename})`
+      });
+      setTimeout(() => setBackupMessage(null), 5000);
+    } catch (err: any) {
+      console.error('[TelegramBotHealthCard] Backup error:', err);
+      setBackupMessage({
+        type: 'error',
+        text: `❌ Failed to download backup: ${err.message}`
+      });
+    } finally {
+      setIsDownloadingBackup(false);
+    }
+  };
+
+  // Upload & Restore telegram_config.json backup
+  const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsRestoringBackup(true);
+    setBackupMessage(null);
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        let parsed: any;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          throw new Error('Selected file is not valid JSON. Please upload a valid telegram_config.json backup.');
+        }
+
+        const res = await fetch('/api/admin/telegram/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Failed to restore configuration');
+        }
+
+        setBackupMessage({
+          type: 'success',
+          text: `✅ telegram_config.json restored successfully! (Restored ${data.restoredKeysCount || 'all'} settings)`
+        });
+        setTimeout(() => setBackupMessage(null), 6000);
+
+        // Refresh health and config
+        await fetchTelegramConfig();
+        await fetchHealthStatus(true);
+      } catch (err: any) {
+        console.error('[TelegramBotHealthCard] Restore error:', err);
+        setBackupMessage({
+          type: 'error',
+          text: `❌ Restore failed: ${err.message}`
+        });
+      } finally {
+        setIsRestoringBackup(false);
+        // Reset file input value so user can upload same file again if needed
+        e.target.value = '';
+      }
+    };
+
+    reader.onerror = () => {
+      setIsRestoringBackup(false);
+      setBackupMessage({
+        type: 'error',
+        text: '❌ Could not read the selected backup file.'
+      });
+    };
+
+    reader.readAsText(file);
   };
 
   // Fetch bot health telemetry from backend
@@ -650,6 +760,91 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
         </form>
       </div>
 
+      {/* Telegram Configuration Backup & Restore Section */}
+      <div
+        id="telegram-config-backup-section"
+        className="relative z-10 mt-4 rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-950/20 via-zinc-900/60 to-blue-950/20 p-4 shadow-lg"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-400">
+              <FileJson className="h-4 w-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                Bot Configuration Backup & Restore
+              </h4>
+              <p className="text-[11px] text-zinc-400">
+                Secure management of <code className="text-sky-300">telegram_config.json</code> with live hot-reload
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-md bg-zinc-800/90 border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-300 font-mono">
+              <Shield className="h-3 w-3 text-sky-400" />
+              <span>Safety Auto-Bak Enabled</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-3.5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          {/* Download Backup Button */}
+          <button
+            id="download-telegram-backup-btn"
+            type="button"
+            onClick={handleDownloadBackup}
+            disabled={isDownloadingBackup}
+            className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-zinc-800/90 hover:bg-zinc-700/90 border border-zinc-700 px-3.5 py-2 text-xs font-semibold text-sky-300 shadow-sm transition-all active:scale-95 disabled:opacity-50"
+          >
+            <DownloadCloud className={`h-4 w-4 ${isDownloadingBackup ? 'animate-bounce' : ''}`} />
+            <span>{isDownloadingBackup ? 'Downloading...' : 'Download Backup (.json)'}</span>
+          </button>
+
+          {/* Upload / Restore Backup Button */}
+          <label
+            id="restore-telegram-backup-btn"
+            className={`flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 px-3.5 py-2 text-xs font-semibold text-white shadow-md shadow-sky-500/20 cursor-pointer transition-all active:scale-95 ${
+              isRestoringBackup ? 'opacity-60 cursor-not-allowed' : ''
+            }`}
+          >
+            <UploadCloud className={`h-4 w-4 ${isRestoringBackup ? 'animate-spin' : ''}`} />
+            <span>{isRestoringBackup ? 'Restoring & Applying...' : 'Upload & Restore Backup'}</span>
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={handleRestoreBackup}
+              disabled={isRestoringBackup}
+              className="hidden"
+            />
+          </label>
+        </div>
+
+        {/* Status Message */}
+        {backupMessage && (
+          <div
+            className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border ${
+              backupMessage.type === 'success'
+                ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+            }`}
+          >
+            {backupMessage.type === 'success' ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+            )}
+            <span className="flex-1">{backupMessage.text}</span>
+            <button
+              type="button"
+              onClick={() => setBackupMessage(null)}
+              className="text-zinc-400 hover:text-white text-xs px-1"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Raw Diagnostic Accordion */}
       <div className="relative z-10 mt-3 border-t border-zinc-800/60 pt-3">
         <button
@@ -677,6 +872,11 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
             </pre>
           </div>
         )}
+      </div>
+
+      {/* Live Feed of Telegram Bot Activities & Incoming Messages */}
+      <div className="relative z-10 mt-5 border-t border-zinc-800/80 pt-5">
+        <TelegramActivityFeed />
       </div>
     </div>
   );

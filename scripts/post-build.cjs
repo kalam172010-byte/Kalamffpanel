@@ -18,7 +18,14 @@ const scriptsToRun = [
   'apply-equalizer-loader.cjs',
   'add-url-routing.cjs',
   'add-telegram-apk-admin-ui.cjs',
+  'add-welcome-message-banner.cjs',
+  'fix-admin-products-display.cjs',
   'inject-reels-studio.cjs',
+  'inject-upstream-performance.cjs',
+  'inject-notification-settings.cjs',
+  'inject-admin-user-management.cjs',
+  'inject-audit-log.cjs',
+  'inject-product-maintenance.cjs',
   'sync-html-bundle.cjs'
 ];
 

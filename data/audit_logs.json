@@ -1,0 +1,601 @@
+[
+  {
+    "category": "SYSTEM_CONFIG",
+    "action": "TELEGRAM_CONFIG_RESTORED",
+    "severity": "WARNING",
+    "actor": "Admin",
+    "actorType": "ADMIN",
+    "summary": "Restored telegram_config.json from uploaded backup",
+    "details": {
+      "restoredKeys": [
+        "botToken",
+        "chatId",
+        "botUsername",
+        "apkDownloadUrl",
+        "howToUseBotLink",
+        "paymentProofChannel",
+        "welcomeMessage",
+        "proofBotToken",
+        "proofChatId",
+        "enableAutoProof",
+        "proofChannelLink",
+        "resellerUpgradeAmount",
+        "resellerDiscountPercent",
+        "updatedAt",
+        "adminChatId",
+        "upiId",
+        "supportUsername",
+        "restoredAt"
+      ],
+      "botUsername": "@KALAMFFPANEL1_12_BOT",
+      "chatId": "7768975239"
+    },
+    "id": "AUDIT_1789832517951_6KGD7A",
+    "timestamp": 1789832517952
+  },
+  {
+    "category": "SYSTEM_CONFIG",
+    "action": "TELEGRAM_CONFIG_RESTORED",
+    "severity": "WARNING",
+    "actor": "Admin",
+    "actorType": "ADMIN",
+    "summary": "Restored telegram_config.json from uploaded backup",
+    "details": {
+      "restoredKeys": [
+        "botUsername",
+        "apkDownloadUrl",
+        "welcomeMessage",
+        "updatedAt",
+        "restoredAt"
+      ],
+      "botUsername": "@KALAMFFPANEL1_12_BOT"
+    },
+    "id": "AUDIT_1789832512084_B0KD8Q",
+    "timestamp": 1789832512084
+  },
+  {
+    "category": "SYSTEM_CONFIG",
+    "action": "TELEGRAM_CONFIG_BACKUP_DOWNLOADED",
+    "severity": "INFO",
+    "actor": "Admin",
+    "actorType": "ADMIN",
+    "summary": "Downloaded telegram_config.json backup (telegram_config_2026-09-19T15-41-49-458Z.json)",
+    "details": {
+      "filename": "telegram_config_2026-09-19T15-41-49-458Z.json",
+      "hasBotToken": true,
+      "chatId": "7768975239",
+      "botUsername": "@KALAMFFPANEL1_12_BOT"
+    },
+    "id": "AUDIT_1789832509458_Q3RCUF",
+    "timestamp": 1789832509458
+  },
+  {
+    "id": "AUDIT_API_ORD_API_1789744058842_6XHS",
+    "timestamp": 1789744058842,
+    "category": "KEY_PURCHASE",
+    "action": "WEBSITE_API_KEY_DISPATCH",
+    "severity": "SUCCESS",
+    "actor": "Master Production Website Key",
+    "actorType": "SYSTEM",
+    "targetUser": {
+      "userId": "key_master_default",
+      "fullName": "Master Production Website Key"
+    },
+    "summary": "Purchased 1x DRIP CLIENT FF NONROOT APKMOD (1 day) for ₹20",
+    "details": {
+      "orderId": "ORD_API_1789744058842_6XHS",
+      "productId": "prod-1789695725550",
+      "productName": "DRIP CLIENT FF NONROOT APKMOD",
+      "planDuration": "1 day",
+      "quantity": 1,
+      "amountPaid": 20,
+      "keysDelivered": [
+        "KALAM-MVWN-3YPJ9U-QTZ3"
+      ],
+      "status": "DELIVERED"
+    }
+  },
+  {
+    "id": "AUDIT_API_ORD_API_1789735526851_4Q3O",
+    "timestamp": 1789735526851,
+    "category": "KEY_PURCHASE",
+    "action": "WEBSITE_API_KEY_DISPATCH",
+    "severity": "SUCCESS",
+    "actor": "Master Production Website Key",
+    "actorType": "SYSTEM",
+    "targetUser": {
+      "userId": "key_master_default",
+      "fullName": "Master Production Website Key"
+    },
+    "summary": "Purchased 1x XYZ CHEATS CONFIG PROXY FF NONROOT (1 hours) for ₹20",
+    "details": {
+      "orderId": "ORD_API_1789735526851_4Q3O",
+      "productId": "prod-1788620078944",
+      "productName": "XYZ CHEATS CONFIG PROXY FF NONROOT",
+      "planDuration": "1 hours",
+      "quantity": 1,
+      "amountPaid": 20,
+      "keysDelivered": [
+        "KALAM-74XV-8B5IVX-94QF"
+      ],
+      "status": "DELIVERED"
+    }
+  },
+  {
+    "id": "AUDIT_API_ORD_API_1789735526834_T7SF",
+    "timestamp": 1789735526834,
+    "category": "KEY_PURCHASE",
+    "action": "WEBSITE_API_KEY_DISPATCH",
+    "severity": "SUCCESS",
+    "actor": "Master Production Website Key",
+    "actorType": "SYSTEM",
+    "targetUser": {
+      "userId": "key_master_default",
+      "fullName": "Master Production Website Key"
+    },
+    "summary": "Purchased 1x DRIPCLIENT FF NONROOT APKMOD (1 day) for ₹40",
+    "details": {
+      "orderId": "ORD_API_1789735526834_T7SF",
+      "productId": "prod-1788707639854",
+      "productName": "DRIPCLIENT FF NONROOT APKMOD",
+      "planDuration": "1 day",
+      "quantity": 1,
+      "amountPaid": 40,
+      "keysDelivered": [
+        "1234567890"
+      ],
+      "status": "DELIVERED"
+    }
+  },
+  {
+    "id": "AUDIT_API_ORD_API_1789735526809_D434",
+    "timestamp": 1789735526809,
+    "category": "KEY_PURCHASE",
+    "action": "WEBSITE_API_KEY_DISPATCH",
+    "severity": "SUCCESS",
+    "actor": "Master Production Website Key",
+    "actorType": "SYSTEM",
+    "targetUser": {
+      "userId": "key_master_default",
+      "fullName": "Master Production Website Key"
+    },
+    "summary": "Purchased 1x DRIP CLIENT FF NONROOT APKMOD (1 day) for ₹20",
+    "details": {
+      "orderId": "ORD_API_1789735526809_D434",
+      "productId": "prod-1789695725550",
+      "productName": "DRIP CLIENT FF NONROOT APKMOD",
+      "planDuration": "1 day",
+      "quantity": 1,
+      "amountPaid": 20,
+      "keysDelivered": [
+        "KALAM-3JOS-ZN4TNJ-RLIK"
+      ],
+      "status": "DELIVERED"
+    }
+  },
+  {
+    "id": "AUDIT_API_ORD_API_1789735405691_QH84",
+    "timestamp": 1789735405691,
+    "category": "KEY_PURCHASE",
+    "action": "WEBSITE_API_KEY_DISPATCH",
+    "severity": "SUCCESS",
+    "actor": "Master Production Website Key",
+    "actorType": "SYSTEM",
+    "targetUser": {
+      "userId": "key_master_default",
+      "fullName": "Master Production Website Key"
+    },
+    "summary": "Purchased 1x DRIP CLIENT FF NONROOT APKMOD (1 day) for ₹20",
+    "details": {
+      "orderId": "ORD_API_1789735405691_QH84",
+      "productId": "prod-1789695725550",
+      "productName": "DRIP CLIENT FF NONROOT APKMOD",
+      "planDuration": "1 day",
+      "quantity": 1,
+      "amountPaid": 20,
+      "keysDelivered": [
+        "KALAM-2E2J-UPU9WG-HVG8"
+      ],
+      "status": "DELIVERED"
+    }
+  },
+  {
+    "id": "WH_1789317044571_992",
+    "timestamp": 1789317044571,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "tg_7768975239",
+      "email": "tg_7768975239"
+    },
+    "summary": "Deposit Credit of ₹50 (Testing Admin Balance Credit)",
+    "details": {
+      "amount": 50,
+      "balanceAfter": 50,
+      "reason": "Testing Admin Balance Credit",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1789307383980_684",
+    "timestamp": 1789307383980,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "kalam172010@gmail.com",
+      "email": "kalam172010@gmail.com"
+    },
+    "summary": "Deposit Credit of ₹150 (Deposit claimed for UTR 998877665544)",
+    "details": {
+      "amount": 150,
+      "balanceAfter": 290112.65,
+      "reason": "Deposit claimed for UTR 998877665544",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1789306977798_904",
+    "timestamp": 1789306977798,
+    "category": "KEY_PURCHASE",
+    "action": "STORE_KEY_PURCHASE",
+    "severity": "INFO",
+    "actor": "User Storefront",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "kalam172010@gmail.com",
+      "email": "kalam172010@gmail.com"
+    },
+    "summary": "Storefront Purchase of ₹50 (Purchase: DRIPCLIENT FF NONROOT APKMOD)",
+    "details": {
+      "amount": 50,
+      "balanceAfter": 289962.65,
+      "reason": "Purchase: DRIPCLIENT FF NONROOT APKMOD",
+      "type": "DEDUCT"
+    }
+  },
+  {
+    "id": "WH_1789306787951_564",
+    "timestamp": 1789306787951,
+    "category": "KEY_PURCHASE",
+    "action": "STORE_KEY_PURCHASE",
+    "severity": "INFO",
+    "actor": "User Storefront",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "kalam172010@gmail.com",
+      "email": "kalam172010@gmail.com"
+    },
+    "summary": "Storefront Purchase of ₹50 (Purchase: DRIPCLIENT FF NONROOT APKMOD)",
+    "details": {
+      "amount": 50,
+      "balanceAfter": 289962.65,
+      "reason": "Purchase: DRIPCLIENT FF NONROOT APKMOD",
+      "type": "DEDUCT"
+    }
+  },
+  {
+    "id": "WH_1788795171901_643",
+    "timestamp": 1788795171901,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "test_user_sync_1",
+      "email": "test1@kalam.com"
+    },
+    "summary": "Deposit Credit of ₹50 (Deposit: ₹50)",
+    "details": {
+      "amount": 50,
+      "balanceAfter": 100,
+      "reason": "Deposit: ₹50",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1788795163614_963",
+    "timestamp": 1788795163614,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "test_user_sync_1",
+      "email": "test1@kalam.com"
+    },
+    "summary": "Deposit Credit of ₹50 (Deposit: ₹50)",
+    "details": {
+      "amount": 50,
+      "balanceAfter": 50,
+      "reason": "Deposit: ₹50",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1788794529511_663",
+    "timestamp": 1788794529511,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "test_user_2",
+      "email": "user2@test.com"
+    },
+    "summary": "Deposit Credit of ₹50 (Payment confirmed via UTR 999988887777)",
+    "details": {
+      "amount": 50,
+      "balanceAfter": 50,
+      "reason": "Payment confirmed via UTR 999988887777",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1788794511209_739",
+    "timestamp": 1788794511209,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "test_user"
+    },
+    "summary": "Deposit Credit of ₹100 (Deposit: ₹100 (111122223333))",
+    "details": {
+      "amount": 100,
+      "balanceAfter": 100,
+      "reason": "Deposit: ₹100 (111122223333)",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1788789054829_996",
+    "timestamp": 1788789054829,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "0kvtxlaj9hbe54fqpttidybppqf2",
+      "email": "vel1212@gamil.com"
+    },
+    "summary": "Deposit Credit of ₹1 (Deposit: ₹1 (004774894397))",
+    "details": {
+      "amount": 1,
+      "balanceAfter": 1,
+      "reason": "Deposit: ₹1 (004774894397)",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1788789053993_815",
+    "timestamp": 1788789053993,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "0kvtxlaj9hbe54fqpttidybppqf2",
+      "email": "vel1212@gamil.com"
+    },
+    "summary": "Deposit Credit of ₹1 (Payment verified: fg_Q9JXYR23 (UTR: 004774894397))",
+    "details": {
+      "amount": 1,
+      "balanceAfter": 3,
+      "reason": "Payment verified: fg_Q9JXYR23 (UTR: 004774894397)",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1788786698641_679",
+    "timestamp": 1788786698641,
+    "category": "KEY_PURCHASE",
+    "action": "STORE_KEY_PURCHASE",
+    "severity": "INFO",
+    "actor": "User Storefront",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "kalam172010@gmail.com",
+      "email": "kalam172010@gmail.com"
+    },
+    "summary": "Storefront Purchase of ₹10 (Revert test balance)",
+    "details": {
+      "amount": 10,
+      "balanceAfter": 290011.65,
+      "reason": "Revert test balance",
+      "type": "DEDUCT"
+    }
+  },
+  {
+    "id": "WH_1788786691186_284",
+    "timestamp": 1788786691186,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "kalam172010@gmail.com",
+      "email": "kalam172010@gmail.com"
+    },
+    "summary": "Deposit Credit of ₹10 (Test deposit verification)",
+    "details": {
+      "amount": 10,
+      "balanceAfter": 290021.65,
+      "reason": "Test deposit verification",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1788785854913_409",
+    "timestamp": 1788785854913,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "0kvtxlaj9hbe54fqpttidybppqf2",
+      "email": "vel1212@gamil.com"
+    },
+    "summary": "Deposit Credit of ₹1 (Deposit: ₹1 (004772105123))",
+    "details": {
+      "amount": 1,
+      "balanceAfter": 2,
+      "reason": "Deposit: ₹1 (004772105123)",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "WH_1788785415121_663",
+    "timestamp": 1788785415121,
+    "category": "KEY_PURCHASE",
+    "action": "STORE_KEY_PURCHASE",
+    "severity": "INFO",
+    "actor": "User Storefront",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "test_user_1",
+      "email": "test@example.com"
+    },
+    "summary": "Storefront Purchase of ₹50 (Key Purchase)",
+    "details": {
+      "amount": 50,
+      "balanceAfter": 100,
+      "reason": "Key Purchase",
+      "type": "DEDUCT"
+    }
+  },
+  {
+    "id": "WH_1788785404994_838",
+    "timestamp": 1788785404994,
+    "category": "DEPOSIT_CREDIT",
+    "action": "UPI_DEPOSIT_CREDIT",
+    "severity": "SUCCESS",
+    "actor": "UPI Gateway / User",
+    "actorType": "USER",
+    "targetUser": {
+      "userId": "test_user_1",
+      "email": "test@example.com"
+    },
+    "summary": "Deposit Credit of ₹150 (UPI Test Deposit)",
+    "details": {
+      "amount": 150,
+      "balanceAfter": 150,
+      "reason": "UPI Test Deposit",
+      "type": "DEPOSIT"
+    }
+  },
+  {
+    "id": "AUDIT_RESELLER_7768975239_1788712241496",
+    "timestamp": 1788712241496,
+    "category": "RESELLER_UPGRADE",
+    "action": "VIP_RESELLER_PROMOTION",
+    "severity": "SUCCESS",
+    "actor": "Admin / System Promotion",
+    "actorType": "ADMIN",
+    "targetUser": {
+      "userId": "tg_7768975239",
+      "chatId": 7768975239,
+      "username": "Velprasath_12",
+      "fullName": "Vel Vel"
+    },
+    "summary": "User promoted to VIP Reseller Tier (Balance: ₹0)",
+    "details": {
+      "chatId": 7768975239,
+      "username": "Velprasath_12",
+      "role": "ADMIN",
+      "totalSpent": 43
+    }
+  },
+  {
+    "id": "AUDIT_API_ORD_API_1788691514199_DQZ1",
+    "timestamp": 1788691514200,
+    "category": "KEY_PURCHASE",
+    "action": "WEBSITE_API_KEY_DISPATCH",
+    "severity": "SUCCESS",
+    "actor": "Master Production Website Key",
+    "actorType": "SYSTEM",
+    "targetUser": {
+      "userId": "key_master_default",
+      "fullName": "Master Production Website Key"
+    },
+    "summary": "Purchased 1x XYZ CHEATS CONFIG PROXY FF NONROOT (1 hours) for ₹15",
+    "details": {
+      "orderId": "ORD_API_1788691514199_DQZ1",
+      "productId": "prod-1788620078944",
+      "productName": "XYZ CHEATS CONFIG PROXY FF NONROOT",
+      "planDuration": "1 hours",
+      "quantity": 1,
+      "amountPaid": 15,
+      "keysDelivered": [
+        "KALAM-TLPC-R93T6A-7LUL"
+      ],
+      "status": "DELIVERED"
+    }
+  },
+  {
+    "id": "AUDIT_API_ORD_API_1788690791330_NXOJ",
+    "timestamp": 1788690791330,
+    "category": "KEY_PURCHASE",
+    "action": "WEBSITE_API_KEY_DISPATCH",
+    "severity": "SUCCESS",
+    "actor": "Master Production Website Key",
+    "actorType": "SYSTEM",
+    "targetUser": {
+      "userId": "key_master_default",
+      "fullName": "Master Production Website Key"
+    },
+    "summary": "Purchased 1x XYZ CHEATS CONFIG PROXY FF NONROOT (1 day) for ₹160",
+    "details": {
+      "orderId": "ORD_API_1788690791330_NXOJ",
+      "productId": "prod-1788620078944",
+      "productName": "XYZ CHEATS CONFIG PROXY FF NONROOT",
+      "planDuration": "1 day",
+      "quantity": 1,
+      "amountPaid": 160,
+      "keysDelivered": [
+        "KALAM-65HH-M496R7-BBJJ"
+      ],
+      "status": "DELIVERED"
+    }
+  },
+  {
+    "id": "AUDIT_API_ORD_API_1788625010499_0QZD",
+    "timestamp": 1788625010499,
+    "category": "KEY_PURCHASE",
+    "action": "WEBSITE_API_KEY_DISPATCH",
+    "severity": "SUCCESS",
+    "actor": "Master Production Website Key",
+    "actorType": "SYSTEM",
+    "targetUser": {
+      "userId": "key_master_default",
+      "fullName": "Master Production Website Key"
+    },
+    "summary": "Purchased 1x XYZ CHEATS CONFIG PROXY FF NONROOT (1 day) for ₹99",
+    "details": {
+      "orderId": "ORD_API_1788625010499_0QZD",
+      "productId": "prod-1788620078944",
+      "productName": "XYZ CHEATS CONFIG PROXY FF NONROOT",
+      "planDuration": "1 day",
+      "quantity": 1,
+      "amountPaid": 99,
+      "keysDelivered": [
+        "KALAM-E3XM-TLA4P4-63NF"
+      ],
+      "status": "DELIVERED"
+    }
+  }
+]

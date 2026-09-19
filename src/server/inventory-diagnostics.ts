@@ -826,6 +826,7 @@ export function renderInventoryDiagnosticsHtml(report: InventoryDiagnosticsRepor
         <p>Real-time cross-reference between globalProductsCache and Upstream Restock APIs</p>
       </div>
       <div class="header-actions">
+        <a href="/admin/upstream-logs" class="btn btn-cyan" style="background: #10b981; color: #000;">📡 Upstream API Logs</a>
         <a href="?format=html&test_upstream=true" class="btn btn-cyan">⟳ Test Upstream & Refresh</a>
         <a href="/api/inventory/diagnostics" target="_blank" class="btn btn-purple">{ } JSON API</a>
       </div>

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type { TelegramActivityEvent, TelegramActivityFeedStats } from '../types';
 
 interface TelegramUpdate {
   update_id: number;
@@ -21,6 +22,38 @@ interface TelegramUpdate {
     };
     date: number;
     text?: string;
+    caption?: string;
+    photo?: Array<{
+      file_id: string;
+      file_unique_id: string;
+      width: number;
+      height: number;
+      file_size?: number;
+    }>;
+    audio?: {
+      file_id: string;
+      file_unique_id: string;
+      duration: number;
+      performer?: string;
+      title?: string;
+      file_name?: string;
+      mime_type?: string;
+      file_size?: number;
+    };
+    voice?: {
+      file_id: string;
+      file_unique_id: string;
+      duration: number;
+      mime_type?: string;
+      file_size?: number;
+    };
+    document?: {
+      file_id: string;
+      file_unique_id: string;
+      file_name?: string;
+      mime_type?: string;
+      file_size?: number;
+    };
   };
   callback_query?: {
     id: string;
@@ -51,17 +84,18 @@ export const I18N_TEXTS: Record<BotLanguage, Record<string, string>> = {
     bullet_support: '📞 <b>24/7 admin support</b>',
     balance_label: '💵 <b>Balance: ₹{balance}</b>',
     tap_to_begin: '<i>Tap any button below to begin:</i>',
-    btn_admin: '🎛️ Master Admin Control Panel 👑',
-    btn_buy_now: '🛒 Buy Now',
-    btn_check_update: 'Check Update',
-    btn_add_balance: '💸 Add Balance',
-    btn_my_profile: '👑 My Profile + All History',
-    btn_refer_earn: '🔗 Refer And Earn',
-    btn_how_to_use: '⁉️ How To Use Bot',
-    btn_support: '✈️ Support',
-    btn_daily_gift: '🎁 Daily Gift',
-    btn_reseller: '💎 VIP Reseller Upgrade',
-    btn_language: '🌐 Language / மொழி / भाषा',
+    btn_admin: '👑 🎛️ Master Admin Control Panel',
+    btn_buy_now: '🟢 🛒 Buy Now',
+    btn_check_update: '🟢 🔄 Check Update',
+    btn_add_balance: '🟢 💸 Add Balance',
+    btn_my_profile: '🟢 👑 My Profile + All History',
+    btn_refer_earn: '🟢 🔗 Refer And Earn',
+    btn_how_to_use: '🟢 ⁉️ How To Use Bot',
+    btn_support: '🟢 ✈️ Support',
+    btn_daily_gift: '🟢 🎁 Daily Gift',
+    btn_reseller: '🟢 💎 VIP Reseller Upgrade',
+    btn_commands: '🟢 📜 Bot Commands List',
+    btn_language: '🟢 🌐 Language / மொழி / भाषा',
     btn_main_menu: '🏠 Main Menu',
     btn_back: '🔙 Back',
     lang_prompt: '🌐 <b>Select Your Preferred Language / உங்கள் மொழியைத் தேர்ந்தெடுக்கவும் / अपनी भाषा चुनें:</b>\n\n<i>Choose an option below:</i>',
@@ -76,17 +110,18 @@ export const I18N_TEXTS: Record<BotLanguage, Record<string, string>> = {
     bullet_support: '📞 <b>24/7 அட்மின் உதவி</b>',
     balance_label: '💵 <b>உங்கள் இருப்பு (Balance): ₹{balance}</b>',
     tap_to_begin: '<i>தொடங்க கீழே உள்ள பட்டனை தட்டவும்:</i>',
-    btn_admin: '🎛️ மாஸ்டர் அட்மின் கண்ட்ரோல் பேனல் 👑',
-    btn_buy_now: '🛒 இப்போதே வாங்கவும் (Buy Now)',
-    btn_check_update: '🔄 அப்டேட் பார்க்க (Check Update)',
-    btn_add_balance: '💸 பணம் சேர்க்க (Add Balance)',
-    btn_my_profile: '👑 எனது கணக்கு & வரலாறு (Profile)',
-    btn_refer_earn: '🔗 நண்பர்களை அழைத்து சம்பாதிக்க (Refer)',
-    btn_how_to_use: '⁉️ பாட்டை எப்படி பயன்படுத்துவது',
-    btn_support: '✈️ உதவி (Support)',
-    btn_daily_gift: '🎁 தினசரி பரிசு (Daily Gift)',
-    btn_reseller: '💎 விஐபி ரீசெல்லர் பதவி உயர்வு',
-    btn_language: '🌐 மொழி மாற்று / Language (தமிழ்)',
+    btn_admin: '👑 🎛️ மாஸ்டர் அட்மின் கண்ட்ரோல் பேனல்',
+    btn_buy_now: '🟢 🛒 இப்போதே வாங்கவும் (Buy Now)',
+    btn_check_update: '🟢 🔄 அப்டேட் பார்க்க (Check Update)',
+    btn_add_balance: '🟢 💸 பணம் சேர்க்க (Add Balance)',
+    btn_my_profile: '🟢 👑 எனது கணக்கு & வரலாறு (Profile)',
+    btn_refer_earn: '🟢 🔗 நண்பர்களை அழைத்து சம்பாதிக்க (Refer)',
+    btn_how_to_use: '🟢 ⁉️ பாட்டை எப்படி பயன்படுத்துவது',
+    btn_support: '🟢 ✈️ உதவி (Support)',
+    btn_daily_gift: '🟢 🎁 தினசரி பரிசு (Daily Gift)',
+    btn_reseller: '🟢 💎 விஐபி ரீசெல்லர் பதவி உயர்வு',
+    btn_commands: '🟢 📜 அனைத்து பாட் கமெண்ட்கள் (Commands)',
+    btn_language: '🟢 🌐 மொழி மாற்று / Language (தமிழ்)',
     btn_main_menu: '🏠 முதன்மை பட்டி (Main Menu)',
     btn_back: '🔙 பின்செல்ல (Back)',
     lang_prompt: '🌐 <b>உங்கள் விருப்ப மொழியைத் தேர்ந்தெடுக்கவும் (Select Language):</b>\n\n<i>கீழே உள்ள பட்டனை அழுத்தவும்:</i>',
@@ -101,17 +136,18 @@ export const I18N_TEXTS: Record<BotLanguage, Record<string, string>> = {
     bullet_support: '📞 <b>24/7 एडमिन सहायता</b>',
     balance_label: '💵 <b>वॉलेट बैलेंस: ₹{balance}</b>',
     tap_to_begin: '<i>शुरू करने के लिए नीचे दिए गए बटन पर टैप करें:</i>',
-    btn_admin: '🎛️ मास्टर एडमिन कंट्रोल पैनल 👑',
-    btn_buy_now: '🛒 अभी खरीदें (Buy Now)',
-    btn_check_update: '🔄 अपडेट देखें (Check Update)',
-    btn_add_balance: '💸 बैलेंस जोड़ें (Add Balance)',
-    btn_my_profile: '👑 मेरी प्रोफ़ाइल और इतिहास (Profile)',
-    btn_refer_earn: '🔗 रेफर करें और कमाएं (Refer)',
-    btn_how_to_use: '⁉️ बॉट का उपयोग कैसे करें',
-    btn_support: '✈️ सहायता (Support)',
-    btn_daily_gift: '🎁 दैनिक उपहार (Daily Gift)',
-    btn_reseller: '💎 वीआईपी रीसेलर अपग्रेड',
-    btn_language: '🌐 भाषा बदलें / Language (हिन्दी)',
+    btn_admin: '👑 🎛️ मास्टर एडमिन कंट्रोल पैनल',
+    btn_buy_now: '🟢 🛒 अभी खरीदें (Buy Now)',
+    btn_check_update: '🟢 🔄 अपडेट देखें (Check Update)',
+    btn_add_balance: '🟢 💸 बैलेंस जोड़ें (Add Balance)',
+    btn_my_profile: '🟢 👑 मेरी प्रोफ़ाइल और इतिहास (Profile)',
+    btn_refer_earn: '🟢 🔗 रेफर करें और कमाएं (Refer)',
+    btn_how_to_use: '🟢 ⁉️ बॉट का उपयोग कैसे करें',
+    btn_support: '🟢 ✈️ सहायता (Support)',
+    btn_daily_gift: '🟢 🎁 दैनिक उपहार (Daily Gift)',
+    btn_reseller: '🟢 💎 वीआईपी रीसेलर अपग्रेड',
+    btn_commands: '🟢 📜 सभी बॉट कमांड्स (Commands)',
+    btn_language: '🟢 🌐 भाषा बदलें / Language (हिन्दी)',
     btn_main_menu: '🏠 मुख्य मेनू (Main Menu)',
     btn_back: '🔙 वापस (Back)',
     lang_prompt: '🌐 <b>अपनी पसंदीदा भाषा चुनें (Select Language):</b>\n\n<i>नीचे दिए गए विकल्पों में से चुनें:</i>',
@@ -321,13 +357,33 @@ export class TelegramBotService {
   private confirmedDepositOrders = new Set<string>();
   private lastLowStockAlertSent = new Map<string, { stock: number; timestamp: number; isOutOfStock: boolean }>();
   private lowStockCheckTimer: NodeJS.Timeout | null = null;
+  private recentActivities: TelegramActivityEvent[] = [];
+  private totalMessagesReceived = 0;
+  private totalCallbacksReceived = 0;
+  private totalKeysDeliveredCount = 0;
+  private totalDepositsCount = 0;
+  private totalErrorsCount = 0;
+  private activeUsersSet = new Set<string | number>();
+  private botStartTime = Date.now();
+  private activityListeners = new Set<(event: TelegramActivityEvent) => void>();
+  private lastActivitiesSavedAt = 0;
 
   private constructor() {
+    this.recentActivities = this.loadActivitiesFromDisk();
     this.lastUpdateId = this.loadLastUpdateId();
     this.processedKeys = this.loadProcessedKeys();
     this.confirmedDepositOrders = this.loadConfirmedOrders();
     this.initSupervisor();
     this.initLowStockMonitor();
+
+    this.recordActivity({
+      type: 'BOT_LIFECYCLE',
+      category: 'system',
+      severity: 'info',
+      summary: '🤖 Telegram Bot Engine Initialized',
+      details: 'Supervised polling & background activity monitoring engine active.',
+      action: 'ENGINE_START'
+    });
   }
 
   public static getInstance(): TelegramBotService {
@@ -335,6 +391,176 @@ export class TelegramBotService {
       TelegramBotService.instance = new TelegramBotService();
     }
     return TelegramBotService.instance;
+  }
+
+  private loadActivitiesFromDisk(): TelegramActivityEvent[] {
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_activity_feed.json');
+      if (fs.existsSync(filePath)) {
+        const arr = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (Array.isArray(arr)) {
+          return arr.slice(0, 300);
+        }
+      }
+    } catch {}
+    return [];
+  }
+
+  private saveActivitiesToDisk(force = false) {
+    const now = Date.now();
+    if (!force && now - this.lastActivitiesSavedAt < 5000) {
+      return;
+    }
+    this.lastActivitiesSavedAt = now;
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_activity_feed.json');
+      const toSave = this.recentActivities.slice(0, 200);
+      fs.writeFileSync(filePath, JSON.stringify(toSave, null, 2), 'utf8');
+    } catch {}
+  }
+
+  public recordActivity(event: {
+    id?: string;
+    timestamp?: number;
+    type: TelegramActivityEvent['type'];
+    category: TelegramActivityEvent['category'];
+    severity: TelegramActivityEvent['severity'];
+    userId?: string | number;
+    chatId?: string | number;
+    chatType?: string;
+    chatTitle?: string;
+    username?: string;
+    firstName?: string;
+    lastName?: string;
+    action?: string;
+    summary: string;
+    details?: string;
+    payload?: any;
+    responseStatus?: string;
+    durationMs?: number;
+  }) {
+    const now = event.timestamp || Date.now();
+    const fullEvent: TelegramActivityEvent = {
+      id: event.id || `tg_act_${now}_${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: now,
+      isoTime: new Date(now).toISOString(),
+      type: event.type,
+      category: event.category,
+      severity: event.severity,
+      userId: event.userId,
+      chatId: event.chatId,
+      chatType: event.chatType,
+      chatTitle: event.chatTitle,
+      username: event.username,
+      firstName: event.firstName,
+      lastName: event.lastName,
+      action: event.action,
+      summary: event.summary,
+      details: event.details,
+      payload: event.payload,
+      responseStatus: event.responseStatus,
+      durationMs: event.durationMs,
+    };
+
+    if (event.category === 'message') this.totalMessagesReceived++;
+    if (event.category === 'callback') this.totalCallbacksReceived++;
+    if (event.category === 'key') this.totalKeysDeliveredCount++;
+    if (event.category === 'order') this.totalDepositsCount++;
+    if (event.severity === 'error' || event.category === 'error') this.totalErrorsCount++;
+    if (event.userId) this.activeUsersSet.add(event.userId);
+
+    this.recentActivities.unshift(fullEvent);
+    if (this.recentActivities.length > 500) {
+      this.recentActivities = this.recentActivities.slice(0, 500);
+    }
+
+    for (const listener of this.activityListeners) {
+      try { listener(fullEvent); } catch {}
+    }
+
+    this.saveActivitiesToDisk();
+  }
+
+  public subscribeActivityStream(listener: (event: TelegramActivityEvent) => void): () => void {
+    this.activityListeners.add(listener);
+    return () => {
+      this.activityListeners.delete(listener);
+    };
+  }
+
+  public getActivityFeed(options?: {
+    limit?: number;
+    category?: string;
+    type?: string;
+    search?: string;
+    sinceTimestamp?: number;
+  }): {
+    activities: TelegramActivityEvent[];
+    stats: TelegramActivityFeedStats;
+  } {
+    let list = [...this.recentActivities];
+
+    if (options?.sinceTimestamp) {
+      list = list.filter(a => a.timestamp > (options.sinceTimestamp || 0));
+    }
+
+    if (options?.category && options.category !== 'all') {
+      list = list.filter(a => a.category === options.category);
+    }
+
+    if (options?.type && options.type !== 'all') {
+      list = list.filter(a => a.type === options.type);
+    }
+
+    if (options?.search && options.search.trim()) {
+      const q = options.search.trim().toLowerCase();
+      list = list.filter(a => 
+        (a.summary && a.summary.toLowerCase().includes(q)) ||
+        (a.details && a.details.toLowerCase().includes(q)) ||
+        (a.action && a.action.toLowerCase().includes(q)) ||
+        (a.username && a.username.toLowerCase().includes(q)) ||
+        (a.firstName && a.firstName.toLowerCase().includes(q)) ||
+        (a.chatId && String(a.chatId).includes(q)) ||
+        (a.userId && String(a.userId).includes(q))
+      );
+    }
+
+    const limit = Math.min(Math.max(1, Number(options?.limit) || 50), 300);
+    const sliced = list.slice(0, limit);
+
+    const now = Date.now();
+    const stats: TelegramActivityFeedStats = {
+      totalEvents: this.recentActivities.length,
+      totalMessages: this.totalMessagesReceived,
+      totalCallbacks: this.totalCallbacksReceived,
+      totalKeysDelivered: this.totalKeysDeliveredCount,
+      totalDeposits: this.totalDepositsCount,
+      totalErrors: this.totalErrorsCount,
+      activeUsersCount: this.activeUsersSet.size,
+      lastActiveTime: this.recentActivities[0]?.timestamp || this.lastSuccessfulPollTime || now,
+      isPolling: this.isPolling,
+      isWebhookActive: this.isWebhookActive,
+      botUsername: this.botUsername,
+      uptimeSeconds: Math.floor((now - this.botStartTime) / 1000)
+    };
+
+    return {
+      activities: sliced,
+      stats
+    };
+  }
+
+  public clearActivityFeed(): boolean {
+    this.recentActivities = [];
+    this.saveActivitiesToDisk(true);
+    this.recordActivity({
+      type: 'BOT_LIFECYCLE',
+      category: 'system',
+      severity: 'info',
+      summary: '🧹 Activity Feed Cleared',
+      details: 'Telegram bot activity feed and incoming message logs were reset by master administrator.'
+    });
+    return true;
   }
 
   private loadConfirmedOrders(): Set<string> {
@@ -425,7 +651,7 @@ export class TelegramBotService {
     return dataDir;
   }
 
-  private getCredentials(): {
+  public getCredentials(): {
     botToken: string;
     defaultChatId: string;
     apkDownloadUrl: string;
@@ -1190,11 +1416,29 @@ export class TelegramBotService {
 
   public loadProductsFromDisk(): any[] {
     try {
-      const filePath = path.join(this.getDataDir(), 'products.json');
-      if (fs.existsSync(filePath)) {
-        const raw = fs.readFileSync(filePath, 'utf-8');
+      // 1. If stored callback exists from server, check it first
+      if (this.storedCallbacks && typeof this.storedCallbacks.getProducts === 'function') {
+        try {
+          const fromCb = this.storedCallbacks.getProducts();
+          if (Array.isArray(fromCb) && fromCb.length > 0) return fromCb;
+        } catch {}
+      }
+
+      // 2. Read live products_db.json
+      const dataDir = this.getDataDir();
+      const dbFilePath = path.join(dataDir, 'products_db.json');
+      if (fs.existsSync(dbFilePath)) {
+        const raw = fs.readFileSync(dbFilePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+
+      // 3. Fallback to legacy products.json
+      const legacyFilePath = path.join(dataDir, 'products.json');
+      if (fs.existsSync(legacyFilePath)) {
+        const raw = fs.readFileSync(legacyFilePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {
       console.warn('[TelegramBot] Error loading products from disk:', e);
@@ -1208,10 +1452,24 @@ export class TelegramBotService {
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
       }
-      const filePath = path.join(dataDir, 'products.json');
-      fs.writeFileSync(filePath, JSON.stringify(products, null, 2), 'utf-8');
+      // Save to both products_db.json (primary) and products.json (legacy)
+      const dbFilePath = path.join(dataDir, 'products_db.json');
+      fs.writeFileSync(dbFilePath, JSON.stringify(products, null, 2), 'utf-8');
+      const legacyFilePath = path.join(dataDir, 'products.json');
+      fs.writeFileSync(legacyFilePath, JSON.stringify(products, null, 2), 'utf-8');
     } catch (e) {
       console.warn('[TelegramBot] Error saving products to disk:', e);
+    }
+  }
+
+  public syncProducts(products: any[]) {
+    try {
+      if (Array.isArray(products)) {
+        this.saveProductsToDisk(products);
+        console.log(`[TelegramBot] Synchronized ${products.length} products with Telegram Bot in real-time.`);
+      }
+    } catch (e) {
+      console.warn('[TelegramBot] Error in syncProducts:', e);
     }
   }
 
@@ -1599,6 +1857,18 @@ export class TelegramBotService {
     };
     this.saveStoreDataToDisk(storeData);
     return { success: true, noticeText: noticeText.trim(), isActive };
+  }
+
+  // 7.1 Welcome Message Banner
+  public setWebsiteWelcomeBanner(bannerMsg: string, bannerTitle?: string, bannerBadge?: string, isActive: boolean = true): { success: boolean; bannerMsg: string; bannerTitle?: string; bannerBadge?: string; isActive: boolean } {
+    const storeData = this.loadStoreDataFromDisk();
+    if (!storeData.storeSettings) storeData.storeSettings = {};
+    storeData.storeSettings.welcomeBannerMessage = bannerMsg.trim();
+    if (bannerTitle) storeData.storeSettings.welcomeBannerTitle = bannerTitle.trim();
+    if (bannerBadge) storeData.storeSettings.welcomeBannerBadge = bannerBadge.trim();
+    storeData.storeSettings.welcomeBannerEnabled = isActive;
+    this.saveStoreDataToDisk(storeData);
+    return { success: true, bannerMsg: bannerMsg.trim(), bannerTitle, bannerBadge, isActive };
   }
 
   // 8. Maintenance Mode
@@ -2088,6 +2358,7 @@ export class TelegramBotService {
       });
 
       const data: any = await res.json();
+      let success = !!data.ok;
       if (!data.ok) {
         // Fallback without parse_mode if HTML tags cause a parse error or if reply_markup failed
         if (data.description && (data.description.includes('BUTTON_URL') || data.description.includes('keyboard') || data.description.includes('markup'))) {
@@ -2095,15 +2366,39 @@ export class TelegramBotService {
         }
         payload.parse_mode = undefined;
         payload.text = text.replace(/<[^>]*>/g, '');
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        const fallbackRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
+        const fallbackData: any = await fallbackRes.json();
+        success = !!fallbackData.ok;
       }
-      return true;
+
+      this.recordActivity({
+        type: 'OUTGOING_MESSAGE',
+        category: 'message',
+        severity: success ? 'info' : 'warning',
+        chatId,
+        action: 'SEND_MESSAGE',
+        summary: `📤 Bot replied to chat ${chatId}`,
+        details: text.replace(/<[^>]*>/g, '').slice(0, 160),
+        responseStatus: success ? 'DELIVERED' : 'ERROR',
+        payload: { success, chatId, preview: text.slice(0, 100) }
+      });
+
+      return success;
     } catch (err: any) {
       console.error('[TelegramBot] sendMessage error:', err.message);
+      this.recordActivity({
+        type: 'ERROR',
+        category: 'error',
+        severity: 'error',
+        chatId,
+        summary: `❌ Failed to send message to chat ${chatId}`,
+        details: err.message,
+        payload: { chatId, error: err.message }
+      });
       return false;
     }
   }
@@ -2226,6 +2521,82 @@ export class TelegramBotService {
     }
   }
 
+  public async sendDocument(
+    chatId: string | number,
+    docInput: string | Buffer,
+    caption?: string,
+    fileName?: string,
+    replyMarkup?: any
+  ): Promise<boolean> {
+    const { botToken } = this.getCredentials();
+    if (!botToken) return false;
+
+    try {
+      const sanitizedMarkup = sanitizeReplyMarkup(replyMarkup);
+      const isBase64 = typeof docInput === 'string' && (docInput.startsWith('data:') || /^[A-Za-z0-9+/=]{100,}$/.test(docInput.trim()));
+      const isBuffer = Buffer.isBuffer(docInput);
+
+      if (isBase64 || isBuffer) {
+        let buffer: Buffer;
+        let mimeType = 'application/octet-stream';
+        const fallbackName = fileName || 'audio_file.mp3';
+
+        if (isBase64) {
+          const str = docInput as string;
+          const match = str.match(/^data:([^;]+);base64,(.*)$/);
+          if (match) {
+            mimeType = match[1] || 'audio/mpeg';
+            buffer = Buffer.from(match[2], 'base64');
+          } else {
+            buffer = Buffer.from(str.replace(/^data:[^,]+,/, ''), 'base64');
+          }
+        } else {
+          buffer = docInput as Buffer;
+        }
+
+        const blob = new Blob([buffer], { type: mimeType });
+        const formData = new FormData();
+        formData.append('chat_id', String(chatId));
+        formData.append('document', blob, fallbackName);
+        if (caption) {
+          formData.append('caption', caption);
+          formData.append('parse_mode', 'HTML');
+        }
+        if (sanitizedMarkup) {
+          formData.append('reply_markup', typeof sanitizedMarkup === 'string' ? sanitizedMarkup : JSON.stringify(sanitizedMarkup));
+        }
+
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+          method: 'POST',
+          body: formData,
+        });
+        const data: any = await res.json();
+        return !!data.ok;
+      }
+
+      // If URL or file_id
+      const payload: any = {
+        chat_id: chatId,
+        document: docInput,
+        caption: caption || '',
+        parse_mode: 'HTML',
+      };
+      if (sanitizedMarkup) payload.reply_markup = sanitizedMarkup;
+
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data: any = await res.json();
+      return !!data.ok;
+    } catch (err: any) {
+      console.error('[TelegramBot] sendDocument error:', err.message);
+      return false;
+    }
+  }
+
   public async sendVoice(
     chatId: string | number,
     voiceInput: string | Buffer,
@@ -2238,22 +2609,28 @@ export class TelegramBotService {
 
     try {
       const sanitizedMarkup = sanitizeReplyMarkup(replyMarkup);
-      const isBase64 = typeof voiceInput === 'string' && (voiceInput.startsWith('data:audio/') || voiceInput.startsWith('data:video/webm') || voiceInput.startsWith('data:application/octet-stream;base64,'));
+      const isBase64 = typeof voiceInput === 'string' && (voiceInput.startsWith('data:') || /^[A-Za-z0-9+/=]{100,}$/.test(voiceInput.trim()));
       const isBuffer = Buffer.isBuffer(voiceInput);
 
       if (isBase64 || isBuffer) {
         let buffer: Buffer;
         let mimeType = 'audio/ogg';
         if (isBase64) {
-          const match = (voiceInput as string).match(/^data:([^;]+);base64,(.*)$/);
+          const str = voiceInput as string;
+          const match = str.match(/^data:([^;]+);base64,(.*)$/);
           if (match) {
             mimeType = match[1] || 'audio/ogg';
             buffer = Buffer.from(match[2], 'base64');
           } else {
-            buffer = Buffer.from((voiceInput as string).replace(/^data:[^,]+,/, ''), 'base64');
+            buffer = Buffer.from(str.replace(/^data:[^,]+,/, ''), 'base64');
           }
         } else {
           buffer = voiceInput as Buffer;
+        }
+
+        // If it's explicitly MP3, WAV or non-OGG, forward to sendAudio immediately for pristine live sound playback
+        if (mimeType.includes('mpeg') || mimeType.includes('mp3') || mimeType.includes('wav') || mimeType.includes('m4a') || mimeType.includes('aac') || mimeType.includes('flac')) {
+          return this.sendAudio(chatId, buffer, caption, 'Voice Announcement', 'KALAM FF Admin', sanitizedMarkup, duration);
         }
 
         const blob = new Blob([buffer], { type: mimeType });
@@ -2264,7 +2641,7 @@ export class TelegramBotService {
           formData.append('caption', caption);
           formData.append('parse_mode', 'HTML');
         }
-        if (duration) {
+        if (duration && duration > 0) {
           formData.append('duration', String(Math.round(duration)));
         }
         if (sanitizedMarkup) {
@@ -2278,19 +2655,19 @@ export class TelegramBotService {
         const data: any = await res.json();
         if (!data.ok) {
           console.warn('[TelegramBot] sendVoice failed, attempting sendAudio fallback:', data.description);
-          return this.sendAudio(chatId, buffer, caption, 'Voice Note', 'KALAM FF Admin', sanitizedMarkup);
+          return this.sendAudio(chatId, buffer, caption, 'Voice Note', 'KALAM FF Admin', sanitizedMarkup, duration);
         }
         return true;
       }
 
-      // If URL
+      // If URL or file_id
       const payload: any = {
         chat_id: chatId,
         voice: voiceInput,
         caption: caption || '',
         parse_mode: 'HTML',
       };
-      if (duration) payload.duration = Math.round(duration);
+      if (duration && duration > 0) payload.duration = Math.round(duration);
       if (sanitizedMarkup) payload.reply_markup = sanitizedMarkup;
 
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendVoice`, {
@@ -2301,8 +2678,8 @@ export class TelegramBotService {
 
       const data: any = await res.json();
       if (!data.ok) {
-        console.warn('[TelegramBot] sendVoice URL failed, trying sendAudio:', data.description);
-        return this.sendAudio(chatId, voiceInput, caption, 'Voice Announcement', 'KALAM FF Admin', sanitizedMarkup);
+        console.warn('[TelegramBot] sendVoice URL failed, trying sendAudio fallback:', data.description);
+        return this.sendAudio(chatId, voiceInput, caption, 'Voice Announcement', 'KALAM FF Admin', sanitizedMarkup, duration);
       }
       return true;
     } catch (err: any) {
@@ -2317,42 +2694,52 @@ export class TelegramBotService {
     caption?: string,
     title?: string,
     performer?: string,
-    replyMarkup?: any
+    replyMarkup?: any,
+    duration?: number,
+    fileName?: string
   ): Promise<boolean> {
     const { botToken } = this.getCredentials();
     if (!botToken) return false;
 
     try {
       const sanitizedMarkup = sanitizeReplyMarkup(replyMarkup);
-      const isBase64 = typeof audioInput === 'string' && (audioInput.startsWith('data:audio/') || audioInput.startsWith('data:video/webm') || audioInput.startsWith('data:application/octet-stream;base64,'));
+      const isBase64 = typeof audioInput === 'string' && (audioInput.startsWith('data:') || /^[A-Za-z0-9+/=]{100,}$/.test(audioInput.trim()));
       const isBuffer = Buffer.isBuffer(audioInput);
 
       if (isBase64 || isBuffer) {
         let buffer: Buffer;
-        let mimeType = 'audio/mp3';
+        let mimeType = 'audio/mpeg';
         if (isBase64) {
-          const match = (audioInput as string).match(/^data:([^;]+);base64,(.*)$/);
+          const str = audioInput as string;
+          const match = str.match(/^data:([^;]+);base64,(.*)$/);
           if (match) {
-            mimeType = match[1] || 'audio/mp3';
+            mimeType = match[1] || 'audio/mpeg';
             buffer = Buffer.from(match[2], 'base64');
           } else {
-            buffer = Buffer.from((audioInput as string).replace(/^data:[^,]+,/, ''), 'base64');
+            buffer = Buffer.from(str.replace(/^data:[^,]+,/, ''), 'base64');
           }
         } else {
           buffer = audioInput as Buffer;
         }
 
-        const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('wav') ? 'wav' : mimeType.includes('m4a') ? 'm4a' : 'mp3';
+        let ext = 'mp3';
+        if (mimeType.includes('ogg') || mimeType.includes('opus')) ext = 'ogg';
+        else if (mimeType.includes('wav')) ext = 'wav';
+        else if (mimeType.includes('m4a') || mimeType.includes('aac')) ext = 'm4a';
+        else if (mimeType.includes('flac')) ext = 'flac';
+
+        const effectiveFileName = fileName || `audio_${Date.now()}.${ext}`;
         const blob = new Blob([buffer], { type: mimeType });
         const formData = new FormData();
         formData.append('chat_id', String(chatId));
-        formData.append('audio', blob, `audio.${ext}`);
+        formData.append('audio', blob, effectiveFileName);
         if (caption) {
           formData.append('caption', caption);
           formData.append('parse_mode', 'HTML');
         }
         if (title) formData.append('title', title);
         if (performer) formData.append('performer', performer);
+        if (duration && duration > 0) formData.append('duration', String(Math.round(duration)));
         if (sanitizedMarkup) {
           formData.append('reply_markup', typeof sanitizedMarkup === 'string' ? sanitizedMarkup : JSON.stringify(sanitizedMarkup));
         }
@@ -2362,18 +2749,23 @@ export class TelegramBotService {
           body: formData,
         });
         const data: any = await res.json();
-        return !!data.ok;
+        if (!data.ok) {
+          console.warn('[TelegramBot] sendAudio formData returned error:', data.description, '- attempting sendDocument fallback');
+          return this.sendDocument(chatId, buffer, caption, effectiveFileName, sanitizedMarkup);
+        }
+        return true;
       }
 
-      // If URL
+      // If URL or Telegram file_id
       const payload: any = {
         chat_id: chatId,
         audio: audioInput,
         caption: caption || '',
-        title: title || 'Audio Announcement',
-        performer: performer || 'KALAM FF Admin',
+        title: title || '🎵 Song Track',
+        performer: performer || 'KALAM FF Official',
         parse_mode: 'HTML',
       };
+      if (duration && duration > 0) payload.duration = Math.round(duration);
       if (sanitizedMarkup) payload.reply_markup = sanitizedMarkup;
 
       const res = await fetch(`https://api.telegram.org/bot${botToken}/sendAudio`, {
@@ -2383,7 +2775,11 @@ export class TelegramBotService {
       });
 
       const data: any = await res.json();
-      return !!data.ok;
+      if (!data.ok) {
+        console.warn('[TelegramBot] sendAudio JSON failed:', data.description, '- attempting sendDocument fallback');
+        return this.sendDocument(chatId, audioInput, caption, fileName || 'song.mp3', sanitizedMarkup);
+      }
+      return true;
     } catch (err: any) {
       console.error('[TelegramBot] sendAudio error:', err.message);
       return false;
@@ -2428,6 +2824,9 @@ export class TelegramBotService {
     photo?: string;
     voice?: string;
     audio?: string;
+    title?: string;
+    performer?: string;
+    fileName?: string;
     caption?: string;
     buttonText?: string;
     buttonUrl?: string;
@@ -2471,11 +2870,22 @@ export class TelegramBotService {
           if (!options.photo) throw new Error('No photo provided');
           success = await this.sendPhotoExtended(target, options.photo, options.caption, replyMarkup);
         } else if (options.type === 'voice') {
-          if (!options.voice) throw new Error('No voice audio provided');
-          success = await this.sendVoice(target, options.voice, options.caption, replyMarkup, options.duration);
+          const vData = options.voice || options.audio;
+          if (!vData) throw new Error('No voice audio provided');
+          success = await this.sendVoice(target, vData, options.caption, replyMarkup, options.duration);
         } else if (options.type === 'audio') {
-          if (!options.audio) throw new Error('No audio provided');
-          success = await this.sendAudio(target, options.audio, options.caption, 'Announcement', 'KALAM FF Admin', replyMarkup);
+          const aData = options.audio || options.voice;
+          if (!aData) throw new Error('No audio/song track provided');
+          success = await this.sendAudio(
+            target,
+            aData,
+            options.caption,
+            options.title || '🎵 Track Release',
+            options.performer || 'KALAM FF Official',
+            replyMarkup,
+            options.duration,
+            options.fileName
+          );
         }
 
         if (success) {
@@ -2496,6 +2906,15 @@ export class TelegramBotService {
       }
     }
 
+    const snippet =
+      options.text ||
+      options.caption ||
+      (options.type === 'audio'
+        ? `🎵 Song: ${options.title || 'Audio'} (${options.performer || 'KALAM FF'})`
+        : options.type === 'photo'
+        ? '📷 Photo Broadcast'
+        : '🎙️ Voice Broadcast');
+
     const historyRecord = {
       broadcastId,
       timestamp,
@@ -2505,7 +2924,9 @@ export class TelegramBotService {
       sent,
       failed,
       failedList,
-      textSnippet: options.text || options.caption || (options.type === 'photo' ? 'Photo Broadcast' : 'Voice Broadcast'),
+      textSnippet: snippet,
+      title: options.title,
+      performer: options.performer,
       hasButton: !!(options.buttonText && options.buttonUrl),
       buttonText: options.buttonText,
       buttonUrl: options.buttonUrl,
@@ -3325,16 +3746,86 @@ export class TelegramBotService {
 
     try {
       if (update.callback_query) {
+        const cb = update.callback_query;
+        const fromUser = cb.from;
+        const cbChat = cb.message?.chat;
+        const cbData = cb.data || '';
+
+        this.recordActivity({
+          type: 'CALLBACK_QUERY',
+          category: 'callback',
+          severity: 'info',
+          userId: fromUser.id,
+          chatId: cbChat?.id || fromUser.id,
+          chatType: (cbChat as any)?.type || 'private',
+          chatTitle: (cbChat as any)?.title,
+          username: fromUser.username ? '@' + fromUser.username.replace('@', '') : undefined,
+          firstName: fromUser.first_name,
+          lastName: (fromUser as any)?.last_name,
+          action: cbData,
+          summary: `🔘 Button Click: "${cbData.length > 35 ? cbData.slice(0, 32) + '...' : cbData}" by ${fromUser.first_name || 'User'}`,
+          details: `Callback ID: ${cb.id} | Chat: ${cbChat?.id || fromUser.id}`,
+          payload: {
+            callback_id: cb.id,
+            data: cbData,
+            message_id: cb.message?.message_id
+          }
+        });
+
         await this.handleCallbackQuery(update.callback_query, getProducts, getUserWallet, deductWallet, creditWallet, deliverKey, createFamOrder, queryFamOrder);
         return;
       }
 
-      if (update.message && update.message.text) {
+      if (update.message) {
+        const msg = update.message;
+        const fromUser = msg.from;
+        const msgChat = msg.chat;
+        const text = msg.text?.trim() || msg.caption?.trim() || '';
+        const hasPhoto = Array.isArray(msg.photo) && msg.photo.length > 0;
+        const hasDoc = !!msg.document;
+        const commandMatch = text.match(/^\/([a-zA-Z0-9_]+)/);
+        const commandName = commandMatch ? `/${commandMatch[1]}` : undefined;
+
+        this.recordActivity({
+          type: 'INCOMING_MESSAGE',
+          category: 'message',
+          severity: 'info',
+          userId: fromUser.id,
+          chatId: msgChat.id,
+          chatType: msgChat.type,
+          chatTitle: msgChat.title,
+          username: fromUser.username ? '@' + fromUser.username.replace('@', '') : undefined,
+          firstName: fromUser.first_name,
+          lastName: fromUser.last_name,
+          action: commandName || (hasPhoto ? 'PHOTO_ATTACHMENT' : hasDoc ? 'DOC_ATTACHMENT' : 'TEXT_MESSAGE'),
+          summary: commandName
+            ? `⚡ Command "${commandName}" executed by ${fromUser.first_name || 'User'}`
+            : hasPhoto
+            ? `📸 Photo received from ${fromUser.first_name || 'User'}${text ? ': ' + text : ''}`
+            : `📩 Message from ${fromUser.first_name || 'User'}: "${text.length > 50 ? text.slice(0, 47) + '...' : text}"`,
+          details: text || (hasPhoto ? `Photo message (${msg.photo?.length} formats)` : 'Attachment message'),
+          payload: {
+            message_id: msg.message_id,
+            date: msg.date,
+            text: msg.text,
+            caption: msg.caption,
+            photo_count: msg.photo?.length,
+          }
+        });
+
         await this.handleTextMessage(update.message, getProducts, getUserWallet, deductWallet, creditWallet, deliverKey, createFamOrder, queryFamOrder);
         return;
       }
     } catch (err: any) {
       console.error('[TelegramBot] Error processing update:', err);
+      this.recordActivity({
+        type: 'ERROR',
+        category: 'error',
+        severity: 'error',
+        summary: `⚠️ Error Processing Update #${update.update_id}`,
+        details: err.message || 'Unknown processing error',
+        payload: { update_id: update.update_id, stack: err.stack }
+      });
     } finally {
       for (const k of keysToCheck) {
         this.inFlightKeys.delete(k);
@@ -3347,26 +3838,30 @@ export class TelegramBotService {
     if (!botToken) return false;
 
     const commands = [
-      { command: 'start', description: '🏠 Open Main Menu & Check Balance' },
-      { command: 'buy', description: '🛒 Browse & Purchase VIP License Keys' },
-      { command: 'upgrade', description: '💎 Upgrade to VIP Reseller Account' },
-      { command: 'reseller', description: '💎 VIP Reseller Status & Wholesale Pricing' },
-      { command: 'deposit', description: '💸 Add Wallet Balance via FamGateway UPI' },
-      { command: 'balance', description: '💰 View Your Current Wallet Balance' },
-      { command: 'profile', description: '👑 Profile, Wallet & Delivered Keys' },
-      { command: 'keys', description: '🔑 View All Delivered License Keys' },
-      { command: 'refer', description: '🔗 Refer & Earn (₹2/friend + 5% deposit)' },
-      { command: 'gift', description: '🎁 Daily Gift Free Lucky Spin (24h)' },
-      { command: 'apk', description: '📥 Download Latest Mod APK & Tutorial' },
-      { command: 'update', description: '📱 Check Panel Updates, APK & Video' },
-      { command: 'help', description: '⁉️ How to Use Store Bot Tutorial' },
-      { command: 'support', description: '🚀 Customer Support & Admin Contact' },
-      { command: 'admin', description: '🔲 Admin Control Panel' },
-      { command: 'users', description: '👥 (Admin) View All Registered Bot Users' },
-      { command: 'setresellerprice', description: '💵 (Admin) Set Reseller Upgrade Fee' },
-      { command: 'makereseller', description: '👑 (Admin) Grant VIP Reseller to User' },
-      { command: 'removereseller', description: '👤 (Admin) Remove Reseller Status' },
-      { command: 'setapk', description: '📥 (Admin) Set APK Download URL' },
+      { command: 'start', description: '🟢 🏠 Open Main Menu & Check Balance' },
+      { command: 'commands', description: '🟢 📜 View All Bot Commands Directory' },
+      { command: 'buy', description: '🟢 🛒 Browse & Purchase VIP License Keys' },
+      { command: 'deposit', description: '🟢 💸 Add Wallet Balance via UPI' },
+      { command: 'balance', description: '🟢 💰 View Your Current Wallet Balance' },
+      { command: 'profile', description: '🟢 👑 Profile, Wallet & Delivered Keys' },
+      { command: 'keys', description: '🟢 🔑 View All Delivered License Keys' },
+      { command: 'refer', description: '🟢 🔗 Refer & Earn (₹2/friend + 5% deposit)' },
+      { command: 'gift', description: '🟢 🎁 Daily Gift Free Lucky Spin (24h)' },
+      { command: 'apk', description: '🟢 📥 Download Latest Mod APK & Tutorial' },
+      { command: 'update', description: '🟢 📱 Check Panel Updates, APK & Video' },
+      { command: 'upgrade', description: '🟢 💎 Upgrade to VIP Reseller Account' },
+      { command: 'reseller', description: '🟢 💎 VIP Reseller Status & Wholesale Pricing' },
+      { command: 'language', description: '🟢 🌐 Change Language (தமிழ் / EN / HI)' },
+      { command: 'help', description: '🟢 ⁉️ How to Use Store Bot Tutorial' },
+      { command: 'support', description: '🟢 🚀 Customer Support & Admin Contact' },
+      { command: 'admin', description: '👑 🎛️ Master Admin Control Panel' },
+      { command: 'broadcast', description: '👑 📢 (Admin) Send Broadcast to All' },
+      { command: 'addbalance', description: '👑 ➕ (Admin) Credit User Balance' },
+      { command: 'users', description: '👑 👥 (Admin) View All Registered Users' },
+      { command: 'setapk', description: '👑 📥 (Admin) Set APK Download URL' },
+      { command: 'setresellerprice', description: '👑 💵 (Admin) Set Reseller Upgrade Fee' },
+      { command: 'makereseller', description: '👑 💎 (Admin) Grant VIP Reseller' },
+      { command: 'removereseller', description: '👑 👤 (Admin) Remove Reseller Status' },
     ];
 
     try {
@@ -3419,7 +3914,7 @@ export class TelegramBotService {
     queryFamOrder?: (orderId: string, userIdentifier: string) => Promise<any>
   ) {
     const chatId = msg.chat.id;
-    const rawText = msg.text?.trim() || '';
+    const rawText = msg.text?.trim() || msg.caption?.trim() || '';
     const userId = `tg_${msg.from.id}`;
 
     // Debounce rapid duplicate messages from the same user within 600ms
@@ -3607,9 +4102,97 @@ export class TelegramBotService {
         return;
       }
 
-      // Admin Broadcast message state (supports inline button via pipe syntax: <message> | <btn_text> | <btn_url> | <btn2_text> | <btn2_url>)
+      // Admin Broadcast message state (supports Text, Audio Songs, Voice Notes, Photos, Docs with inline buttons)
       if (currentState.step === 'AWAITING_ADMIN_BROADCAST' && this.isAdmin(chatId)) {
         userStates.delete(chatId);
+        const users = this.loadBotUsers();
+        const targets = Array.from(users.values()).map(u => u.chatId);
+
+        // 1. If Admin sent an Audio Song track
+        if (msg.audio) {
+          const songId = msg.audio.file_id;
+          const songTitle = msg.audio.title || msg.audio.file_name || '🎵 Track Release';
+          const songArtist = msg.audio.performer || 'KALAM FF Admin';
+          const caption = msg.caption || '🎵 Exclusive Audio Track Release from KALAM FF';
+          const duration = msg.audio.duration;
+
+          await this.sendMessage(chatId, `⏳ <i>Broadcasting song "<b>${songTitle}</b>" by <i>${songArtist}</i> to ${users.size} bot users live...</i>`);
+          const result = await this.executeBroadcast({
+            type: 'audio',
+            targets,
+            targetLabel: `All Bot Users (${users.size})`,
+            audio: songId,
+            title: songTitle,
+            performer: songArtist,
+            caption,
+            duration,
+            fileName: msg.audio.file_name
+          });
+          await this.sendMessage(chatId, `✅ <b>Song Broadcast Live Completed!</b>\nDelivered to ${result.sent} of ${result.total} users (${result.failed} failed).`);
+          return;
+        }
+
+        // 2. If Admin sent a Voice Note
+        if (msg.voice) {
+          const voiceId = msg.voice.file_id;
+          const caption = msg.caption || '🎙️ Voice Announcement from KALAM FF Admin';
+          const duration = msg.voice.duration;
+
+          await this.sendMessage(chatId, `⏳ <i>Broadcasting voice note to ${users.size} bot users live...</i>`);
+          const result = await this.executeBroadcast({
+            type: 'voice',
+            targets,
+            targetLabel: `All Bot Users (${users.size})`,
+            voice: voiceId,
+            caption,
+            duration
+          });
+          await this.sendMessage(chatId, `✅ <b>Voice Note Broadcast Completed!</b>\nDelivered to ${result.sent} of ${result.total} users (${result.failed} failed).`);
+          return;
+        }
+
+        // 3. If Admin sent a Photo
+        if (msg.photo && msg.photo.length > 0) {
+          const photoId = msg.photo[msg.photo.length - 1].file_id;
+          const caption = msg.caption || '📷 Announcement from KALAM FF Admin';
+
+          await this.sendMessage(chatId, `⏳ <i>Broadcasting photo to ${users.size} bot users live...</i>`);
+          const result = await this.executeBroadcast({
+            type: 'photo',
+            targets,
+            targetLabel: `All Bot Users (${users.size})`,
+            photo: photoId,
+            caption
+          });
+          await this.sendMessage(chatId, `✅ <b>Photo Broadcast Completed!</b>\nDelivered to ${result.sent} of ${result.total} users (${result.failed} failed).`);
+          return;
+        }
+
+        // 4. If Admin sent an Audio Document
+        if (msg.document) {
+          const docId = msg.document.file_id;
+          const docName = msg.document.file_name || 'track.mp3';
+          const isAudioDoc = (msg.document.mime_type && msg.document.mime_type.startsWith('audio/')) ||
+            docName.endsWith('.mp3') || docName.endsWith('.wav') || docName.endsWith('.m4a') || docName.endsWith('.ogg');
+
+          if (isAudioDoc) {
+            await this.sendMessage(chatId, `⏳ <i>Broadcasting audio file "${docName}" to ${users.size} bot users live...</i>`);
+            const result = await this.executeBroadcast({
+              type: 'audio',
+              targets,
+              targetLabel: `All Bot Users (${users.size})`,
+              audio: docId,
+              title: docName.replace(/\.[^/.]+$/, ''),
+              performer: 'KALAM FF Admin',
+              caption: msg.caption || '',
+              fileName: docName
+            });
+            await this.sendMessage(chatId, `✅ <b>Audio File Broadcast Completed!</b>\nDelivered to ${result.sent} of ${result.total} users.`);
+            return;
+          }
+        }
+
+        // 5. Standard Text Message Broadcast
         const parts = rawText.split('|').map(s => s.trim());
         const bMsg = parts[0] || '📢 <b>Announcement</b>';
         const btn1Text = parts[1];
@@ -3618,7 +4201,6 @@ export class TelegramBotService {
         const btn2Url = parts[4];
         const replyMarkup = buildInlineKeyboard(btn1Text, btn1Url, btn2Text, btn2Url);
 
-        const users = this.loadBotUsers();
         let sentCount = 0;
         await this.sendMessage(chatId, `⏳ <i>Broadcasting message with inline buttons (${!!replyMarkup}) to ${users.size} bot users...</i>`);
         for (const u of users.values()) {
@@ -4079,6 +4661,65 @@ export class TelegramBotService {
         } else {
           await this.sendMessage(chatId, `❌ Invalid number. Please enter a valid number (e.g. <code>5</code>).`);
         }
+        return;
+      }
+    }
+
+    // Direct Admin Media Upload Handler (Live Audio Songs, Voice Notes, Photos)
+    if (this.isAdmin(chatId)) {
+      if (msg.audio || (msg.document && (msg.document.mime_type?.startsWith('audio/') || msg.document.file_name?.match(/\.(mp3|wav|m4a|aac|flac|ogg)$/i)))) {
+        const audioObj = msg.audio;
+        const fileId = audioObj ? audioObj.file_id : msg.document!.file_id;
+        const title = audioObj?.title || audioObj?.file_name || msg.document?.file_name || 'Audio Song Track';
+        const artist = audioObj?.performer || 'KALAM FF Admin';
+        const duration = audioObj?.duration;
+
+        await this.sendMessage(
+          chatId,
+          `🎵 <b>Live Audio / Song Track Received!</b>\n\n` +
+          `🎧 <b>Title:</b> <code>${title}</code>\n` +
+          `🎤 <b>Artist:</b> <code>${artist}</code>\n` +
+          (duration ? `⏱️ <b>Duration:</b> ${Math.floor(duration / 60)}m ${duration % 60}s\n` : '') +
+          `\n<i>Select where you would like to broadcast this audio track:</i>`,
+          {
+            inline_keyboard: [
+              [
+                { text: '📢 Broadcast Live to All Users', callback_data: `admin_bcast_audio:${fileId}` },
+              ],
+              [
+                { text: '💎 VIP Resellers Only', callback_data: `admin_bcast_resellers_audio:${fileId}` },
+                { text: '📣 Send to Channel', callback_data: `admin_bcast_channel_audio:${fileId}` }
+              ],
+              [
+                { text: '🧪 Send Test Preview', callback_data: `admin_test_audio:${fileId}` }
+              ]
+            ]
+          }
+        );
+        return;
+      }
+
+      if (msg.voice) {
+        const fileId = msg.voice.file_id;
+        const duration = msg.voice.duration;
+
+        await this.sendMessage(
+          chatId,
+          `🎙️ <b>Live Voice Note Received!</b>\n\n` +
+          `⏱️ <b>Duration:</b> ${duration}s\n\n` +
+          `<i>Select where you would like to broadcast this voice note:</i>`,
+          {
+            inline_keyboard: [
+              [
+                { text: '📢 Broadcast Live to All Users', callback_data: `admin_bcast_voice:${fileId}` }
+              ],
+              [
+                { text: '💎 VIP Resellers Only', callback_data: `admin_bcast_resellers_voice:${fileId}` },
+                { text: '📣 Send to Channel', callback_data: `admin_bcast_channel_voice:${fileId}` }
+              ]
+            ]
+          }
+        );
         return;
       }
     }
@@ -4580,6 +5221,25 @@ export class TelegramBotService {
     if (cleanCmd === '/clearnotice' && this.isAdmin(chatId)) {
       this.setWebsiteNoticeBanner('', false);
       await this.sendMessage(chatId, `✅ Notice banner hidden/cleared from website.`);
+      return;
+    }
+
+    // Direct Admin Welcome Message Banner: /setwelcomebanner <msg> and /clearwelcomebanner
+    if ((cleanCmd.startsWith('/setwelcomebanner') || cleanCmd.startsWith('/welcomebanner')) && this.isAdmin(chatId)) {
+      const bannerMsg = cleanCmd.replace(/^\/(setwelcomebanner|welcomebanner)\s*/i, '').trim();
+      if (bannerMsg) {
+        this.setWebsiteWelcomeBanner(bannerMsg, undefined, undefined, true);
+        await this.sendMessage(chatId, `✅ <b>Welcome Message Banner Live on Website:</b>\n"<b>${bannerMsg}</b>"`);
+        return;
+      }
+      userStates.set(chatId, { step: 'AWAITING_ADMIN_SET_WELCOME_BANNER' });
+      await this.sendMessage(chatId, `👋 Type the welcome message to show on the website top hero banner:`);
+      return;
+    }
+
+    if ((cleanCmd === '/clearwelcomebanner' || cleanCmd === '/hidewelcomebanner') && this.isAdmin(chatId)) {
+      this.setWebsiteWelcomeBanner('', undefined, undefined, false);
+      await this.sendMessage(chatId, `✅ Welcome message banner hidden from website.`);
       return;
     }
 
@@ -5088,7 +5748,25 @@ export class TelegramBotService {
       return;
     }
 
-    // 12. ⁉️ How To Use Bot / Help / Tutorial
+    // 12. 📜 Bot Commands List (/commands, /cmds, /cmd, commands)
+    if (
+      cleanCmd === '/commands' ||
+      cleanCmd.startsWith('/commands ') ||
+      cleanCmd === '/cmds' ||
+      cleanCmd.startsWith('/cmds ') ||
+      cleanCmd === '/cmd' ||
+      cleanCmd.startsWith('/cmd ') ||
+      norm === 'commands' ||
+      norm === 'cmds' ||
+      norm === 'bot commands' ||
+      norm === 'command list' ||
+      norm === 'all commands'
+    ) {
+      await this.showAllBotCommands(chatId);
+      return;
+    }
+
+    // 12b. ⁉️ How To Use Bot / Help / Tutorial
     if (
       norm === 'how to use bot' ||
       norm === 'how to use' ||
@@ -5467,6 +6145,12 @@ export class TelegramBotService {
     // 6. ⁉️ How To Use Bot
     if (data === 'how_to_use') {
       await this.showHowToUseBot(chatId, msgId);
+      return;
+    }
+
+    // 6b. 📜 Bot Commands
+    if (data === 'bot_commands' || data === 'commands' || data === 'cmd_list') {
+      await this.showAllBotCommands(chatId, msgId);
       return;
     }
 
@@ -5891,9 +6575,113 @@ export class TelegramBotService {
       return;
     }
 
+    if (data.startsWith('admin_bcast_audio:') && this.isAdmin(chatId)) {
+      const audioFileId = data.replace('admin_bcast_audio:', '').trim();
+      const users = this.loadBotUsers();
+      const targets = Array.from(users.values()).map(u => u.chatId);
+
+      await this.sendMessage(chatId, `⏳ <i>Broadcasting audio track to ${users.size} bot users live...</i>`);
+      const result = await this.executeBroadcast({
+        type: 'audio',
+        targets,
+        targetLabel: `All Bot Users (${users.size})`,
+        audio: audioFileId,
+        title: 'KALAM FF Audio Track',
+        performer: 'KALAM FF Official'
+      });
+      await this.sendMessage(chatId, `✅ <b>Song Broadcast Live Completed!</b>\nDelivered to ${result.sent} of ${result.total} users.`);
+      return;
+    }
+
+    if (data.startsWith('admin_bcast_resellers_audio:') && this.isAdmin(chatId)) {
+      const audioFileId = data.replace('admin_bcast_resellers_audio:', '').trim();
+      const users = this.loadBotUsers();
+      const targets = Array.from(users.values()).filter(u => u.isReseller || u.role === 'RESELLER' || u.role === 'ADMIN').map(u => u.chatId);
+
+      await this.sendMessage(chatId, `⏳ <i>Broadcasting audio track to VIP Resellers (${targets.length} users)...</i>`);
+      const result = await this.executeBroadcast({
+        type: 'audio',
+        targets,
+        targetLabel: `VIP Resellers (${targets.length})`,
+        audio: audioFileId,
+        title: '💎 VIP Reseller Audio Update',
+        performer: 'KALAM FF Admin'
+      });
+      await this.sendMessage(chatId, `✅ <b>VIP Resellers Audio Broadcast Completed!</b>\nDelivered to ${result.sent} of ${result.total} users.`);
+      return;
+    }
+
+    if (data.startsWith('admin_bcast_channel_audio:') && this.isAdmin(chatId)) {
+      const audioFileId = data.replace('admin_bcast_channel_audio:', '').trim();
+      const cfg = this.getCredentials();
+      const channelId = cfg.defaultChatId || '7768975239';
+
+      const success = await this.sendAudio(channelId, audioFileId, '🎵 Official Audio Release', 'Audio Track', 'KALAM FF');
+      await this.sendMessage(chatId, success ? `✅ <b>Audio track forwarded to channel (${channelId}) successfully!</b>` : `❌ Failed to forward audio track.`);
+      return;
+    }
+
+    if (data.startsWith('admin_test_audio:') && this.isAdmin(chatId)) {
+      const audioFileId = data.replace('admin_test_audio:', '').trim();
+      const success = await this.sendAudio(chatId, audioFileId, '🧪 [TEST PLAYBACK] Audio verification from Bot', 'Test Audio', 'Admin');
+      await this.sendMessage(chatId, success ? `✅ Test audio track played in this chat.` : `❌ Test playback failed.`);
+      return;
+    }
+
+    if (data.startsWith('admin_bcast_voice:') && this.isAdmin(chatId)) {
+      const voiceFileId = data.replace('admin_bcast_voice:', '').trim();
+      const users = this.loadBotUsers();
+      const targets = Array.from(users.values()).map(u => u.chatId);
+
+      await this.sendMessage(chatId, `⏳ <i>Broadcasting voice note to ${users.size} bot users live...</i>`);
+      const result = await this.executeBroadcast({
+        type: 'voice',
+        targets,
+        targetLabel: `All Bot Users (${users.size})`,
+        voice: voiceFileId
+      });
+      await this.sendMessage(chatId, `✅ <b>Voice Note Broadcast Completed!</b>\nDelivered to ${result.sent} of ${result.total} users.`);
+      return;
+    }
+
+    if (data.startsWith('admin_bcast_resellers_voice:') && this.isAdmin(chatId)) {
+      const voiceFileId = data.replace('admin_bcast_resellers_voice:', '').trim();
+      const users = this.loadBotUsers();
+      const targets = Array.from(users.values()).filter(u => u.isReseller || u.role === 'RESELLER' || u.role === 'ADMIN').map(u => u.chatId);
+
+      await this.sendMessage(chatId, `⏳ <i>Broadcasting voice note to VIP Resellers (${targets.length} users)...</i>`);
+      const result = await this.executeBroadcast({
+        type: 'voice',
+        targets,
+        targetLabel: `VIP Resellers (${targets.length})`,
+        voice: voiceFileId
+      });
+      await this.sendMessage(chatId, `✅ <b>VIP Resellers Voice Broadcast Completed!</b>\nDelivered to ${result.sent} of ${result.total} users.`);
+      return;
+    }
+
+    if (data.startsWith('admin_bcast_channel_voice:') && this.isAdmin(chatId)) {
+      const voiceFileId = data.replace('admin_bcast_channel_voice:', '').trim();
+      const cfg = this.getCredentials();
+      const channelId = cfg.defaultChatId || '7768975239';
+
+      const success = await this.sendVoice(channelId, voiceFileId, '🎙️ Official Voice Note from Admin');
+      await this.sendMessage(chatId, success ? `✅ <b>Voice note forwarded to channel (${channelId}) successfully!</b>` : `❌ Failed to forward voice note.`);
+      return;
+    }
+
     if (data === 'admin_broadcast' && this.isAdmin(chatId)) {
       userStates.set(chatId, { step: 'AWAITING_ADMIN_BROADCAST' });
-      await this.sendMessage(chatId, `📢 <b>Broadcast Announcement</b>\n\nPlease type the message you want to broadcast to all bot users (or send /cancel):`);
+      await this.sendMessage(
+        chatId,
+        `📢 <b>BROADCAST ANNOUNCEMENT STUDIO</b>\n\n` +
+        `Send any of the following to broadcast to all bot users:\n\n` +
+        `💬 <b>Text Message:</b> Type text or use <code>Text | Button Label | Button URL</code>\n` +
+        `🎵 <b>Audio Song / MP3:</b> Upload or forward an audio/music file directly\n` +
+        `🎙️ <b>Voice Note:</b> Record and send a Telegram voice message\n` +
+        `🖼️ <b>Photo:</b> Send an image with an optional caption\n\n` +
+        `<i>Send /cancel to abort.</i>`
+      );
       return;
     }
 
@@ -6066,6 +6854,7 @@ export class TelegramBotService {
         { text: i18n.btn_reseller, callback_data: 'upgrade_reseller' }
       ],
       [
+        { text: i18n.btn_commands || '🟢 📜 Bot Commands List', callback_data: 'bot_commands' },
         { text: i18n.btn_language, callback_data: 'select_language' }
       ]
     );
@@ -6257,23 +7046,25 @@ export class TelegramBotService {
     const userName = (botUser?.firstName || 'KALAM FF PANEL').toUpperCase();
 
     const text =
-      `✨ <b>SELECT YOUR DEVICE TYPE</b> ✨\n\n` +
+      `✨ <b>SELECT YOUR DEVICE TYPE / உங்கள் சாதனத்தை தேர்வு செய்யவும்</b> ✨\n\n` +
       `<blockquote>` +
       `👋 <b>YOO ${userName}!</b>\n` +
-      `<i>Choose a device type to see matching products, plans and live pricing.</i>` +
+      `<i>Choose your device category or view all available cheats & panels with live stock:</i>` +
       `</blockquote>`;
 
     const inline_keyboard = [
-      [{ text: '🤖 ANDROID NON ROOT', callback_data: 'cat_dev:non_root' }],
-      [{ text: '⚙️ ANDROID ROOT', callback_data: 'cat_dev:root' }],
-      [{ text: '🍏 IPHONE', callback_data: 'cat_dev:ios' }],
+      [{ text: '🤖 ANDROID NON ROOT', callback_data: 'cat_dev:non_root' }, { text: '⚙️ ANDROID ROOT', callback_data: 'cat_dev:root' }],
+      [{ text: '🍏 IPHONE / iOS', callback_data: 'cat_dev:ios' }, { text: '🌟 ALL CHEATS & PANELS (எல்லாமே)', callback_data: 'cat_dev:all' }],
       [{ text: '❌ Back to Menu', callback_data: 'main_menu' }]
     ];
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  private async showProductsForDevice(chatId: number, deviceType: string, products: any[], messageId?: number) {
+  private async showProductsForDevice(chatId: number, deviceType: string, rawProducts: any[], messageId?: number) {
+    // Always guarantee freshest products list from disk / memory
+    const products = (rawProducts && rawProducts.length > 0) ? rawProducts : this.loadProductsFromDisk();
+
     if (!products || products.length === 0) {
       await this.editOrSendMessage(
         chatId,
@@ -6290,111 +7081,102 @@ export class TelegramBotService {
 
     let devLabel = 'ANDROID NON ROOT';
     if (deviceType === 'root') devLabel = 'ANDROID ROOT';
-    if (deviceType === 'ios') devLabel = 'IPHONE';
+    if (deviceType === 'ios') devLabel = 'IPHONE / iOS';
+    if (deviceType === 'all') devLabel = 'ALL CHEATS & PANELS';
 
-    // Filter products strictly matching device category (Non-Root, Root, iPhone/iOS)
-    const filtered = products.filter((p: any) => {
-      const cat = String(p.category || '').toLowerCase().trim();
-      const dev = String(p.device || p.deviceType || '').toLowerCase().trim();
-      const name = String(p.name || p.title || '').toLowerCase().trim();
+    // Filter products strictly matching device category (Non-Root, Root, iPhone/iOS, or All)
+    let filtered = products;
 
-      const isIos = 
-        dev === 'ios' ||
-        dev === 'iphone' ||
-        dev === 'apple' ||
-        cat.includes('ios') ||
-        cat.includes('iphone') ||
-        cat.includes('apple') ||
-        cat.includes('ipad') ||
-        name.includes('ios') ||
-        name.includes('iphone') ||
-        name.includes('apple') ||
-        name.includes('ipad');
+    if (deviceType !== 'all') {
+      filtered = products.filter((p: any) => {
+        const cat = String(p.category || '').toLowerCase().trim();
+        const dev = String(p.device || p.deviceType || '').toLowerCase().trim();
+        const name = String(p.name || p.title || '').toLowerCase().trim();
 
-      if (deviceType === 'ios') {
-        return isIos;
-      }
+        const isIos = 
+          dev === 'ios' ||
+          dev === 'iphone' ||
+          dev === 'apple' ||
+          cat.includes('ios') ||
+          cat.includes('iphone') ||
+          cat.includes('apple') ||
+          cat.includes('ipad') ||
+          name.includes('ios') ||
+          name.includes('iphone') ||
+          name.includes('apple') ||
+          name.includes('ipad');
 
-      if (isIos) {
-        return false;
-      }
+        if (deviceType === 'ios') {
+          return isIos;
+        }
 
-      const hasNonRootExplicit = 
-        cat === 'non-root mobile' ||
-        cat === 'non-root' ||
-        cat === 'non root' ||
-        cat === 'nonroot' ||
-        dev === 'non-root' ||
-        dev === 'nonroot' ||
-        name.includes('non-root') ||
-        name.includes('non root') ||
-        name.includes('nonroot');
+        if (isIos) {
+          return false;
+        }
 
-      const hasRootExplicit = 
-        cat === 'root mobile' ||
-        cat === 'root' ||
-        cat === 'root only' ||
-        dev === 'root' ||
-        dev === 'root only' ||
-        (name.includes('root') && !name.includes('non'));
+        const hasNonRootExplicit = 
+          cat === 'non-root mobile' ||
+          cat === 'non-root' ||
+          cat === 'non root' ||
+          cat === 'nonroot' ||
+          dev === 'non-root' ||
+          dev === 'nonroot' ||
+          name.includes('non-root') ||
+          name.includes('non root') ||
+          name.includes('nonroot');
 
-      const isDual = 
-        dev === 'root + nonroot' ||
-        cat === 'root + nonroot' ||
-        name.includes('root + nonroot') ||
-        name.includes('root + non-root');
+        const hasRootExplicit = 
+          cat === 'root mobile' ||
+          cat === 'root' ||
+          cat === 'root only' ||
+          dev === 'root' ||
+          dev === 'root only' ||
+          (name.includes('root') && !name.includes('non'));
 
-      if (deviceType === 'root') {
-        if (hasNonRootExplicit && !isDual) return false;
-        if (hasRootExplicit) return true;
-        if (isDual && !hasNonRootExplicit) return true;
-        return false;
-      }
+        const isDual = 
+          dev === 'root + nonroot' ||
+          dev.includes('root + nonroot') ||
+          dev.includes('root & nonroot') ||
+          cat === 'root + nonroot' ||
+          name.includes('root + nonroot') ||
+          name.includes('root + non-root');
 
-      if (deviceType === 'non_root') {
-        if (hasNonRootExplicit) return true;
-        if (isDual) return true;
-        if (cat === 'non-root mobile' || cat === 'non-root') return true;
-        if (!hasRootExplicit) return true;
-        return false;
-      }
+        if (deviceType === 'root') {
+          if (hasNonRootExplicit && !isDual) return false;
+          if (hasRootExplicit) return true;
+          if (isDual && !hasNonRootExplicit) return true;
+          return false;
+        }
 
-      return true;
-    });
+        if (deviceType === 'non_root') {
+          if (hasNonRootExplicit) return true;
+          if (isDual) return true;
+          if (cat === 'non-root mobile' || cat === 'non-root') return true;
+          if (!hasRootExplicit) return true;
+          return false;
+        }
+
+        return true;
+      });
+    }
+
+    // Fallback: If device-specific filter returned 0, show all products so user is never stranded
+    if (filtered.length === 0) {
+      filtered = products;
+    }
 
     const tierBadge = isReseller
       ? `💎 <b>Tier:</b> VIP Reseller (Wholesale Rates Active ⚡)`
       : `👤 <b>Tier:</b> Normal User (Standard Rates)`;
 
-    if (filtered.length === 0) {
-      const emptyText =
-        `✨ <b>${devLabel} PRODUCTS</b> ✨\n\n` +
-        `<blockquote>` +
-        `📦 <b>Catalog:</b> ${devLabel}\n` +
-        `${tierBadge}\n\n` +
-        `⚠️ <i>No ${devLabel} products currently available.</i>\n` +
-        `💡 <i>Please select another category or check back shortly!</i>` +
-        `</blockquote>`;
-
-      const emptyKeyboard = [
-        [{ text: '🔙 Change Device Type', callback_data: 'catalog' }],
-        [{ text: '❌ Back to Menu', callback_data: 'main_menu' }]
-      ];
-
-      await this.editOrSendMessage(chatId, emptyText, { inline_keyboard: emptyKeyboard }, messageId);
-      return;
-    }
-
-    const displayList = filtered;
-
     const inline_keyboard: any[] = [];
 
-    for (const p of displayList) {
+    for (const p of filtered) {
       const rawName = (p.name || p.title || 'Product').trim();
       const plans = Array.isArray(p.plans) ? p.plans : [];
       let displayName = rawName.toUpperCase();
-      if (displayName.length > 18) {
-        displayName = displayName.slice(0, 16) + '...';
+      if (displayName.length > 20) {
+        displayName = displayName.slice(0, 18) + '...';
       }
 
       let priceSnippet = '';
@@ -6406,8 +7188,8 @@ export class TelegramBotService {
         }
       }
 
-      const isMaint = p.status === 'MAINTENANCE' || p.status === 'maintenance';
-      const label = isMaint ? `🛠️ ${displayName} [MAINTENANCE]` : `🛒 ${displayName}${priceSnippet}`;
+      const isMaint = (p.status || '').toUpperCase() === 'MAINTENANCE' || !!p.isMaintenance;
+      const label = isMaint ? `🛠️ [MAINTENANCE] ${displayName}` : `🛒 ${displayName}${priceSnippet}`;
 
       inline_keyboard.push([
         {
@@ -6417,11 +7199,11 @@ export class TelegramBotService {
       ]);
     }
 
-    inline_keyboard.push([{ text: '🔙 Change Device', callback_data: 'catalog' }]);
+    inline_keyboard.push([{ text: '🔙 Change Category', callback_data: 'catalog' }]);
     inline_keyboard.push([{ text: '❌ Back to Menu', callback_data: 'main_menu' }]);
 
     const text =
-      `✨ <b>${devLabel} PRODUCTS</b> ✨\n\n` +
+      `✨ <b>${devLabel} PRODUCTS / பேனல்கள்</b> ✨\n\n` +
       `<blockquote>` +
       `📦 <b>Catalog:</b> ${devLabel}\n` +
       `${tierBadge}\n` +
@@ -6431,28 +7213,34 @@ export class TelegramBotService {
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  private async showProductPlans(chatId: number, productId: string, products: any[], messageId?: number) {
-    const product = products.find((p: any) => p.id === productId || p.productId === productId);
+  private async showProductPlans(chatId: number, productId: string, rawProducts: any[], messageId?: number) {
+    const products = (rawProducts && rawProducts.length > 0) ? rawProducts : this.loadProductsFromDisk();
+    const product = products.find((p: any) => p.id === productId || p.productId === productId || String(p.id) === String(productId));
     if (!product) {
-      await this.editOrSendMessage(chatId, '⚠️ Product not found.', {
+      await this.editOrSendMessage(chatId, '⚠️ Product not found or removed.', {
         inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
       }, messageId);
       return;
     }
 
-    if (product.status === 'MAINTENANCE' || product.status === 'maintenance') {
+    const isMaint = (product.status || '').toUpperCase() === 'MAINTENANCE' || !!product.isMaintenance;
+    if (isMaint) {
       const isAdm = this.isAdmin(chatId);
+      const reasonSnippet = product.maintenanceReason
+        ? `\n📝 <b>Notice / காரணம்:</b> ${product.maintenanceReason}`
+        : '';
       const maintText =
-        `🛠️ <b>${product.name.toUpperCase()} IS CURRENTLY UNDER MAINTENANCE</b> 🛠️\n\n` +
+        `🛠️ <b>${product.name.toUpperCase()} IS CURRENTLY UNDER MAINTENANCE</b> 🛠️\n` +
+        `<i>(இந்த பேனல் தற்போது பராமரிப்பில் உள்ளது)</i>\n\n` +
         `<blockquote>` +
-        `⚠️ <b>Status:</b> Maintenance Mode (Active)\n` +
-        `💡 <i>Purchases for this specific product are temporarily disabled while our team performs updates.</i>\n` +
+        `⚠️ <b>Status:</b> 🔴 UNDER MAINTENANCE${reasonSnippet}\n` +
+        `💡 <i>Purchases for this specific panel/cheat are temporarily paused while updates or key restocks are in progress. / புது அப்டேட் வரவிருப்பதால் தற்காலிகமாக கொள்முதல் நிறுத்தப்பட்டுள்ளது.</i>\n` +
         `</blockquote>\n\n` +
-        (isAdm ? `👑 <i>Admin: Tap below or use /prodmaint to toggle maintenance off.</i>` : `<i>Please check back later or choose from our other active products!</i>`);
+        (isAdm ? `👑 <i>Admin: Tap below or use /prodmaint to toggle maintenance off.</i>` : `<i>Please check back soon or choose another active cheat from our catalog!</i>`);
 
       const maintKeyboard = [
         isAdm ? [{ text: '🟢 Turn OFF Maintenance (Make Active)', callback_data: `admin_toggle_prod_maint:${product.id || productId}` }] : [],
-        [{ text: '🔙 Back to Products', callback_data: 'catalog' }],
+        [{ text: '🔙 Back to Products (பிற பொருட்கள்)', callback_data: 'catalog' }],
         [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
       ].filter(r => r.length > 0);
 
@@ -6637,6 +7425,19 @@ export class TelegramBotService {
 
       if (!deliveryResult.success || !deliveryResult.keys || deliveryResult.keys.length === 0) {
         const errMsg = deliveryResult.error || 'Product currently out of stock. Your balance was NOT deducted.';
+        this.recordActivity({
+          type: 'KEY_DELIVERY',
+          category: 'key',
+          severity: 'warning',
+          chatId,
+          userId,
+          username: botUser?.username ? '@' + botUser.username.replace('@', '') : undefined,
+          firstName: botUser?.firstName,
+          action: 'KEY_DELIVERY_FAILED',
+          summary: `⚠️ Key Delivery Failed: ${product.name} (${plan.duration || plan.name})`,
+          details: `Reason: ${errMsg} | User wallet was NOT deducted.`,
+          payload: { productId, planDuration: plan.duration || plan.name, error: errMsg }
+        });
         await this.editOrSendMessage(
           chatId,
           `❌ <b>PURCHASE FAILED: OUT OF STOCK</b>\n\n` +
@@ -6675,6 +7476,20 @@ export class TelegramBotService {
         timestamp: Date.now(),
       };
       this.recordPurchase(purchaseRecord);
+
+      this.recordActivity({
+        type: 'KEY_DELIVERY',
+        category: 'key',
+        severity: 'success',
+        chatId,
+        userId,
+        username: botUser?.username ? '@' + botUser.username.replace('@', '') : undefined,
+        firstName: botUser?.firstName,
+        action: 'KEY_DELIVERED',
+        summary: `🔑 Dispatched Key: ${product.name} (${plan.duration || plan.name}) for ₹${price}`,
+        details: `Delivered ${deliveryResult.keys.length} key(s) to ${botUser?.firstName || 'User'} (${chatId}). Order ID: ${purchaseRecord.id}`,
+        payload: { orderId: purchaseRecord.id, keysCount: deliveryResult.keys.length, price }
+      });
 
       const activeUsers = this.loadBotUsers();
       const u = activeUsers.get(chatId);
@@ -6948,6 +7763,53 @@ export class TelegramBotService {
         ]
       ]
     }, messageId);
+  }
+
+  // 4b. 📜 All Bot Commands Guide
+  private async showAllBotCommands(chatId: number, messageId?: number) {
+    const isAdm = this.isAdmin(chatId);
+    let text =
+      `📜 <b>KALAM STORE BOT — COMMANDS LIST</b> 📜\n\n` +
+      `<blockquote>` +
+      `🟢 <b>CUSTOMER COMMANDS:</b>\n` +
+      `• /start — 🏠 Open Main Menu & Balance\n` +
+      `• /buy — 🛒 Browse & Purchase VIP Keys\n` +
+      `• /deposit — 💸 Add Wallet Balance via UPI\n` +
+      `• /balance — 💰 Check Current Wallet Balance\n` +
+      `• /profile — 👑 View Account, Keys & History\n` +
+      `• /keys — 🔑 View All Delivered License Keys\n` +
+      `• /refer — 🔗 Refer Friends (Earn ₹2 + 5%)\n` +
+      `• /gift — 🎁 Daily Free Lucky Spin (24h)\n` +
+      `• /apk — 📥 Download Latest Mod APK\n` +
+      `• /update — 🔄 Check Panel Updates & Video\n` +
+      `• /language — 🌐 Change Language (தமிழ்/EN/HI)\n` +
+      `• /support — ✈️ Customer Support Contact\n` +
+      `• /help — ⁉️ How to Use Store Bot Guide` +
+      `</blockquote>`;
+
+    if (isAdm) {
+      text +=
+        `\n\n<blockquote>` +
+        `👑 <b>MASTER ADMIN COMMANDS:</b>\n` +
+        `• /admin — 🎛️ Master Admin Control Panel\n` +
+        `• /users — 👥 View All Registered Bot Users\n` +
+        `• /broadcast &lt;msg&gt; — 📢 Send Announcement\n` +
+        `• /addbalance &lt;id&gt; &lt;amt&gt; — ➕ Credit Balance\n` +
+        `• /setapk &lt;url&gt; — 📥 Update APK Download Link\n` +
+        `• /setresellerprice &lt;amt&gt; — 💎 Set Reseller Fee\n` +
+        `• /makereseller &lt;id&gt; — 👑 Promote to VIP Reseller\n` +
+        `• /removereseller &lt;id&gt; — 👤 Remove VIP Reseller\n` +
+        `• /lowstock — ⚠️ Check Low Stock Alerts` +
+        `</blockquote>`;
+    }
+
+    const inline_keyboard: any[][] = [
+      [{ text: '🛒 Buy Keys', callback_data: 'catalog' }, { text: '💸 Add Balance', callback_data: 'deposit' }],
+      isAdm ? [{ text: '🎛️ Admin Panel', callback_data: 'admin_panel' }] : [],
+      [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+    ].filter(row => row.length > 0);
+
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
   // 5. 📌 How to use

@@ -143,7 +143,8 @@
     "upiId": "kalamffpanel@fampay",
     "paymentFeePercent": 0,
     "telegramBotUsername": "@KALAMFFPANEL1_12_BOT",
-    "resellerDiscountPercent": 15
+    "resellerDiscountPercent": 15,
+    "autoGenerateFallbackKeys": true
   },
   "paymentConfigs": [
     {
@@ -202,28 +203,17 @@
       "merchantName": "KALAM PAYTM MERCHANT"
     }
   ],
-  "updatedAt": 1789406508760,
+  "updatedAt": 1789832517951,
   "apiConfigs": [
     {
       "id": "api-1",
-      "name": "Primary Reseller API (AdminPanels.shop)",
-      "lastTested": "Just now",
       "status": "CONNECTED",
-      "masterKey": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
       "type": "adminpanels",
-      "apiUrl": "https://bantibhaiya.to/api/reseller_v1.php",
-      "apiKey": "87224c074a021676364829b5b3f0686e",
-      "xApiToken": ""
-    },
-    {
-      "id": "api-2",
-      "type": "hkmodz",
-      "status": "DISCONNECTED",
-      "lastTested": "Not configured",
-      "name": "API #2 — HK MODZ",
-      "subtitle": "(resellerpanelhk.shop)",
-      "apiUrl": "",
-      "xApiToken": ""
+      "masterKey": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "lastTested": "Just now",
+      "name": "Primary Reseller API (AdminPanels.shop)",
+      "apiUrl": "https://adminpanels.shop/api/reseller_v1.php",
+      "apiKey": "87224c074a021676364829b5b3f0686e"
     }
   ],
   "apkDownloadUrl": "https://t.me/kalamffpanel"

@@ -610,21 +610,88 @@ function patchFile(targetPath) {
       '}),' +
     ']}),' +
 
-    // Section 5: Tips & Admin Commands Guide
-    'r.jsxs("div",{className:"bg-white/[0.03] border border-white/5 rounded-xl p-3.5 text-xs text-gray-300 space-y-2",children:[' +
-      'r.jsxs("div",{className:"font-bold text-white flex items-center gap-1.5",children:[' +
-        'r.jsx(zF,{className:"w-4 h-4 text-cyan-400"}),' +
-        'r.jsx("span",{children:"💡 Telegram Bot Admin Commands & Instant Features:"})' +
+    // Section 5: Tips & Telegram Bot Commands Directory (Vibrant Green Background Command Boxes)
+    'r.jsxs("div",{className:"bg-gradient-to-br from-emerald-950/90 via-[#064e3b] to-emerald-950/90 border-2 border-emerald-400 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xl shadow-emerald-950/50",children:[' +
+      'r.jsxs("div",{className:"flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-400/30 pb-3",children:[' +
+        'r.jsxs("div",{className:"flex items-center gap-2.5",children:[' +
+          'r.jsx("div",{className:"w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(16,185,129,0.5)]",children:r.jsx(zF,{className:"w-5 h-5"})}),' +
+          'r.jsxs("div",{children:[' +
+            'r.jsxs("div",{className:"text-sm sm:text-base font-black text-white uppercase tracking-wider flex items-center gap-2",children:[' +
+              'r.jsx("span",{children:"⚡ Telegram Bot Commands Directory"}),' +
+              'r.jsx("span",{className:"text-[10px] font-mono font-black px-2 py-0.5 rounded-full bg-emerald-400 text-black shadow-sm",children:"CLICK BOX TO COPY"})' +
+            ']}),' +
+            'r.jsx("p",{className:"text-xs text-emerald-100 font-medium",children:"All active bot commands. Tap any green command box below to copy it instantly."})' +
+          ']})' +
+        ']}),' +
+        'r.jsx("div",{className:"text-xs font-mono font-bold text-white bg-emerald-600 px-3 py-1.5 rounded-xl border border-emerald-300 shadow-md shrink-0 flex items-center gap-1.5",children:[r.jsx("span",{className:"w-2 h-2 rounded-full bg-white animate-pulse"}),"🟢 Bot Commands Active"]})' +
       ']}),' +
-      'r.jsxs("div",{className:"grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-[11px]",children:[' +
-        'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsx("div",{className:"font-bold text-cyan-300",children:"/admin"}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"Open in-bot control panel"})]}),' +
-        'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsxs("div",{className:"font-bold text-cyan-300",children:["/users"]}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"View all bot users & IDs"})]}),' +
-        'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsxs("div",{className:"font-bold text-cyan-300",children:["/setapk ",r.jsx("span",{className:"text-gray-400 text-[9px]",children:"<url>"})]}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"Change APK link directly via Telegram"})]}),' +
-        'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsxs("div",{className:"font-bold text-cyan-300",children:["/broadcast ",r.jsx("span",{className:"text-gray-400 text-[9px]",children:"<msg>"})]}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"Broadcast message to all bot users"})]}),' +
-        'r.jsxs("div",{className:"bg-black/40 rounded-lg p-2 border border-white/5",children:[r.jsx("div",{className:"font-bold text-cyan-300",children:"Instant Alerts"}),r.jsx("div",{className:"text-gray-400 text-[10px]",children:"UPI deposits & key purchase alerts active"})]})' +
+
+      // Admin Commands Group
+      'r.jsxs("div",{className:"space-y-2",children:[' +
+        'r.jsxs("div",{className:"flex items-center gap-1.5 text-xs font-black text-white uppercase tracking-wider",children:[' +
+          'r.jsx("span",{children:"👑 Master Admin Commands"}),' +
+          'r.jsx("span",{className:"text-[10px] font-mono text-emerald-200 lowercase",children:"(admin only)"})' +
+        ']}),' +
+        'r.jsx("div",{className:"grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5",children:' +
+          '[' +
+            '["/admin", "Open in-bot master admin control panel"],' +
+            '["/users", "View all bot users, IDs & balances"],' +
+            '["/broadcast <msg>", "Send announcement to all users"],' +
+            '["/addbalance <id> <₹>", "Manual balance credit to user wallet"],' +
+            '["/setapk <url>", "Update APK download link in real-time"],' +
+            '["/setresellerprice <₹>", "Set VIP Reseller upgrade fee"],' +
+            '["/makereseller <id>", "Grant VIP Reseller status to user"],' +
+            '["/removereseller <id>", "Remove Reseller status from user"],' +
+            '["/lowstock", "View low stock keys alert"],' +
+            '["/stats", "View bot usage & revenue stats"],' +
+            '["/promos", "Manage discount & promo codes"],' +
+            '["/clearnotice", "Clear website announcement banner"]' +
+          '].map(([cmd, desc])=>' +
+            'r.jsxs("div",{key:cmd,onClick:()=>{navigator.clipboard.writeText(cmd.split(" ")[0]);Fs(`Copied command: ${cmd.split(" ")[0]}`);},className:"bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800 hover:from-emerald-500 hover:to-green-700 border-2 border-emerald-300 rounded-xl p-3 space-y-1.5 transition-all cursor-pointer shadow-lg shadow-emerald-950/60 group",title:"Click to copy command",children:[' +
+              'r.jsxs("div",{className:"flex items-center justify-between gap-1",children:[' +
+                'r.jsx("span",{className:"font-mono font-black text-sm text-white group-hover:text-yellow-200 transition-colors drop-shadow",children:cmd}),' +
+                'r.jsx("span",{className:"text-[9px] font-mono font-black px-1.5 py-0.5 rounded bg-black/40 text-emerald-200 border border-emerald-300/40 uppercase group-hover:bg-black/60 group-hover:text-white",children:"copy"})' +
+              ']}),' +
+              'r.jsx("p",{className:"text-[11px] font-semibold text-emerald-50 leading-tight drop-shadow-sm",children:desc})' +
+            ']})' +
+          ')' +
+        '})' +
+      ']}),' +
+
+      // User / Customer Commands Group
+      'r.jsxs("div",{className:"space-y-2 pt-2 border-t border-emerald-400/30",children:[' +
+        'r.jsxs("div",{className:"flex items-center gap-1.5 text-xs font-black text-white uppercase tracking-wider",children:[' +
+          'r.jsx("span",{children:"🛒 Customer & Public Commands"}),' +
+          'r.jsx("span",{className:"text-[10px] font-mono text-emerald-200 lowercase",children:"(all users)"})' +
+        ']}),' +
+        'r.jsx("div",{className:"grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5",children:' +
+          '[' +
+            '["/start", "Start bot, main menu & check balance"],' +
+            '["/buy", "Browse catalog & purchase VIP keys"],' +
+            '["/deposit", "Instant UPI payment & wallet top-up"],' +
+            '["/balance", "Check personal wallet balance"],' +
+            '["/profile", "View account profile & purchase history"],' +
+            '["/keys", "View all delivered license keys"],' +
+            '["/apk", "Download latest mod APK & tutorial"],' +
+            '["/update", "Check panel updates & video guide"],' +
+            '["/refer", "Referral link (Earn ₹2 + 5% bonus)"],' +
+            '["/gift", "Daily lucky spin free cash (24h)"],' +
+            '["/commands", "View complete list of bot commands"],' +
+            '["/language", "Switch language (தமிழ் / EN / हिन्दी)"],' +
+            '["/support", "24/7 customer support contact"],' +
+            '["/help", "How to use store bot guide"]' +
+          '].map(([cmd, desc])=>' +
+            'r.jsxs("div",{key:cmd,onClick:()=>{navigator.clipboard.writeText(cmd.split(" ")[0]);Fs(`Copied command: ${cmd.split(" ")[0]}`);},className:"bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800 hover:from-emerald-500 hover:to-green-700 border-2 border-emerald-300 rounded-xl p-3 space-y-1.5 transition-all cursor-pointer shadow-lg shadow-emerald-950/60 group",title:"Click to copy command",children:[' +
+              'r.jsxs("div",{className:"flex items-center justify-between gap-1",children:[' +
+                'r.jsx("span",{className:"font-mono font-black text-sm text-white group-hover:text-yellow-200 transition-colors drop-shadow",children:cmd}),' +
+                'r.jsx("span",{className:"text-[9px] font-mono font-black px-1.5 py-0.5 rounded bg-black/40 text-emerald-200 border border-emerald-300/40 uppercase group-hover:bg-black/60 group-hover:text-white",children:"copy"})' +
+              ']}),' +
+              'r.jsx("p",{className:"text-[11px] font-semibold text-emerald-50 leading-tight drop-shadow-sm",children:desc})' +
+            ']})' +
+          ')' +
+        '})' +
       ']})' +
     ']})' +
-
   ']})})';
 
   // Replace old telegram panel or append

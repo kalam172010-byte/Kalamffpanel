@@ -1,0 +1,386 @@
+[
+  {
+    "timestamp": "2026-09-17T14:48:59.676Z",
+    "timestampMs": 1789656539676,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 931,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T14:50:14.082Z",
+    "timestampMs": 1789656614082,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 888,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T14:51:56.997Z",
+    "timestampMs": 1789656716997,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 522,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T15:10:06.615Z",
+    "timestampMs": 1789657806615,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 899,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T15:11:15.873Z",
+    "timestampMs": 1789657875873,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 1190,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T15:59:21.577Z",
+    "timestampMs": 1789660761577,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 558,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T16:16:38.436Z",
+    "timestampMs": 1789661798436,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 992,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T16:26:57.943Z",
+    "timestampMs": 1789662417943,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 542,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T16:34:38.891Z",
+    "timestampMs": 1789662878891,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 511,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T16:35:36.102Z",
+    "timestampMs": 1789662936102,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 877,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-17T16:51:57.371Z",
+    "timestampMs": 1789663917371,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 945,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T01:45:26.389Z",
+    "timestampMs": 1789695926389,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 1403,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T01:47:57.873Z",
+    "timestampMs": 1789696077873,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 1105,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T01:49:05.763Z",
+    "timestampMs": 1789696145763,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 1248,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T01:49:27.544Z",
+    "timestampMs": 1789696167544,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 642,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T01:53:54.814Z",
+    "timestampMs": 1789696434814,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 1229,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T02:08:45.087Z",
+    "timestampMs": 1789697325087,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 1286,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T02:13:24.134Z",
+    "timestampMs": 1789697604134,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 1140,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T02:36:03.508Z",
+    "timestampMs": 1789698963508,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 1226,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T08:35:48.508Z",
+    "timestampMs": 1789720548508,
+    "trigger": "SCHEDULED",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 592,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T12:33:05.387Z",
+    "timestampMs": 1789734785387,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 599,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T12:45:28.932Z",
+    "timestampMs": 1789735528931,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 1435,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T12:47:44.054Z",
+    "timestampMs": 1789735664054,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 889,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-18T15:07:48.763Z",
+    "timestampMs": 1789744068763,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 710,
+    "details": [
+      "Connecting to external Admin API: https://bantibhaiya.to/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+    ],
+    "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  }
+]

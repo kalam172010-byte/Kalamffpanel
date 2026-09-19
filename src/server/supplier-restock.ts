@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { telegramBotService } from './telegramBot';
+import { upstreamLogger } from './upstream-logger';
 
 export interface SupplierRestockConfig {
   enabled: boolean;
@@ -393,23 +394,59 @@ export class SupplierRestockService {
 
       try {
         const batchCount = this.config.outboundRefillBatchCount || 5;
+        const requestPayload = {
+          action: 'REFILL_STOCK',
+          productId: product.id,
+          productName: product.name,
+          quantity: batchCount,
+          callbackWebhook: '/api/webhook/supplier-restock',
+          secretToken: this.config.webhookSecretToken,
+        };
+        const requestHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...(this.config.outboundSupplierApiKey ? { 'Authorization': `Bearer ${this.config.outboundSupplierApiKey}` } : {})
+        };
+
+        const startTime = Date.now();
         const res = await fetch(this.config.outboundSupplierApiUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.config.outboundSupplierApiKey ? { 'Authorization': `Bearer ${this.config.outboundSupplierApiKey}` } : {})
-          },
-          body: JSON.stringify({
-            action: 'REFILL_STOCK',
-            productId: product.id,
-            productName: product.name,
-            quantity: batchCount,
-            callbackWebhook: '/api/webhook/supplier-restock',
-            secretToken: this.config.webhookSecretToken,
-          })
+          headers: requestHeaders,
+          body: JSON.stringify(requestPayload)
         });
 
-        const data: any = await res.json().catch(() => ({}));
+        const latencyMs = Date.now() - startTime;
+        const rawText = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(rawText);
+        } catch {}
+
+        const deliveredKey = data.keys && Array.isArray(data.keys) ? data.keys.join(', ') : undefined;
+
+        upstreamLogger.recordLog({
+          apiName: 'Supplier Restock API',
+          providerType: 'supplier_restock',
+          callerContext: 'Supplier Auto-Refill Engine',
+          url: this.config.outboundSupplierApiUrl,
+          method: 'POST',
+          requestHeaders,
+          requestBodyRaw: JSON.stringify(requestPayload, null, 2),
+          requestBodyParsed: requestPayload,
+          responseStatus: res.status,
+          responseBodyRaw: rawText,
+          responseBodyParsed: data,
+          success: res.ok,
+          latencyMs,
+          attempts: 1,
+          deliveredKey,
+          productInfo: {
+            productId: product.id,
+            productName: product.name,
+            quantity: batchCount
+          },
+          errorMessage: !res.ok ? (data.message || data.error || `HTTP ${res.status}`) : undefined
+        });
+
         if (data.keys && Array.isArray(data.keys)) {
           // Immediately process returned keys if synchronous
           await this.processRestockPayload(data, 'OUTBOUND_AUTO_REFILL');
@@ -427,6 +464,25 @@ export class SupplierRestockService {
         }
       } catch (err: any) {
         console.warn('[SupplierRestock] Outbound auto-refill request failed:', err.message);
+        upstreamLogger.recordLog({
+          apiName: 'Supplier Restock API',
+          providerType: 'supplier_restock',
+          callerContext: 'Supplier Auto-Refill Engine',
+          url: this.config.outboundSupplierApiUrl || 'Supplier Endpoint',
+          method: 'POST',
+          responseStatus: 0,
+          responseBodyRaw: '',
+          success: false,
+          latencyMs: 0,
+          attempts: 1,
+          productInfo: {
+            productId: product.id,
+            productName: product.name
+          },
+          errorMessage: err.message,
+          networkError: err.message
+        });
+
         this.addLog({
           type: 'OUTBOUND_AUTO_REFILL',
           status: 'FAILED',

@@ -60,8 +60,8 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
   className = '',
   onBroadcastComplete
 }) => {
-  // Tabs: 'text' | 'photo' | 'voice'
-  const [activeTab, setActiveTab] = useState<'text' | 'photo' | 'voice'>('text');
+  // Tabs: 'text' | 'photo' | 'song' | 'voice'
+  const [activeTab, setActiveTab] = useState<'text' | 'photo' | 'song' | 'voice'>('text');
 
   // Target selection: 'all' | 'resellers' | 'specific' | 'channel'
   const [targetType, setTargetType] = useState<'all' | 'resellers' | 'specific' | 'channel'>('all');
@@ -80,6 +80,19 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [photoCaption, setPhotoCaption] = useState<string>('');
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Song & Music Track State
+  const [songTitle, setSongTitle] = useState<string>('KALAM FF VIP Track');
+  const [songArtist, setSongArtist] = useState<string>('KALAM FF Official');
+  const [songCaption, setSongCaption] = useState<string>('🔥 Exclusive Audio Track Release from KALAM FF Store!');
+  const [songBase64, setSongBase64] = useState<string>('');
+  const [songUrl, setSongUrl] = useState<string>('');
+  const [songMode, setSongMode] = useState<'file' | 'url'>('file');
+  const [songDuration, setSongDuration] = useState<number>(0);
+  const [songFileName, setSongFileName] = useState<string>('');
+  const [songPreviewUrl, setSongPreviewUrl] = useState<string | null>(null);
+  const songFileInputRef = useRef<HTMLInputElement>(null);
+  const songAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   // Voice Broadcast State
   const [voiceMode, setVoiceMode] = useState<'record' | 'file' | 'url'>('record');
@@ -162,6 +175,8 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
       setMessageText(template);
     } else if (activeTab === 'photo') {
       setPhotoCaption(template);
+    } else if (activeTab === 'song') {
+      setSongCaption(template);
     } else {
       setVoiceCaption(template);
     }
@@ -174,6 +189,8 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
       setMessageText(prev => `${prev} ${startTag}text${endTag}`);
     } else if (activeTab === 'photo') {
       setPhotoCaption(prev => `${prev} ${startTag}text${endTag}`);
+    } else if (activeTab === 'song') {
+      setSongCaption(prev => `${prev} ${startTag}text${endTag}`);
     } else {
       setVoiceCaption(prev => `${prev} ${startTag}text${endTag}`);
     }
@@ -265,7 +282,52 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
     }
   };
 
-  // Audio File Upload Handler
+  // Song & Audio Track Upload Handler
+  const handleSongUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSongFileName(file.name);
+    // Auto-fill title from filename
+    const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+    if (!songTitle || songTitle === 'KALAM FF VIP Track') {
+      setSongTitle(cleanTitle);
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const b64 = reader.result as string;
+      setSongBase64(b64);
+      const url = URL.createObjectURL(file);
+      setSongPreviewUrl(url);
+      
+      // Attempt to read audio duration
+      const tempAudio = new Audio(url);
+      tempAudio.onloadedmetadata = () => {
+        if (tempAudio.duration && !isNaN(tempAudio.duration)) {
+          setSongDuration(Math.round(tempAudio.duration));
+        }
+      };
+
+      setStatusMessage({ text: `🎵 Song loaded: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`, type: 'info' });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const resetSong = () => {
+    if (songPreviewUrl) {
+      URL.revokeObjectURL(songPreviewUrl);
+    }
+    setSongPreviewUrl(null);
+    setSongBase64('');
+    setSongFileName('');
+    setSongDuration(0);
+    if (songFileInputRef.current) {
+      songFileInputRef.current.value = '';
+    }
+  };
+
+  // Audio File Upload Handler for Voice Tab
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -286,7 +348,7 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
     setStatusMessage(null);
     try {
       const payload: any = {
-        type: activeTab,
+        type: activeTab === 'song' ? 'audio' : activeTab,
         buttonText: enableButton ? buttonText : undefined,
         buttonUrl: enableButton ? buttonUrl : undefined,
       };
@@ -307,6 +369,19 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
         }
         payload.photo = photoSource;
         payload.caption = photoCaption.trim() || undefined;
+      } else if (activeTab === 'song') {
+        const songSource = songMode === 'url' ? songUrl.trim() : songBase64;
+        if (!songSource) {
+          setStatusMessage({ text: 'Please upload a song/audio file or enter an audio URL.', type: 'error' });
+          setIsTesting(false);
+          return;
+        }
+        payload.audio = songSource;
+        payload.title = songTitle.trim() || 'KALAM FF Audio Track';
+        payload.performer = songArtist.trim() || 'KALAM FF Official';
+        payload.caption = songCaption.trim() || undefined;
+        payload.duration = songDuration || undefined;
+        payload.fileName = songFileName || undefined;
       } else if (activeTab === 'voice') {
         const voiceSource = voiceMode === 'url' ? voiceUrl.trim() : voiceBase64;
         if (!voiceSource) {
@@ -316,6 +391,7 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
         }
         payload.voice = voiceSource;
         payload.caption = voiceCaption.trim() || undefined;
+        payload.duration = recordingSeconds || undefined;
       }
 
       const res = await fetch('/api/admin/telegram/test-broadcast', {
@@ -326,7 +402,7 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
 
       const data = await res.json();
       if (data.success) {
-        setStatusMessage({ text: `✅ Test ${activeTab} successfully sent to Admin Telegram! Check your phone.`, type: 'success' });
+        setStatusMessage({ text: `✅ Test ${activeTab === 'song' ? '🎵 Song' : activeTab} successfully sent to Admin Telegram! Check your phone.`, type: 'success' });
       } else {
         setStatusMessage({ text: `❌ Test send failed: ${data.error || 'Check Bot Token in Settings'}`, type: 'error' });
       }
@@ -340,8 +416,9 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
   // Send Live Broadcast to All / Selected Users
   const handleExecuteBroadcast = async () => {
     const recipients = getRecipientCount();
+    const typeLabel = activeTab === 'song' ? 'SONG / AUDIO TRACK' : activeTab.toUpperCase();
     const confirmMsg = targetType === 'all'
-      ? `📢 Are you sure you want to broadcast this ${activeTab.toUpperCase()} to ALL ${recipients} registered Telegram users?`
+      ? `📢 Are you sure you want to broadcast this ${typeLabel} to ALL ${recipients} registered Telegram users?`
       : targetType === 'resellers'
       ? `👑 Confirm broadcast to ${recipients} VIP Resellers?`
       : targetType === 'channel'
@@ -358,7 +435,7 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
 
     try {
       const payload: any = {
-        type: activeTab,
+        type: activeTab === 'song' ? 'audio' : activeTab,
         target: targetType,
         targetChatId: targetType === 'specific' ? specificTarget.trim() : undefined,
         buttonText: enableButton ? buttonText.trim() : undefined,
@@ -381,6 +458,19 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
         }
         payload.photo = photoSource;
         payload.caption = photoCaption.trim() || undefined;
+      } else if (activeTab === 'song') {
+        const songSource = songMode === 'url' ? songUrl.trim() : songBase64;
+        if (!songSource) {
+          setStatusMessage({ text: 'Please upload a song/audio file or enter an audio URL.', type: 'error' });
+          setIsSending(false);
+          return;
+        }
+        payload.audio = songSource;
+        payload.title = songTitle.trim() || 'KALAM FF Audio Track';
+        payload.performer = songArtist.trim() || 'KALAM FF Official';
+        payload.caption = songCaption.trim() || undefined;
+        payload.duration = songDuration || undefined;
+        payload.fileName = songFileName || undefined;
       } else if (activeTab === 'voice') {
         const voiceSource = voiceMode === 'url' ? voiceUrl.trim() : voiceBase64;
         if (!voiceSource) {
@@ -402,7 +492,7 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
       const data = await res.json();
       if (data.success) {
         setStatusMessage({
-          text: `🎉 Broadcast Completed! Successfully delivered to ${data.sent} of ${data.total} recipients (${data.failed} failed).`,
+          text: `🎉 Song / Broadcast Completed! Successfully delivered to ${data.sent} of ${data.total} recipients (${data.failed} failed).`,
           type: 'success'
         });
         fetchHistory();
@@ -602,44 +692,57 @@ export const TelegramBroadcastStudio: React.FC<TelegramBroadcastStudioProps> = (
                 <span>2. Choose Broadcast Content Type</span>
               </label>
 
-              <div className="flex items-center gap-1 bg-black/60 p-1 rounded-xl border border-white/10">
+              <div className="flex flex-wrap items-center gap-1 bg-black/60 p-1 rounded-xl border border-white/10">
                 <button
                   type="button"
                   onClick={() => setActiveTab('text')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                     activeTab === 'text'
                       ? 'bg-gradient-to-r from-[#ff0080] to-[#7c3aed] text-white shadow-[0_0_10px_rgba(255,0,128,0.4)]'
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Text Message</span>
+                  <span>Text</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setActiveTab('photo')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                     activeTab === 'photo'
                       ? 'bg-gradient-to-r from-[#00e5ff] to-[#3b82f6] text-black font-extrabold shadow-[0_0_10px_rgba(0,229,255,0.4)]'
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
                   <ImageIcon className="w-3.5 h-3.5" />
-                  <span>Photo / Image</span>
+                  <span>Photo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('song')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    activeTab === 'song'
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-black font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.4)]'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <FileAudio className="w-3.5 h-3.5" />
+                  <span>🎵 Song / Music</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setActiveTab('voice')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                     activeTab === 'voice'
                       ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_0_10px_rgba(16,185,129,0.4)]'
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
                   <Mic className="w-3.5 h-3.5" />
-                  <span>Voice Note</span>
+                  <span>🎙️ Voice Note</span>
                 </button>
               </div>
             </div>
@@ -803,6 +906,137 @@ Example:
                     onChange={(e) => setPhotoCaption(e.target.value)}
                     placeholder="🔥 <b>Exclusive VIP Gameplay Banner</b>\nDownload now below..."
                     className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-cyan-400 text-white text-xs font-mono focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Content Form: SONG / AUDIO TRACK MODE */}
+            {activeTab === 'song' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSongMode('file')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                      songMode === 'file' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    📁 Upload Music / Song File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSongMode('url')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                      songMode === 'url' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    🔗 Audio URL (MP3 / Stream)
+                  </button>
+                </div>
+
+                {songMode === 'file' && (
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      ref={songFileInputRef}
+                      onChange={handleSongUpload}
+                      accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg"
+                      className="hidden"
+                    />
+                    <div
+                      onClick={() => songFileInputRef.current?.click()}
+                      className="border-2 border-dashed border-white/20 hover:border-amber-400 rounded-xl p-5 text-center cursor-pointer bg-black/40 hover:bg-black/60 transition-all group"
+                    >
+                      <FileAudio className="w-9 h-9 text-gray-400 group-hover:text-amber-400 mx-auto mb-2 transition-colors animate-pulse" />
+                      <p className="text-xs font-bold text-white">Click or Drop Song (.mp3, .wav, .m4a, .flac) Here</p>
+                      <p className="text-[10px] text-amber-300/80 mt-1">
+                        Transmits as native Telegram Audio with full player scrubber, title, and artist tags!
+                      </p>
+                      {songFileName && (
+                        <div className="mt-2 text-xs font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1 rounded-lg inline-block">
+                          Selected: {songFileName}
+                        </div>
+                      )}
+                    </div>
+
+                    {songPreviewUrl && (
+                      <div className="p-3 rounded-xl bg-[#0e0a1b] border border-amber-500/40 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                            <Volume2 className="w-4 h-4" />
+                            <span>Song Preview {songDuration ? `(${Math.floor(songDuration / 60)}:${(songDuration % 60).toString().padStart(2, '0')})` : ''}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={resetSong}
+                            className="text-[11px] text-rose-400 hover:text-rose-300 font-bold underline flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Remove Song</span>
+                          </button>
+                        </div>
+                        <audio
+                          ref={songAudioPlayerRef}
+                          src={songPreviewUrl}
+                          controls
+                          className="w-full h-8 accent-amber-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {songMode === 'url' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-gray-300 block">Direct Audio URL:</label>
+                    <input
+                      type="text"
+                      value={songUrl}
+                      onChange={(e) => setSongUrl(e.target.value)}
+                      placeholder="https://example.com/audio/kalam-theme.mp3"
+                      className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-amber-400 text-white font-mono text-xs focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-300 block mb-1">
+                      Song / Track Title:
+                    </label>
+                    <input
+                      type="text"
+                      value={songTitle}
+                      onChange={(e) => setSongTitle(e.target.value)}
+                      placeholder="e.g. KALAM FF Official Anthem"
+                      className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-amber-400 text-white text-xs focus:outline-none font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-300 block mb-1">
+                      Performer / Artist Name:
+                    </label>
+                    <input
+                      type="text"
+                      value={songArtist}
+                      onChange={(e) => setSongArtist(e.target.value)}
+                      placeholder="e.g. KALAM FF Store"
+                      className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-amber-400 text-white text-xs focus:outline-none font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-300 block mb-1">
+                    Song Caption / Description (HTML Supported):
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={songCaption}
+                    onChange={(e) => setSongCaption(e.target.value)}
+                    placeholder="🔥 Listen to our latest release! Tap button below to join VIP..."
+                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/10 focus:border-amber-400 text-white text-xs font-mono focus:outline-none"
                   />
                 </div>
               </div>
@@ -1126,6 +1360,30 @@ Example:
                   </div>
                 )}
 
+                {/* Song / Music Track Player in Bubble */}
+                {activeTab === 'song' && (
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-amber-500/20 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-black shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.5)]">
+                      <Play className="w-4 h-4 fill-black ml-0.5" />
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="text-xs font-bold text-white truncate">
+                        {songTitle || 'KALAM FF Audio Track'}
+                      </div>
+                      <div className="text-[10px] text-amber-300/80 font-medium truncate">
+                        {songArtist || 'KALAM FF Official'}
+                      </div>
+                      <div className="w-full bg-white/10 h-1 rounded-full overflow-hidden mt-1">
+                        <div className="bg-amber-400 h-full w-1/3" />
+                      </div>
+                      <div className="flex justify-between text-[8.5px] text-gray-400 font-mono pt-0.5">
+                        <span>0:00</span>
+                        <span>{songDuration ? `${Math.floor(songDuration / 60)}:${(songDuration % 60).toString().padStart(2, '0')}` : '3:45'}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Voice Note Wave Preview in Bubble */}
                 {activeTab === 'voice' && (
                   <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center gap-3">
@@ -1154,7 +1412,13 @@ Example:
                   className="text-xs text-gray-200 font-sans leading-relaxed whitespace-pre-wrap select-text"
                   dangerouslySetInnerHTML={{
                     __html:
-                      (activeTab === 'text' ? messageText : activeTab === 'photo' ? photoCaption : voiceCaption) ||
+                      (activeTab === 'text'
+                        ? messageText
+                        : activeTab === 'photo'
+                        ? photoCaption
+                        : activeTab === 'song'
+                        ? songCaption
+                        : voiceCaption) ||
                       '<i>Your formatted broadcast message will appear here in real-time...</i>'
                   }}
                 />

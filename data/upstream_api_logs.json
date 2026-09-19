@@ -1,0 +1,369 @@
+[
+  {
+    "id": "UPLOG-1789744058831-1053",
+    "timestamp": "2026-09-18T15:07:38.831Z",
+    "formattedTime": "Sep 18, 2026, 3:07:38 PM",
+    "apiName": "AdminPanels API",
+    "providerType": "adminpanels",
+    "callerContext": "Key Dispatch Service",
+    "url": "https://bantibhaiya.to/api/reseller_v1.php",
+    "method": "POST",
+    "requestHeaders": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "x-master-key": "a7f3***b6c8",
+      "X-Master-Key": "a7f3***b6c8",
+      "Accept": "application/json, text/plain, */*",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    "requestBodyRaw": "api_key=87224c074a021676364829b5b3f0686e&apiKey=87224c074a021676364829b5b3f0686e&key=87224c074a021676364829b5b3f0686e&master_key=a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8&masterkey=a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8&action=buy&product_id=prod-1788620078944&productId=prod-1788620078944&product=prod-1788620078944&duration=1+hours&dur=1+hours&android_id=0b9b969bc2e7997b&device_id=0b9b969bc2e7997b&quantity=1&qty=1",
+    "requestBodyParsed": {
+      "api_key": "87224c074a021676364829b5b3f0686e",
+      "apiKey": "87224c074a021676364829b5b3f0686e",
+      "key": "87224c074a021676364829b5b3f0686e",
+      "master_key": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "masterkey": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "action": "buy",
+      "product_id": "prod-1788620078944",
+      "productId": "prod-1788620078944",
+      "product": "prod-1788620078944",
+      "duration": "1 hours",
+      "dur": "1 hours",
+      "android_id": "0b9b969bc2e7997b",
+      "device_id": "0b9b969bc2e7997b",
+      "quantity": "1",
+      "qty": "1"
+    },
+    "responseStatus": 200,
+    "responseStatusText": "OK",
+    "responseBodyRaw": "{\"status\":\"error\",\"msg\":\"Invalid Product ID or Duration\"}",
+    "responseBodyParsed": {
+      "status": "error",
+      "msg": "Invalid Product ID or Duration"
+    },
+    "success": true,
+    "latencyMs": 224,
+    "attempts": 1,
+    "maxRetries": 3,
+    "errorMessage": "Invalid Product ID or Duration"
+  },
+  {
+    "id": "UPLOG-1789744058598-3893",
+    "timestamp": "2026-09-18T15:07:38.598Z",
+    "formattedTime": "Sep 18, 2026, 3:07:38 PM",
+    "apiName": "AdminPanels API",
+    "providerType": "adminpanels",
+    "callerContext": "Key Dispatch Service",
+    "url": "https://bantibhaiya.to/api/reseller_v1.php",
+    "method": "POST",
+    "requestHeaders": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "x-master-key": "a7f3***b6c8",
+      "X-Master-Key": "a7f3***b6c8",
+      "Accept": "application/json, text/plain, */*",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    "requestBodyRaw": "api_key=87224c074a021676364829b5b3f0686e&apiKey=87224c074a021676364829b5b3f0686e&key=87224c074a021676364829b5b3f0686e&master_key=a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8&masterkey=a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8&action=buy&product_id=prod-1788707639854&productId=prod-1788707639854&product=prod-1788707639854&duration=1+day&dur=1+day&android_id=0b9b969bc2e7997b&device_id=0b9b969bc2e7997b&quantity=1&qty=1",
+    "requestBodyParsed": {
+      "api_key": "87224c074a021676364829b5b3f0686e",
+      "apiKey": "87224c074a021676364829b5b3f0686e",
+      "key": "87224c074a021676364829b5b3f0686e",
+      "master_key": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "masterkey": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "action": "buy",
+      "product_id": "prod-1788707639854",
+      "productId": "prod-1788707639854",
+      "product": "prod-1788707639854",
+      "duration": "1 day",
+      "dur": "1 day",
+      "android_id": "0b9b969bc2e7997b",
+      "device_id": "0b9b969bc2e7997b",
+      "quantity": "1",
+      "qty": "1"
+    },
+    "responseStatus": 200,
+    "responseStatusText": "OK",
+    "responseBodyRaw": "{\"status\":\"error\",\"msg\":\"Invalid Product ID or Duration\"}",
+    "responseBodyParsed": {
+      "status": "error",
+      "msg": "Invalid Product ID or Duration"
+    },
+    "success": true,
+    "latencyMs": 225,
+    "attempts": 1,
+    "maxRetries": 3,
+    "errorMessage": "Invalid Product ID or Duration"
+  },
+  {
+    "id": "UPLOG-1789744058348-3088",
+    "timestamp": "2026-09-18T15:07:38.348Z",
+    "formattedTime": "Sep 18, 2026, 3:07:38 PM",
+    "apiName": "AdminPanels API",
+    "providerType": "adminpanels",
+    "callerContext": "Key Dispatch Service",
+    "url": "https://bantibhaiya.to/api/reseller_v1.php",
+    "method": "POST",
+    "requestHeaders": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "x-master-key": "a7f3***b6c8",
+      "X-Master-Key": "a7f3***b6c8",
+      "Accept": "application/json, text/plain, */*",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    "requestBodyRaw": "api_key=87224c074a021676364829b5b3f0686e&apiKey=87224c074a021676364829b5b3f0686e&key=87224c074a021676364829b5b3f0686e&master_key=a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8&masterkey=a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8&action=buy&product_id=prod-1789695725550&productId=prod-1789695725550&product=prod-1789695725550&duration=1+day&dur=1+day&android_id=0b9b969bc2e7997b&device_id=0b9b969bc2e7997b&quantity=1&qty=1",
+    "requestBodyParsed": {
+      "api_key": "87224c074a021676364829b5b3f0686e",
+      "apiKey": "87224c074a021676364829b5b3f0686e",
+      "key": "87224c074a021676364829b5b3f0686e",
+      "master_key": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "masterkey": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "action": "buy",
+      "product_id": "prod-1789695725550",
+      "productId": "prod-1789695725550",
+      "product": "prod-1789695725550",
+      "duration": "1 day",
+      "dur": "1 day",
+      "android_id": "0b9b969bc2e7997b",
+      "device_id": "0b9b969bc2e7997b",
+      "quantity": "1",
+      "qty": "1"
+    },
+    "responseStatus": 200,
+    "responseStatusText": "OK",
+    "responseBodyRaw": "{\"status\":\"error\",\"msg\":\"Invalid Product ID or Duration\"}",
+    "responseBodyParsed": {
+      "status": "error",
+      "msg": "Invalid Product ID or Duration"
+    },
+    "success": true,
+    "latencyMs": 297,
+    "attempts": 1,
+    "maxRetries": 3,
+    "errorMessage": "Invalid Product ID or Duration"
+  },
+  {
+    "id": "UPLOG-1789698155726-9422",
+    "timestamp": "2026-09-18T02:22:35.726Z",
+    "formattedTime": "Sep 18, 2026, 2:22:35 AM",
+    "apiName": "AdminPanels (Telegram)",
+    "providerType": "adminpanels",
+    "callerContext": "Key Dispatch Service",
+    "url": "https://bantibhaiya.to/api/reseller_v1.php",
+    "method": "POST",
+    "requestHeaders": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "x-master-key": "a7f3***b6c8",
+      "X-Master-Key": "a7f3***b6c8",
+      "Accept": "application/json, text/plain, */*",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    "requestBodyRaw": "api_key=87224c074a021676364829b5b3f0686e&apiKey=87224c074a021676364829b5b3f0686e&key=87224c074a021676364829b5b3f0686e&master_key=a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8&masterkey=a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8&action=buy&product_id=prod-1789695725550&productId=prod-1789695725550&product=prod-1789695725550&duration=1+day&dur=1+day&android_id=0b9b969bc2e7997b&device_id=0b9b969bc2e7997b&quantity=1&qty=1",
+    "requestBodyParsed": {
+      "api_key": "87224c074a021676364829b5b3f0686e",
+      "apiKey": "87224c074a021676364829b5b3f0686e",
+      "key": "87224c074a021676364829b5b3f0686e",
+      "master_key": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "masterkey": "a7f3e8b2c9d1f4a6b8c2d5e9f1a3b6c8",
+      "action": "buy",
+      "product_id": "prod-1789695725550",
+      "productId": "prod-1789695725550",
+      "product": "prod-1789695725550",
+      "duration": "1 day",
+      "dur": "1 day",
+      "android_id": "0b9b969bc2e7997b",
+      "device_id": "0b9b969bc2e7997b",
+      "quantity": "1",
+      "qty": "1"
+    },
+    "responseStatus": 200,
+    "responseStatusText": "OK",
+    "responseBodyRaw": "{\"status\":\"error\",\"msg\":\"Invalid Product ID or Duration\"}",
+    "responseBodyParsed": {
+      "status": "error",
+      "msg": "Invalid Product ID or Duration"
+    },
+    "success": true,
+    "latencyMs": 623,
+    "attempts": 1,
+    "maxRetries": 3,
+    "errorMessage": "Invalid Product ID or Duration"
+  },
+  {
+    "id": "UPLOG-1789695791182-9696",
+    "timestamp": "2026-09-18T01:43:11.182Z",
+    "formattedTime": "Sep 18, 2026, 1:43:11 AM",
+    "apiName": "AdminPanels API",
+    "providerType": "adminpanels",
+    "callerContext": "Web Storefront Purchase",
+    "url": "https://adminpanels.com/api/buy",
+    "method": "POST",
+    "requestHeaders": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "x-master-key": "live_sec_***89a2",
+      "Accept": "application/json, text/plain, */*",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) KALAM-FF/1.0"
+    },
+    "requestBodyRaw": "api_key=adm_live_key_9941&master_key=live_sec_***89a2&action=buy&product_id=FF_VIP_PRO_MAX&duration=1+Day&android_id=0b9b969bc2e7997b&quantity=1",
+    "requestBodyParsed": {
+      "action": "buy",
+      "api_key": "adm_live_key_9941",
+      "product_id": "FF_VIP_PRO_MAX",
+      "duration": "1 Day",
+      "quantity": 1,
+      "android_id": "0b9b969bc2e7997b"
+    },
+    "responseStatus": 200,
+    "responseStatusText": "OK",
+    "responseBodyRaw": "{\n  \"status\": \"success\",\n  \"code\": 200,\n  \"key\": \"KLM-PRO-7821-X992-VIP\",\n  \"product\": \"FF_VIP_PRO_MAX\",\n  \"duration\": \"1 Day\",\n  \"order_id\": \"AP-ORD-883910\",\n  \"balance_remaining\": \"₹1,450.00\"\n}",
+    "responseBodyParsed": {
+      "status": "success",
+      "code": 200,
+      "key": "KLM-PRO-7821-X992-VIP",
+      "product": "FF_VIP_PRO_MAX",
+      "duration": "1 Day",
+      "order_id": "AP-ORD-883910",
+      "balance_remaining": "₹1,450.00"
+    },
+    "success": true,
+    "latencyMs": 342,
+    "attempts": 1,
+    "maxRetries": 3,
+    "deliveredKey": "KLM-PRO-7821-X992-VIP",
+    "productInfo": {
+      "productId": "prod_1",
+      "productName": "FREE FIRE VIP HACK (INJECTOR)",
+      "duration": "1 Day",
+      "quantity": 1,
+      "price": 50,
+      "userEmail": "kalam172010@gmail.com",
+      "androidId": "0b9b969bc2e7997b"
+    }
+  },
+  {
+    "id": "UPLOG-1789695611182-9324",
+    "timestamp": "2026-09-18T01:40:11.182Z",
+    "formattedTime": "Sep 18, 2026, 1:40:11 AM",
+    "apiName": "AdminPanels (Telegram)",
+    "providerType": "adminpanels",
+    "callerContext": "Telegram Bot Key Delivery",
+    "url": "https://adminpanels.com/api/buy",
+    "method": "POST",
+    "requestHeaders": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "x-master-key": "live_sec_***89a2",
+      "Accept": "application/json, text/plain, */*"
+    },
+    "requestBodyRaw": "api_key=adm_live_key_9941&action=buy&product_id=FF_AIMBOT_ESP&duration=7+Days&quantity=1&device_id=tg_user_819203",
+    "requestBodyParsed": {
+      "action": "buy",
+      "product_id": "FF_AIMBOT_ESP",
+      "duration": "7 Days",
+      "quantity": 1,
+      "device_id": "tg_user_819203"
+    },
+    "responseStatus": 200,
+    "responseStatusText": "OK",
+    "responseBodyRaw": "{\n  \"status\": \"success\",\n  \"key\": \"KLM-7D-AIM-5541-QQR\",\n  \"product\": \"FF_AIMBOT_ESP\",\n  \"duration\": \"7 Days\",\n  \"balance\": \"₹1,400.00\"\n}",
+    "responseBodyParsed": {
+      "status": "success",
+      "key": "KLM-7D-AIM-5541-QQR",
+      "product": "FF_AIMBOT_ESP",
+      "duration": "7 Days"
+    },
+    "success": true,
+    "latencyMs": 410,
+    "attempts": 1,
+    "maxRetries": 3,
+    "deliveredKey": "KLM-7D-AIM-5541-QQR",
+    "productInfo": {
+      "productId": "prod_2",
+      "productName": "FREE FIRE AIMBOT + ESP MOD",
+      "duration": "7 Days",
+      "quantity": 1,
+      "price": 250,
+      "chatId": 819203112
+    }
+  },
+  {
+    "id": "UPLOG-1789695191182-9695",
+    "timestamp": "2026-09-18T01:33:11.182Z",
+    "formattedTime": "Sep 18, 2026, 1:33:11 AM",
+    "apiName": "API #2 (Custom Reseller Panel)",
+    "providerType": "custom_api2",
+    "callerContext": "Inventory Diagnostic Test",
+    "url": "https://api.resellerpanel.net/v1/keys/generate",
+    "method": "POST",
+    "requestHeaders": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer sec_tok_***44f1",
+      "Accept": "application/json"
+    },
+    "requestBodyRaw": "{\n  \"action\": \"create_key\",\n  \"product\": \"BGMI_VIP_GLOBAL\",\n  \"duration\": \"30 Days\",\n  \"quantity\": 1\n}",
+    "requestBodyParsed": {
+      "action": "create_key",
+      "product": "BGMI_VIP_GLOBAL",
+      "duration": "30 Days",
+      "quantity": 1
+    },
+    "responseStatus": 200,
+    "responseStatusText": "OK",
+    "responseBodyRaw": "{\n  \"success\": true,\n  \"data\": {\n    \"license_key\": \"BGMI-30D-ULTRA-9921\",\n    \"status\": \"ACTIVE\",\n    \"expires_in_days\": 30\n  }\n}",
+    "responseBodyParsed": {
+      "success": true,
+      "data": {
+        "license_key": "BGMI-30D-ULTRA-9921",
+        "status": "ACTIVE"
+      }
+    },
+    "success": true,
+    "latencyMs": 520,
+    "attempts": 1,
+    "maxRetries": 3,
+    "deliveredKey": "BGMI-30D-ULTRA-9921",
+    "productInfo": {
+      "productId": "prod_bgmi",
+      "productName": "BGMI GLOBAL VIP MOD",
+      "duration": "30 Days",
+      "quantity": 1
+    }
+  },
+  {
+    "id": "UPLOG-1789694411182-6291",
+    "timestamp": "2026-09-18T01:20:11.182Z",
+    "formattedTime": "Sep 18, 2026, 1:20:11 AM",
+    "apiName": "AdminPanels API",
+    "providerType": "adminpanels",
+    "callerContext": "Web Storefront Purchase",
+    "url": "https://adminpanels.com/api/buy",
+    "method": "POST",
+    "requestHeaders": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "x-master-key": "live_sec_***89a2"
+    },
+    "requestBodyRaw": "api_key=adm_live_key_9941&action=buy&product_id=UNKNOWN_LEGACY_PID&duration=1+Day&quantity=1",
+    "requestBodyParsed": {
+      "action": "buy",
+      "product_id": "UNKNOWN_LEGACY_PID",
+      "duration": "1 Day",
+      "quantity": 1
+    },
+    "responseStatus": 400,
+    "responseStatusText": "Bad Request",
+    "responseBodyRaw": "{\n  \"status\": \"error\",\n  \"code\": 400,\n  \"message\": \"Product ID not found or inactive on remote supplier panel.\"\n}",
+    "responseBodyParsed": {
+      "status": "error",
+      "code": 400,
+      "message": "Product ID not found or inactive on remote supplier panel."
+    },
+    "success": false,
+    "latencyMs": 290,
+    "attempts": 1,
+    "maxRetries": 3,
+    "errorMessage": "Product ID not found or inactive on remote supplier panel.",
+    "productInfo": {
+      "productId": "prod_test",
+      "productName": "LEGACY TESTING ITEM",
+      "duration": "1 Day",
+      "quantity": 1
+    }
+  }
+]
