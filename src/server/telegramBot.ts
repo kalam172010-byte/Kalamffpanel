@@ -7206,17 +7206,30 @@ export class TelegramBotService {
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  // Exact Main Menu Visual Layout from User Video & Model (8lvl id option removed)
+  // Exact Main Menu Visual Layout from User Video & Model
   public async sendMainMenu(chatId: number, balance: number, _ensureReplyKeyboard: boolean = false, messageId?: number) {
+    const users = this.loadBotUsers();
+    const botUser = users.get(chatId);
+    const firstName = botUser?.firstName || 'VEL';
+    const lang = this.getUserLanguage(chatId);
+
+    let greetingHeader = `👋 <b>Hello, ${firstName}!</b>`;
+    if (lang === 'ta') {
+      greetingHeader = `👋 <b>வணக்கம், ${firstName}!</b>`;
+    } else if (lang === 'hi') {
+      greetingHeader = `👋 <b>नमस्ते, ${firstName}!</b>`;
+    }
+
     const text =
-      `🛒 <b>Shop Store Now :</b> all key purchase & instantly delivery\n` +
-      `👤 <b>My Profile :</b> check your account information\n` +
-      `💰 <b>Add Balance :</b> deposit balance & secure service\n` +
-      `📜 <b>All History :</b> check all key purchase history\n` +
-      `🎁 <b>Referral :</b> invite friends & earn rewards\n` +
-      `▶️ <b>Tutorial :</b> view tutorial and work this bot\n` +
-      `❓ <b>Support :</b> bot problem fixed for support admin\n` +
-      `📢 <b>Community :</b> official updates & proof channel`;
+      `${greetingHeader}\n\n` +
+      `<blockquote>\n` +
+      `🌄 <b>Wide product catalog</b>\n` +
+      `⚡ <b>Instant delivery on payment</b>\n` +
+      `💳 <b>Multiple payment gateways</b>\n` +
+      `🛡️ <b>24/7 admin support</b>\n\n` +
+      `💵 <b>Balance: ₹${Number(balance || 0).toFixed(2)}</b>\n` +
+      `</blockquote>\n\n` +
+      `<i>Tap any button below to begin:</i>`;
 
     const inline_keyboard: any[] = [];
 
@@ -7228,23 +7241,29 @@ export class TelegramBotService {
 
     inline_keyboard.push(
       [
-        { text: '🛒 Shop Now', callback_data: 'catalog' }
+        { text: '🛒 Buy Now', callback_data: 'catalog' }
       ],
       [
-        { text: '💰 Add Balance', callback_data: 'deposit_prompt' },
-        { text: '👤 My Profile', callback_data: 'profile_history' }
+        { text: '🔄 Check Update', callback_data: 'check_update' },
+        { text: '💸 Add Balance', callback_data: 'deposit_prompt' }
       ],
       [
-        { text: '🔑 My Orders', callback_data: 'my_orders' },
-        { text: '💎 Upgrade to Reseller', callback_data: 'upgrade_reseller' }
+        { text: '👑 My Profile + 📜 All History', callback_data: 'profile_history' }
       ],
       [
-        { text: '🎁 Refer & Earn', callback_data: 'refer_earn' },
-        { text: '▶️ How to Use', callback_data: 'how_to_use' }
+        { text: '👥 Refer And Earn', callback_data: 'refer_earn' },
+        { text: '⁉️ How To Use Bot', callback_data: 'how_to_use' }
       ],
       [
-        { text: '🛠️ Support', callback_data: 'support' },
-        { text: '📢 Community', callback_data: 'community' }
+        { text: '🚀 Support', callback_data: 'support' },
+        { text: '🎁 Daily Gift', callback_data: 'daily_gift' }
+      ],
+      [
+        { text: '💎 VIP Reseller Upgrade', callback_data: 'upgrade_reseller' }
+      ],
+      [
+        { text: '📜 Bot Commands', callback_data: 'bot_commands' },
+        { text: '🌐 Language / மொழி / भाषा', callback_data: 'select_language' }
       ]
     );
 
