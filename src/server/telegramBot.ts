@@ -312,7 +312,7 @@ export class TelegramBotService {
   private watchdogTimer: NodeJS.Timeout | null = null;
   private supervisorTimer: NodeJS.Timeout | null = null;
   private currentAbortController: AbortController | null = null;
-  private botUsername = 'KALAMFFPANELWEBSITE_BOT';
+  private botUsername = 'KALAMFFPANEL1_12_BOT';
   private numpadAmounts = new Map<number, string>();
   private processedKeys = new Set<string>();
   private inFlightKeys = new Set<string>();
@@ -367,11 +367,13 @@ export class TelegramBotService {
   private botStartTime = Date.now();
   private activityListeners = new Set<(event: TelegramActivityEvent) => void>();
   private lastActivitiesSavedAt = 0;
+  private lastProcessedUpdateIdsSavedAt = 0;
 
   private constructor() {
     this.recentActivities = this.loadActivitiesFromDisk();
     this.lastUpdateId = this.loadLastUpdateId();
     this.processedKeys = this.loadProcessedKeys();
+    this.processedUpdateIds = this.loadProcessedUpdateIds();
     this.confirmedDepositOrders = this.loadConfirmedOrders();
     this.initSupervisor();
     this.initLowStockMonitor();
@@ -636,6 +638,38 @@ export class TelegramBotService {
       const arr = Array.from(this.processedKeys).slice(-1000);
       if (this.processedKeys.size > 1500) {
         this.processedKeys = new Set(arr);
+      }
+      fs.writeFileSync(filePath, JSON.stringify(arr), 'utf8');
+    } catch {}
+  }
+
+  private loadProcessedUpdateIds(): Set<number> {
+    const set = new Set<number>();
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_processed_update_ids.json');
+      if (fs.existsSync(filePath)) {
+        const arr = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (Array.isArray(arr)) {
+          for (const item of arr) {
+            if (typeof item === 'number') set.add(item);
+          }
+        }
+      }
+    } catch {}
+    return set;
+  }
+
+  private saveProcessedUpdateIds(force = false) {
+    const now = Date.now();
+    if (!force && now - this.lastProcessedUpdateIdsSavedAt < 5000) {
+      return;
+    }
+    this.lastProcessedUpdateIdsSavedAt = now;
+    try {
+      const filePath = path.join(this.getDataDir(), 'telegram_processed_update_ids.json');
+      const arr = Array.from(this.processedUpdateIds).slice(-2000);
+      if (this.processedUpdateIds.size > 3000) {
+        this.processedUpdateIds = new Set(arr);
       }
       fs.writeFileSync(filePath, JSON.stringify(arr), 'utf8');
     } catch {}
@@ -1420,7 +1454,7 @@ export class TelegramBotService {
       if (this.storedCallbacks && typeof this.storedCallbacks.getProducts === 'function') {
         try {
           const fromCb = this.storedCallbacks.getProducts();
-          if (Array.isArray(fromCb) && fromCb.length > 0) return fromCb;
+          if (Array.isArray(fromCb)) return fromCb;
         } catch {}
       }
 
@@ -1430,15 +1464,15 @@ export class TelegramBotService {
       if (fs.existsSync(dbFilePath)) {
         const raw = fs.readFileSync(dbFilePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
 
-      // 3. Fallback to legacy products.json
+      // 3. Fallback to legacy products.json only if exists
       const legacyFilePath = path.join(dataDir, 'products.json');
       if (fs.existsSync(legacyFilePath)) {
         const raw = fs.readFileSync(legacyFilePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {
       console.warn('[TelegramBot] Error loading products from disk:', e);
@@ -3615,6 +3649,7 @@ export class TelegramBotService {
 
               this.lastUpdateId = Math.max(this.lastUpdateId, update.update_id);
               this.saveLastUpdateId(this.lastUpdateId);
+              this.saveProcessedUpdateIds();
 
               try {
                 await this.handleUpdate(update, getProducts, getUserWallet, deductWallet, creditWallet, deliverKey, createFamOrder, queryFamOrder);
@@ -3720,15 +3755,17 @@ export class TelegramBotService {
       });
     }
 
-    // Build all specific deduplication keys for this event
+    // Telegram provides unique update_id and callback_query.id per interaction
     const keysToCheck: string[] = [`up_${update.update_id}`];
     if (update.callback_query && update.callback_query.id) {
       keysToCheck.push(`cb_${update.callback_query.id}`);
-      if (update.callback_query.message && update.callback_query.message.chat) {
-        keysToCheck.push(`cb_data_${update.callback_query.message.chat.id}_${update.callback_query.data}_${update.callback_query.message.message_id}`);
-      }
-    } else if (update.message && update.message.chat && update.message.message_id) {
+    }
+    if (update.message && update.message.message_id && update.message.chat) {
       keysToCheck.push(`msg_${update.message.chat.id}_${update.message.message_id}`);
+    }
+    const anyUp = update as any;
+    if (anyUp.edited_message && anyUp.edited_message.message_id && anyUp.edited_message.chat) {
+      keysToCheck.push(`msg_${anyUp.edited_message.chat.id}_${anyUp.edited_message.message_id}`);
     }
 
     // Check if ANY of the keys are already processed or currently in-flight
@@ -3931,7 +3968,7 @@ export class TelegramBotService {
       this.userLastActionText.clear();
     }
 
-    // Strip bot username suffix if present: e.g. /start@KALAMFFPANELWEBSITE_BOT or /buy@any_bot -> /start, /buy
+    // Strip bot username suffix if present: e.g. /start@KALAMFFPANEL1_12_BOT or /buy@any_bot -> /start, /buy
     const cleanCmd = rawText.replace(/^(\/[a-zA-Z0-9_]+)@[a-zA-Z0-9_]+/i, '$1').trim();
     const lower = cleanCmd.toLowerCase();
     // Normalize alphanumeric without emojis or symbols
@@ -5486,6 +5523,49 @@ export class TelegramBotService {
       return;
     }
 
+    // 1.5 🆔 User ID & Status Check (/id, /myid, /chatid, /whoami, /ping)
+    if (
+      cleanCmd === '/id' ||
+      cleanCmd.startsWith('/id ') ||
+      cleanCmd === '/myid' ||
+      cleanCmd.startsWith('/myid ') ||
+      cleanCmd === '/chatid' ||
+      cleanCmd === '/whoami' ||
+      norm === 'my id' ||
+      norm === 'id'
+    ) {
+      const w = getUserWallet(userId);
+      const isRes = !!(botUser?.isReseller || botUser?.role === 'RESELLER');
+      const isAdm = this.isAdmin(chatId);
+      await this.sendMessage(
+        chatId,
+        `🆔 <b>YOUR ACCOUNT DETAILS / உங்கள் கணக்கு விவரம்</b>\n\n` +
+        `• <b>Name:</b> ${botUser?.firstName || msg.from.first_name || 'User'}\n` +
+        `• <b>Telegram ID:</b> <code>${chatId}</code>\n` +
+        `• <b>Account Role:</b> <b>${isAdm ? '👑 ADMIN' : (isRes ? '💎 VIP RESELLER' : '👤 NORMAL USER')}</b>\n` +
+        `• <b>Wallet Balance:</b> <b>₹${w.balance.toFixed(2)}</b>\n\n` +
+        `<i>Use /buy to browse cheat panels or /deposit to add balance.</i>`,
+        {
+          inline_keyboard: [
+            [{ text: '🛒 Buy Keys', callback_data: 'catalog' }, { text: '💳 Add Balance', callback_data: 'deposit_prompt' }],
+            [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+          ]
+        }
+      );
+      return;
+    }
+
+    if (cleanCmd === '/ping' || cleanCmd === '/status') {
+      await this.sendMessage(
+        chatId,
+        `⚡ <b>BOT STATUS: ONLINE 🟢</b>\n\n` +
+        `• <b>Server Response:</b> Instant (OK)\n` +
+        `• <b>Catalog Sync:</b> Live 🔄\n` +
+        `• <b>Instant Key Delivery:</b> Active ⚡`
+      );
+      return;
+    }
+
     // 2. 🏠 Main Menu / Start / Back
     if (
       cleanCmd === '/start' ||
@@ -6126,13 +6206,18 @@ export class TelegramBotService {
     }
 
     // 4. 👑 My Profile + All History
-    if (data === 'profile_history') {
+    if (data === 'profile_history' || data === 'profile') {
       await this.showUserProfileAndHistory(chatId, botUser, getUserWallet, msgId);
       return;
     }
 
-    if (data === 'my_keys') {
+    if (data === 'my_orders' || data === 'all_history' || data === 'my_keys') {
       await this.showUserKeyHistory(chatId, botUser, msgId);
+      return;
+    }
+
+    if (data === 'all_files_download') {
+      await this.showAllFilesDownload(chatId, msgId);
       return;
     }
 
@@ -6803,59 +6888,45 @@ export class TelegramBotService {
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  // Exact Main Menu Visual Layout from User Video & Screenshot (KALAM FF PANEL)
+  // Exact Main Menu Visual Layout from User Video & Model (8lvl id option removed)
   public async sendMainMenu(chatId: number, balance: number, _ensureReplyKeyboard: boolean = false, messageId?: number) {
     const users = this.loadBotUsers();
     const botUser = users.get(chatId);
-    const userName = (botUser?.firstName || 'KALAM FF PANEL').toUpperCase();
-    const lang = this.getUserLanguage(chatId);
-    const i18n = I18N_TEXTS[lang] || I18N_TEXTS.en;
 
     const text =
-      `${i18n.title}\n\n` +
-      `👋 <b>Hello, ${userName}!</b>\n\n` +
-      `<blockquote>` +
-      `${i18n.bullet_catalog}\n` +
-      `${i18n.bullet_delivery}\n` +
-      `${i18n.bullet_gateways}\n` +
-      `${i18n.bullet_support}\n\n` +
-      `💵 <b>Balance: ₹${balance.toFixed(2)}</b>` +
-      `</blockquote>\n\n` +
-      `${i18n.tap_to_begin}`;
+      `🛒 <b>Shop Store Now :</b> all key purchase & instantly delivery\n` +
+      `👤 <b>My Profile :</b> check your account information\n` +
+      `💰 <b>Add Balance :</b> deposit balance & secure service\n` +
+      `📜 <b>All History :</b> check all key purchase history\n` +
+      `🎁 <b>Referral :</b> invite friends & earn rewards\n` +
+      `▶️ <b>Tutorial :</b> view tutorial and work this bot\n` +
+      `❓ <b>Support :</b> bot problem fixed for support admin`;
 
     const inline_keyboard: any[] = [];
 
     if (this.isAdmin(chatId)) {
       inline_keyboard.push([
-        { text: i18n.btn_admin || '🎛️ Master Admin Control Panel 👑', callback_data: 'admin_panel' }
+        { text: '🎛️ Master Admin Control Panel 👑', callback_data: 'admin_panel' }
       ]);
     }
 
     inline_keyboard.push(
       [
-        { text: i18n.btn_buy_now, callback_data: 'catalog' }
+        { text: '🛒 Shop Now', callback_data: 'catalog' }
       ],
       [
-        { text: i18n.btn_check_update, callback_data: 'check_update' },
-        { text: i18n.btn_add_balance, callback_data: 'deposit_prompt' }
+        { text: '🔑 My Orders', callback_data: 'my_orders' },
+        { text: '👤 Profile', callback_data: 'profile_history' }
       ],
       [
-        { text: i18n.btn_my_profile, callback_data: 'profile_history' }
+        { text: '💎 Upgrade to Reseller', callback_data: 'upgrade_reseller' }
       ],
       [
-        { text: i18n.btn_refer_earn, callback_data: 'refer_earn' },
-        { text: i18n.btn_how_to_use, callback_data: 'how_to_use' }
+        { text: '❓ How to Use', callback_data: 'how_to_use' },
+        { text: '🛠️ Support', callback_data: 'support' }
       ],
       [
-        { text: i18n.btn_support, callback_data: 'support' },
-        { text: i18n.btn_daily_gift, callback_data: 'daily_gift' }
-      ],
-      [
-        { text: i18n.btn_reseller, callback_data: 'upgrade_reseller' }
-      ],
-      [
-        { text: i18n.btn_commands || '🟢 📜 Bot Commands List', callback_data: 'bot_commands' },
-        { text: i18n.btn_language, callback_data: 'select_language' }
+        { text: '🎁 Refer & Earn', callback_data: 'refer_earn' }
       ]
     );
 
@@ -7039,24 +7110,59 @@ export class TelegramBotService {
     }
   }
 
-  // 1. 🛒 Shop Now — Select Device Type
-  private async showProductCatalog(chatId: number, _products: any[], messageId?: number) {
-    const users = this.loadBotUsers();
-    const botUser = users.get(chatId);
-    const userName = (botUser?.firstName || 'KALAM FF PANEL').toUpperCase();
+  // 1. 🛒 Shop Now — All Products Catalog (Video model layout with 2-column buttons)
+  private async showProductCatalog(chatId: number, rawProducts: any[], messageId?: number) {
+    const products = (rawProducts && rawProducts.length > 0) ? rawProducts : this.loadProductsFromDisk();
+
+    if (!products || products.length === 0) {
+      const emptyText =
+        `<b>KALAM FF PANEL — SHOP</b>\n\n` +
+        `⚠️ <i>No products currently available in the catalog.</i>`;
+
+      const emptyKeyboard = [
+        [{ text: '🔄 Refresh Catalog', callback_data: 'catalog' }],
+        [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
+      ];
+      await this.editOrSendMessage(chatId, emptyText, { inline_keyboard: emptyKeyboard }, messageId);
+      return;
+    }
 
     const text =
-      `✨ <b>SELECT YOUR DEVICE TYPE / உங்கள் சாதனத்தை தேர்வு செய்யவும்</b> ✨\n\n` +
-      `<blockquote>` +
-      `👋 <b>YOO ${userName}!</b>\n` +
-      `<i>Choose your device category or view all available cheats & panels with live stock:</i>` +
-      `</blockquote>`;
+      `<b>KALAM FF PANEL — SHOP</b>\n` +
+      `<b>Choose a product 👇</b>`;
 
-    const inline_keyboard = [
-      [{ text: '🤖 ANDROID NON ROOT', callback_data: 'cat_dev:non_root' }, { text: '⚙️ ANDROID ROOT', callback_data: 'cat_dev:root' }],
-      [{ text: '🍏 IPHONE / iOS', callback_data: 'cat_dev:ios' }, { text: '🌟 ALL CHEATS & PANELS (எல்லாமே)', callback_data: 'cat_dev:all' }],
-      [{ text: '❌ Back to Menu', callback_data: 'main_menu' }]
-    ];
+    const inline_keyboard: any[][] = [];
+
+    // 2-column grid of product buttons
+    let currentRow: any[] = [];
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      let displayName = (p.name || p.title || 'Product').trim().toUpperCase();
+      if (displayName.length > 20) {
+        displayName = displayName.slice(0, 18) + '..';
+      }
+      const isMaint = (p.status || '').toUpperCase() === 'MAINTENANCE' || !!p.isMaintenance;
+      const label = isMaint ? `🛠️ ${displayName}` : `🛡️ ${displayName}`;
+      const btn = {
+        text: label,
+        callback_data: `prod:${p.id || p.productId || p.pid}`
+      };
+
+      currentRow.push(btn);
+      if (currentRow.length === 2) {
+        inline_keyboard.push(currentRow);
+        currentRow = [];
+      }
+    }
+    if (currentRow.length > 0) {
+      inline_keyboard.push(currentRow);
+    }
+
+    // Bottom action buttons matching model
+    inline_keyboard.push(
+      [{ text: '📥 All Files Download', callback_data: 'all_files_download' }],
+      [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
+    );
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
@@ -7114,44 +7220,48 @@ export class TelegramBotService {
           return false;
         }
 
-        const hasNonRootExplicit = 
-          cat === 'non-root mobile' ||
-          cat === 'non-root' ||
-          cat === 'non root' ||
-          cat === 'nonroot' ||
-          dev === 'non-root' ||
-          dev === 'nonroot' ||
-          name.includes('non-root') ||
-          name.includes('non root') ||
-          name.includes('nonroot');
-
-        const hasRootExplicit = 
-          cat === 'root mobile' ||
-          cat === 'root' ||
-          cat === 'root only' ||
-          dev === 'root' ||
-          dev === 'root only' ||
-          (name.includes('root') && !name.includes('non'));
-
         const isDual = 
           dev === 'root + nonroot' ||
           dev.includes('root + nonroot') ||
           dev.includes('root & nonroot') ||
+          dev.includes('root+nonroot') ||
+          dev.includes('universal') ||
+          dev.includes('all') ||
           cat === 'root + nonroot' ||
-          name.includes('root + nonroot') ||
-          name.includes('root + non-root');
+          cat.includes('root + nonroot') ||
+          cat.includes('root & nonroot') ||
+          cat.includes('universal') ||
+          cat.includes('all');
+
+        if (isDual) {
+          return true;
+        }
+
+        const hasNonRootExplicit = 
+          cat.includes('non-root') ||
+          cat.includes('non root') ||
+          cat.includes('nonroot') ||
+          dev.includes('non-root') ||
+          dev.includes('non root') ||
+          dev.includes('nonroot') ||
+          name.includes('non-root') ||
+          name.includes('non root') ||
+          name.includes('nonroot') ||
+          name.includes('apkmod');
+
+        const hasRootExplicit = 
+          (cat.includes('root') && !cat.includes('non')) ||
+          (dev.includes('root') && !dev.includes('non')) ||
+          (name.includes('root') && !name.includes('non'));
 
         if (deviceType === 'root') {
-          if (hasNonRootExplicit && !isDual) return false;
           if (hasRootExplicit) return true;
-          if (isDual && !hasNonRootExplicit) return true;
+          if (!hasNonRootExplicit) return true;
           return false;
         }
 
         if (deviceType === 'non_root') {
           if (hasNonRootExplicit) return true;
-          if (isDual) return true;
-          if (cat === 'non-root mobile' || cat === 'non-root') return true;
           if (!hasRootExplicit) return true;
           return false;
         }
@@ -7160,9 +7270,27 @@ export class TelegramBotService {
       });
     }
 
-    // Fallback: If device-specific filter returned 0, show all products so user is never stranded
     if (filtered.length === 0) {
-      filtered = products;
+      const emptyCatText =
+        `✨ <b>${devLabel} PRODUCTS / பேனல்கள்</b> ✨\n\n` +
+        `<blockquote>` +
+        `⚠️ <b>No products currently available under ${devLabel}.</b>\n` +
+        `<i>(இந்த பிரிவில் தற்போது பொருட்கள் எதுவும் இல்லை)</i>\n\n` +
+        `💡 <i>Please select another category below or check back when restocked!</i>` +
+        `</blockquote>`;
+
+      const emptyKeyboard = [
+        [
+          { text: '🤖 Non-Root', callback_data: 'cat_dev:non_root' },
+          { text: '⚙️ Root', callback_data: 'cat_dev:root' },
+          { text: '🍏 iOS', callback_data: 'cat_dev:ios' }
+        ],
+        [{ text: '📦 View All Products', callback_data: 'catalog' }],
+        [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+      ];
+
+      await this.editOrSendMessage(chatId, emptyCatText, { inline_keyboard: emptyKeyboard }, messageId);
+      return;
     }
 
     const tierBadge = isReseller
@@ -7215,7 +7343,14 @@ export class TelegramBotService {
 
   private async showProductPlans(chatId: number, productId: string, rawProducts: any[], messageId?: number) {
     const products = (rawProducts && rawProducts.length > 0) ? rawProducts : this.loadProductsFromDisk();
-    const product = products.find((p: any) => p.id === productId || p.productId === productId || String(p.id) === String(productId));
+    const product = products.find((p: any) => 
+      p.id === productId || 
+      p.productId === productId || 
+      p.pid === productId ||
+      String(p.id) === String(productId) ||
+      String(p.productId) === String(productId) ||
+      String(p.pid) === String(productId)
+    );
     if (!product) {
       await this.editOrSendMessage(chatId, '⚠️ Product not found or removed.', {
         inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
@@ -7248,13 +7383,11 @@ export class TelegramBotService {
       return;
     }
 
-    const plans = Array.isArray(product.plans) ? product.plans : [];
-    if (plans.length === 0) {
-      await this.editOrSendMessage(chatId, `⚠️ No active pricing plans found for ${product.name}.`, {
-        inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
-      }, messageId);
-      return;
-    }
+    let plans = Array.isArray(product.plans) && product.plans.length > 0 ? product.plans : [
+      { id: '1day', duration: '1 Day', price: product.price || 30, resellerPrice: product.resellerPrice || 20 },
+      { id: '7day', duration: '7 Days', price: (product.price ? product.price * 5 : 150), resellerPrice: (product.resellerPrice ? product.resellerPrice * 5 : 100) },
+      { id: '30day', duration: '30 Days', price: (product.price ? product.price * 15 : 450), resellerPrice: (product.resellerPrice ? product.resellerPrice * 15 : 300) }
+    ];
 
     const users = this.loadBotUsers();
     const botUser = users.get(chatId);
@@ -7304,10 +7437,28 @@ export class TelegramBotService {
     userId: string,
     messageId?: number
   ) {
-    const product = products.find((p: any) => p.id === productId || p.productId === productId);
+    const pList = (products && products.length > 0) ? products : this.loadProductsFromDisk();
+    const product = pList.find((p: any) => 
+      p.id === productId || 
+      p.productId === productId || 
+      p.pid === productId ||
+      String(p.id) === String(productId) ||
+      String(p.productId) === String(productId) ||
+      String(p.pid) === String(productId)
+    );
     if (!product) return;
 
-    const plan = (product.plans || []).find((pl: any) => pl.id === planId || pl.duration === planId || pl.name === planId);
+    let plans = Array.isArray(product.plans) && product.plans.length > 0 ? product.plans : [
+      { id: '1day', duration: '1 Day', price: product.price || 30, resellerPrice: product.resellerPrice || 20 },
+      { id: '7day', duration: '7 Days', price: (product.price ? product.price * 5 : 150), resellerPrice: (product.resellerPrice ? product.resellerPrice * 5 : 100) },
+      { id: '30day', duration: '30 Days', price: (product.price ? product.price * 15 : 450), resellerPrice: (product.resellerPrice ? product.resellerPrice * 15 : 300) }
+    ];
+
+    const plan = plans.find((pl: any) => 
+      String(pl.id) === String(planId) || 
+      String(pl.duration).toLowerCase() === String(planId).toLowerCase() || 
+      String(pl.name).toLowerCase() === String(planId).toLowerCase()
+    ) || plans[0];
     if (!plan) return;
 
     const users = this.loadBotUsers();
@@ -7345,10 +7496,14 @@ export class TelegramBotService {
       ]);
     } else {
       const shortage = Math.round((price - wallet.balance) * 100) / 100;
-      text += `⚠️ <b>Insufficient Balance!</b> You need ₹${shortage} more to buy this key.\n\n` +
-              `<i>Add balance via UPI to proceed.</i>`;
+      const roundedShortage = Math.max(1, Math.ceil(shortage));
+      text += `⚠️ <b>Insufficient Balance!</b> You need <b>₹${shortage}</b> more to buy this key.\n\n` +
+              `<i>(உங்களிடம் போதிய பேலன்ஸ் இல்லை. கீழே உள்ள பட்டனை தட்டி உடனடியாக UPI மூலம் பேலன்ஸ் சேர்க்கவும்.)</i>`;
       inline_keyboard.push([
-        { text: `💲 Add Balance (₹${shortage})`, callback_data: 'deposit_prompt' }
+        { text: `⚡ 1-Tap UPI Deposit ₹${roundedShortage}`, callback_data: `fam_amt:${roundedShortage}` }
+      ]);
+      inline_keyboard.push([
+        { text: `💰 Custom Add Balance Numpad`, callback_data: 'deposit_prompt' }
       ]);
     }
 
@@ -7667,7 +7822,7 @@ export class TelegramBotService {
     }
   }
 
-  // 3. 👤 User Profile (Video layout)
+  // 3. 👤 User Profile (Video model layout)
   private async showUserProfileAndHistory(
     chatId: number,
     botUser: BotUser,
@@ -7678,88 +7833,74 @@ export class TelegramBotService {
     const allPurchases = this.loadPurchases();
     const userPurchases = allPurchases.filter(p => p.chatId === chatId || p.userId === botUser.userId);
 
-    const isReseller = !!(botUser.isReseller || this.isAdmin(chatId));
-    const roleText = isReseller ? '💎 VIP Reseller' : (this.isAdmin(chatId) ? '👑 Administrator' : 'Regular User');
-    const joinedDate = botUser.firstSeen ? new Date(botUser.firstSeen).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '08 Sept 2026';
-    const userName = (botUser.firstName || 'KALAM FF PANEL').toUpperCase();
+    const userName = (botUser.firstName || 'User').trim();
     const usernameDisplay = botUser.username ? '@' + botUser.username.replace('@', '') : 'Not set';
 
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayFormatted = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}, ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
     const text =
-      `✨ <b>USER PROFILE</b> ✨\n\n` +
-      `<blockquote>` +
-      `🆔 <b>ID:</b> <code>${chatId}</code>\n` +
-      `👤 <b>Name:</b> ${userName}\n` +
-      `💎 <b>Username:</b> ${usernameDisplay}\n` +
-      `📅 <b>Joined:</b> ${joinedDate}\n` +
-      `👑 <b>Account Type:</b> ${roleText}\n\n` +
-      `💵 <b>Balance:</b> ₹${wallet.balance.toFixed(2)}\n` +
-      `💳 <b>Spent:</b> ₹${(botUser.totalSpent || 0).toFixed(2)}\n` +
-      `🔑 <b>Keys:</b> ${userPurchases.length}` +
-      `</blockquote>`;
+      `<b>User Account Information</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `🪪 <b>Name:</b> ${userName}\n` +
+      `🪪 <b>Username:</b> ${usernameDisplay}\n` +
+      `🪪 <b>Chat ID:</b> <code>${chatId}</code>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `💰 <b>Balance:</b> ${wallet.balance.toFixed(2)} INR\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `🕒 <b>Date:</b> ${todayFormatted}\n` +
+      `🛍️ <b>Total Order:</b> ${userPurchases.length}`;
 
     const inline_keyboard = [
-      [
-        { text: '🔑 My Keys', callback_data: 'my_keys' },
-        { text: '💲 Add Fund', callback_data: 'deposit_prompt' }
-      ],
-      [{ text: '❌ Back', callback_data: 'main_menu' }]
+      [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
     ];
-
-    // Try fetching user's Telegram profile photo
-    const photoUrl = await this.getUserProfilePhotoUrl(chatId);
-    if (photoUrl) {
-      if (messageId) {
-        // Delete previous text message so we can cleanly display the photo card
-        await this.deleteMessage(chatId, messageId).catch(() => {});
-      }
-      await this.sendPhoto(chatId, photoUrl, text, { inline_keyboard });
-      return;
-    }
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  // 4. 🔑 My Keys
+  // 4. 🔑 My Orders (User Account Purchase History)
   private async showUserKeyHistory(chatId: number, botUser?: BotUser, messageId?: number) {
     const allPurchases = this.loadPurchases();
     const userPurchases = allPurchases.filter(p => p.chatId === chatId || (botUser && p.userId === botUser.userId));
 
     if (userPurchases.length === 0) {
       const text =
-        `<blockquote>` +
+        `<b>User Account Purchase History</b>\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
         `‼️ <b>No keys found!</b>\n` +
-        `<i>You haven't purchased anything yet.</i>` +
-        `</blockquote>`;
+        `<i>You haven't purchased any keys yet.</i>\n` +
+        `━━━━━━━━━━━━━━━━━━`;
 
       await this.editOrSendMessage(chatId, text, {
         inline_keyboard: [
           [
             { text: '🛒 Shop Now', callback_data: 'catalog' },
-            { text: '❌ Back', callback_data: 'main_menu' }
+            { text: '🔙 Back to Menu', callback_data: 'main_menu' }
           ]
         ]
       }, messageId);
       return;
     }
 
-    const keysList = userPurchases.map((p, idx) => {
+    const keysList = userPurchases.map((p) => {
       const dateStr = new Date(p.timestamp).toLocaleDateString('en-GB');
       const keysFormatted = p.keys.map(k => `<code>${k}</code>`).join(', ');
-      return `• <b>${p.productName}</b> (${p.planDuration}) - ₹${p.price}\n  Key: ${keysFormatted} (${dateStr})`;
-    }).join('\n\n');
+      return `📦 <b>${p.productName}</b> (${p.planDuration}) - ₹${p.price}\n🔑 Key: ${keysFormatted}\n📅 Date: ${dateStr}`;
+    }).join('\n━━━━━━━━━━━━━━━━━━\n');
 
     const text =
-      `🔑 <b>YOUR PURCHASED KEYS</b>\n\n` +
-      `<blockquote>` +
-      `${keysList}` +
-      `</blockquote>\n\n` +
+      `<b>User Account Purchase History</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `${keysList}\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
       `<i>Tap on any key code to copy it directly.</i>`;
 
     await this.editOrSendMessage(chatId, text, {
       inline_keyboard: [
         [
           { text: '🛒 Shop Now', callback_data: 'catalog' },
-          { text: '❌ Back', callback_data: 'main_menu' }
+          { text: '🔙 Back to Menu', callback_data: 'main_menu' }
         ]
       ]
     }, messageId);
@@ -7804,30 +7945,29 @@ export class TelegramBotService {
     }
 
     const inline_keyboard: any[][] = [
-      [{ text: '🛒 Buy Keys', callback_data: 'catalog' }, { text: '💸 Add Balance', callback_data: 'deposit' }],
+      [{ text: '🛒 Buy Keys', callback_data: 'catalog' }, { text: '💸 Add Balance', callback_data: 'deposit_prompt' }],
       isAdm ? [{ text: '🎛️ Admin Panel', callback_data: 'admin_panel' }] : [],
-      [{ text: '🏠 Main Menu', callback_data: 'main_menu' }]
+      [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
     ].filter(row => row.length > 0);
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
   }
 
-  // 5. 📌 How to use
+  // 5. 📌 How to use (Video tutorial layout)
   private async showHowToUseBot(chatId: number, messageId?: number) {
     const text =
-      `✨ <b>HOW TO USE THE BOT</b> ✨\n\n` +
-      `<blockquote>` +
-      `<b>Follow these simple steps:</b>\n\n` +
-      `1. 💳 Add balance to your wallet first.\n` +
-      `2. 📦 Go to products section and pick your plan.\n` +
-      `3. 🔑 Click buy and copy your instant key!\n\n` +
-      `<i>Watch the detailed video tutorial below for full guide!</i>` +
-      `</blockquote>`;
+      `<b>Bot Tutorial & How to Use</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `1️⃣ <b>Add Balance:</b> Add funds using instant UPI / QR code.\n` +
+      `2️⃣ <b>Shop Now:</b> Select your preferred Cheat Panel & duration plan.\n` +
+      `3️⃣ <b>Instant Delivery:</b> Copy license key and inject into panel.\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `▶️ <i>Watch the official tutorial video guide below:</i>`;
 
     const { apkTutorialUrl } = this.getCredentials();
     const inline_keyboard = [
-      [{ text: '🎬 Watch Video Guide', url: apkTutorialUrl || 'https://youtu.be/kalam_tutorial' }],
-      [{ text: '❌ Back', callback_data: 'main_menu' }]
+      [{ text: '▶️ Watch Video Tutorial', url: apkTutorialUrl || 'https://t.me/kalamffpanel' }],
+      [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
     ];
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
@@ -7864,7 +8004,7 @@ export class TelegramBotService {
         `</blockquote>`;
 
       await this.editOrSendMessage(chatId, text, {
-        inline_keyboard: [[{ text: '❌ Back to Menu', callback_data: 'main_menu' }]]
+        inline_keyboard: [[{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]]
       }, messageId);
       return;
     }
@@ -7889,32 +8029,32 @@ export class TelegramBotService {
       `</blockquote>`;
 
     await this.editOrSendMessage(chatId, text, {
-      inline_keyboard: [[{ text: '❌ Back to Menu', callback_data: 'main_menu' }]]
+      inline_keyboard: [[{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]]
     }, messageId);
   }
 
-  // 8. 👥 Refer & Earn
+  // 8. 👥 Refer & Earn (Matching model)
   private async showReferAndEarn(chatId: number, messageId?: number) {
     const referrals = this.loadReferrals();
     const refRecord = referrals.get(chatId) || { referralCount: 0, totalEarned: 0, referredUserIds: [] };
-    const refLink = `https://t.me/${this.botUsername.replace('@', '')}?start=ref${chatId}`;
+    const botCleanUsername = this.botUsername.replace('@', '');
+    const refLink = `https://t.me/${botCleanUsername}?start=ref_${chatId}`;
 
     const text =
-      `✨ <b>REFER & EARN</b> ✨\n\n` +
-      `<blockquote>` +
-      `<b>Invite friends & earn rewards:</b>\n\n` +
-      `• ₹2.00 — when friend adds balance first time\n` +
-      `• ₹2.00 — when friend makes first purchase\n\n` +
+      `<b>Refer & Earn Program</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `Invite friends and earn instant cash rewards on every topup!\n\n` +
+      `🎁 <b>Reward:</b> ₹2.00 instant on friend join + 5% lifetime deposit commission!\n` +
       `👥 <b>Total Referrals:</b> ${refRecord.referralCount}\n` +
-      `💰 <b>Total Earned:</b> ₹${refRecord.totalEarned.toFixed(2)}\n\n` +
+      `💰 <b>Total Earned:</b> ₹${refRecord.totalEarned.toFixed(2)}\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
       `🔗 <b>Your Referral Link:</b>\n` +
-      `<code>${refLink}</code>` +
-      `</blockquote>`;
+      `<code>${refLink}</code>`;
 
-    const shareText = encodeURIComponent(`🔥 Best Free Fire VIP Injectors, Panel Hacks & Mod APKs! Join and get free welcome balance: ${refLink}`);
+    const shareText = encodeURIComponent(`🔥 Best Free Fire VIP Injectors, Panel Hacks & Mod APKs! Join now: ${refLink}`);
     const inline_keyboard = [
-      [{ text: '🍏 📲 Share Link', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${shareText}` }],
-      [{ text: '❌ Back to Menu', callback_data: 'main_menu' }]
+      [{ text: '📢 Share with Friends', url: `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${shareText}` }],
+      [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
     ];
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
@@ -7922,20 +8062,49 @@ export class TelegramBotService {
 
   // 9. 📞 Support
   private async showSupport(chatId: number, messageId?: number) {
-    const text =
-      `✨ <b>CUSTOMER SUPPORT CENTER</b> ✨\n\n` +
-      `<blockquote>` +
-      `<i>Welcome to our 24/7 support desk.</i>\n` +
-      `<i>Facing any issues with keys or payments? Contact us!</i>\n\n` +
-      `<b>Click the button below to get admin link.</b>` +
-      `</blockquote>`;
-
     const { supportUsername } = this.getStoreSettingsFromDisk();
     const cleanAdmin = (supportUsername || 'INR_TAMIL_GAMER1').replace('@', '');
 
+    const text =
+      `<b>Customer & Admin Support</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `Need help with license keys, panel setup, or balance?\n` +
+      `Our official support team is available 24/7!\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `💬 <i>Click below to contact support admin directly:</i>`;
+
     const inline_keyboard = [
-      [{ text: '💬 Contact Admin', url: `https://t.me/${cleanAdmin}` }],
-      [{ text: '❌ Back', callback_data: 'main_menu' }]
+      [{ text: '🛠️ Contact Support Admin', url: `https://t.me/${cleanAdmin}` }],
+      [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
+    ];
+
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
+  }
+
+  // 10. 📥 All Files Download
+  public async showAllFilesDownload(chatId: number, messageId?: number) {
+    const { apkDownloadUrl } = this.getCredentials();
+    let liveApkUrl = (apkDownloadUrl || '').trim();
+    if (!liveApkUrl) {
+      liveApkUrl = 'https://t.me/kalamffpanel';
+    } else if (liveApkUrl.startsWith('@')) {
+      liveApkUrl = `https://t.me/${liveApkUrl.replace('@', '')}`;
+    } else if (liveApkUrl.startsWith('t.me/')) {
+      liveApkUrl = `https://${liveApkUrl}`;
+    } else if (!liveApkUrl.startsWith('http://') && !liveApkUrl.startsWith('https://')) {
+      liveApkUrl = `https://${liveApkUrl}`;
+    }
+
+    const text =
+      `<b>All VIP Files & Mod Downloads</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `📥 Download latest safe Anti-Ban APKs, OBB injectors, Magisk modules & iOS IPA files.\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `⚡ <i>Direct channel access for fast updates & file downloads:</i>`;
+
+    const inline_keyboard = [
+      [{ text: '📥 Open Download Channel', url: liveApkUrl }],
+      [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
     ];
 
     await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);

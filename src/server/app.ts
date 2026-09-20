@@ -11,6 +11,8 @@ import { reelsGeneratorRouter } from './reels-generator';
 import { telegramNotificationManager, NOTIFICATION_TYPE_DEFINITIONS, DEFAULT_TELEGRAM_NOTIFICATION_SETTINGS } from './telegram-notifications';
 import { auditLogService } from './audit-service';
 import { telegramBotService } from './telegramBot';
+import { sessionManager } from './session-manager';
+import type { Role } from '../types';
 
 export const app = express();
 
@@ -416,6 +418,7 @@ function saveProductsToDisk(products: any[]) {
     fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2), 'utf-8');
     const legacyPath = path.join(DATA_DIR, 'products.json');
     fs.writeFileSync(legacyPath, JSON.stringify(products, null, 2), 'utf-8');
+    globalProductsCache = products;
 
     // Real-time synchronization with Telegram Bot
     try {
@@ -428,6 +431,10 @@ function saveProductsToDisk(products: any[]) {
   } catch (e) {
     console.warn('[Server] Error saving products to disk:', e);
   }
+}
+
+function getProductsForTelegram(): any[] {
+  return loadProductsFromDisk();
 }
 
 // Security Headers & Hardening Middleware
@@ -1182,11 +1189,12 @@ export async function sendTelegramLowStockAlert(productOrId?: any, options?: { f
 
 // Initialize products from disk storage
 let globalProductsCache: any[] = loadProductsFromDisk();
-if (globalProductsCache.length === 0 && Array.isArray(INITIAL_PRODUCTS) && INITIAL_PRODUCTS.length > 0) {
+// Only initialize with INITIAL_PRODUCTS if the storage file has never been created at all
+if (!fs.existsSync(PRODUCTS_FILE) && globalProductsCache.length === 0 && Array.isArray(INITIAL_PRODUCTS) && INITIAL_PRODUCTS.length > 0) {
   globalProductsCache = INITIAL_PRODUCTS;
   saveProductsToDisk(INITIAL_PRODUCTS);
 }
-let isProductsInitialized = globalProductsCache.length > 0;
+let isProductsInitialized = true;
 
 // Health Check
 app.get('/api/health', (req: Request, res: Response) => {
@@ -1380,40 +1388,72 @@ app.post('/api/admin/inventory/low-stock/threshold', (req: Request, res: Respons
 
 // Products Global Catalog API (accessible to all accounts and devices)
 app.get('/api/products', (req: Request, res: Response) => {
-  // Always ensure we have latest disk state
-  if (globalProductsCache.length === 0) {
-    const fromDisk = loadProductsFromDisk();
-    if (fromDisk.length > 0) {
-      globalProductsCache = fromDisk;
-      isProductsInitialized = true;
-    } else if (Array.isArray(INITIAL_PRODUCTS) && INITIAL_PRODUCTS.length > 0) {
-      globalProductsCache = INITIAL_PRODUCTS;
-      saveProductsToDisk(INITIAL_PRODUCTS);
-      isProductsInitialized = true;
-    }
-  }
+  // Always load freshest data from disk
+  const diskProducts = loadProductsFromDisk();
+  const products = diskProducts.length > 0 ? diskProducts : globalProductsCache;
+  globalProductsCache = products;
 
-  // Ensure pid and duration are fully attached
-  const sanitized = globalProductsCache.map((p: any) => {
-    const pid = p.id || p.productId || p.pid;
-    const plans = (p.plans || []).map((pl: any) => ({
-      ...pl,
-      pid: pid,
-      productId: pid,
-      duration: pl.duration || pl.name || '1 Day',
-    }));
+  // Ensure pid, duration, price, stock, and features are fully attached
+  const sanitized = products.map((p: any) => {
+    const pid = p.id || p.productId || p.pid || `prod-${Date.now()}`;
+    const rawPlans = Array.isArray(p.plans) && p.plans.length > 0 ? p.plans : [
+      { id: '1day', duration: '1 Day', price: Number(p.price) || 30, resellerPrice: Number(p.resellerPrice) || 20, keysCount: 5 },
+      { id: '7day', duration: '7 Days', price: (Number(p.price) || 30) * 5, resellerPrice: (Number(p.resellerPrice) || 20) * 5, keysCount: 5 },
+      { id: '30day', duration: '30 Days', price: (Number(p.price) || 30) * 15, resellerPrice: (Number(p.resellerPrice) || 20) * 15, keysCount: 5 }
+    ];
+
+    const plans = rawPlans.map((pl: any) => {
+      const regPrice = Math.max(0, Math.round(Number(pl.price) || 0));
+      const resPrice = (pl.resellerPrice !== undefined && pl.resellerPrice !== null && pl.resellerPrice !== '')
+        ? Number(pl.resellerPrice)
+        : Math.round(regPrice * 0.75);
+      return {
+        ...pl,
+        id: pl.id || `plan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        pid: pid,
+        productId: pid,
+        duration: pl.duration || pl.name || '1 Day',
+        price: regPrice,
+        resellerPrice: resPrice,
+        keysCount: Number(pl.keysCount) || 0
+      };
+    });
+
+    const firstPlan = plans[0] || {};
+    const topPrice = p.price !== undefined && !isNaN(Number(p.price)) ? Number(p.price) : (firstPlan.price || 30);
+    const topResellerPrice = p.resellerPrice !== undefined && !isNaN(Number(p.resellerPrice)) ? Number(p.resellerPrice) : (firstPlan.resellerPrice || Math.round(topPrice * 0.75));
+    const totalKeys = (Array.isArray(p.keys) ? p.keys.length : 0) + Object.values(p.planKeys || {}).reduce((acc: number, arr: any) => acc + (Array.isArray(arr) ? arr.length : 0), 0);
+
     return {
       ...p,
+      id: pid,
       pid: pid,
       productId: pid,
+      name: p.name || p.title || 'Cheat Panel',
+      title: p.name || p.title || 'Cheat Panel',
+      category: p.category || 'Non-Root Mobile',
+      game: p.game || 'FREEFIRE',
+      deviceType: p.deviceType || p.device || 'ROOT + NONROOT',
+      device: p.device || p.deviceType || 'ROOT + NONROOT',
+      status: p.status || 'ACTIVE',
+      price: topPrice,
+      resellerPrice: topResellerPrice,
+      stock: totalKeys,
+      keysCount: totalKeys,
       durations: plans.map((pl: any) => pl.duration),
       plans,
+      features: Array.isArray(p.features) && p.features.length > 0 ? p.features : ['ESP Lines & Box', 'Aimbot 100% Headshot', 'Auto-Aim Bullet Track', 'Anti-Ban Safe V2', 'No Recoil'],
+      description: p.description || 'VIP Free Fire & FF MAX Anti-Ban Mod for Android and iOS.',
+      imageUrl: p.imageUrl || p.image || '/logo.png',
+      image: p.image || p.imageUrl || '/logo.png',
+      channelLink: p.channelLink || 'https://t.me/kalamffpanel',
+      downloadUrl: p.downloadUrl || p.apkDownloadUrl || 'https://t.me/kalamffpanel'
     };
   });
 
   res.json({
     success: true,
-    initialized: isProductsInitialized,
+    initialized: true,
     products: sanitized,
     count: sanitized.length,
     updatedAt: Date.now()
@@ -1425,7 +1465,7 @@ app.post('/api/products', (req: Request, res: Response) => {
     const { products } = req.body;
     if (Array.isArray(products)) {
       globalProductsCache = products.map((p: any) => {
-        const pid = p.id || p.productId || p.pid;
+        const pid = p.id || p.productId || p.pid || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
         const plans = (p.plans || []).map((pl: any) => {
           const regPrice = Math.max(0, Math.round(Number(pl.price) || 0));
           const rawRes = (pl.resellerPrice !== undefined && pl.resellerPrice !== null && pl.resellerPrice !== '')
@@ -1442,13 +1482,14 @@ app.post('/api/products', (req: Request, res: Response) => {
         });
         return {
           ...p,
+          id: pid,
           pid: pid,
           productId: pid,
           plans,
         };
       });
       isProductsInitialized = true;
-      // Persist to disk
+      // Persist to disk and sync with bot
       saveProductsToDisk(globalProductsCache);
       return res.json({
         success: true,
@@ -1459,6 +1500,136 @@ app.post('/api/products', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Expected products array' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin Add or Save Product endpoint
+app.post(['/api/admin/products', '/api/admin/products/save', '/api/admin/save-product'], (req: Request, res: Response) => {
+  try {
+    const p = req.body;
+    if (!p) return res.status(400).json({ success: false, error: 'Product data required' });
+
+    let products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    const pid = p.id || p.productId || p.pid || `prod-${Date.now()}`;
+    const existingIndex = products.findIndex((item: any) => item.id === pid || item.productId === pid);
+
+    const formattedProduct = {
+      ...p,
+      id: pid,
+      productId: pid,
+      pid: pid,
+      plans: Array.isArray(p.plans) ? p.plans : [
+        { duration: '1 Day', price: 99, resellerPrice: 79 },
+        { duration: '7 Days', price: 299, resellerPrice: 239 },
+        { duration: '30 Days', price: 699, resellerPrice: 559 }
+      ]
+    };
+
+    if (existingIndex >= 0) {
+      products[existingIndex] = { ...products[existingIndex], ...formattedProduct };
+    } else {
+      products.unshift(formattedProduct);
+    }
+
+    globalProductsCache = products;
+    saveProductsToDisk(products);
+
+    return res.json({
+      success: true,
+      message: 'Product saved successfully',
+      product: formattedProduct,
+      totalCount: products.length
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin Update Product by ID
+app.put('/api/admin/products/:id', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    let products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    const idx = products.findIndex((p: any) => p.id === id || p.productId === id);
+
+    if (idx < 0) {
+      return res.status(404).json({ success: false, error: 'Product not found' });
+    }
+
+    products[idx] = { ...products[idx], ...updates, id, productId: id };
+    globalProductsCache = products;
+    saveProductsToDisk(products);
+
+    return res.json({
+      success: true,
+      message: 'Product updated successfully',
+      product: products[idx]
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete Product by ID endpoints
+app.delete(['/api/admin/products/:id', '/api/products/:id'], (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    let products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    const initialLen = products.length;
+    products = products.filter((p: any) => p.id !== id && p.productId !== id && String(p.id) !== String(id));
+
+    globalProductsCache = products;
+    saveProductsToDisk(products);
+
+    return res.json({
+      success: true,
+      message: `Product ${id} deleted successfully`,
+      deleted: initialLen > products.length,
+      remainingCount: products.length
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST-based Delete Product endpoints
+app.post(['/api/admin/products/:id/delete', '/api/admin/products/delete', '/api/products/delete'], (req: Request, res: Response) => {
+  try {
+    const id = req.params.id || req.body?.id || req.body?.productId;
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Product ID required' });
+    }
+    let products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    const initialLen = products.length;
+    products = products.filter((p: any) => p.id !== id && p.productId !== id && String(p.id) !== String(id));
+
+    globalProductsCache = products;
+    saveProductsToDisk(products);
+
+    return res.json({
+      success: true,
+      message: `Product ${id} deleted successfully`,
+      deleted: initialLen > products.length,
+      remainingCount: products.length
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete All Products
+app.post('/api/admin/products/delete-all', (req: Request, res: Response) => {
+  try {
+    globalProductsCache = [];
+    saveProductsToDisk([]);
+    return res.json({
+      success: true,
+      message: 'All products removed from database',
+      count: 0
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -5491,6 +5662,159 @@ app.post('/api/admin/confirm-order', (req: Request, res: Response) => {
 });
 
 // ==========================================
+// ROBUST SESSION PERSISTENCE & COOKIE SYNC
+// ==========================================
+
+// 1. Get Current Authenticated Session (Cookie, Header, or Param)
+app.get(['/api/auth/session', '/api/session/current'], (req: Request, res: Response) => {
+  try {
+    const { user, source } = sessionManager.resolveUserFromRequest(req);
+    
+    if (!user) {
+      // Check query param fallback
+      const userIdParam = (req.query.userId as string || req.query.id as string || '').trim();
+      const emailParam = (req.query.email as string || '').trim();
+      if (userIdParam || emailParam) {
+        const wallet = findOrCreateWalletRecord(userIdParam, emailParam);
+        const resolvedRole: Role = (userIdParam.toLowerCase().includes('admin') || emailParam.toLowerCase().includes('admin')) ? 'ADMIN' : 'USER';
+        const fallbackSession = sessionManager.createSession({
+          id: userIdParam || emailParam,
+          email: emailParam || `${userIdParam}@kalam.shop`,
+          name: userIdParam || emailParam,
+          role: resolvedRole,
+          balance: wallet.balance
+        }, req);
+        sessionManager.setSessionCookie(res, fallbackSession);
+        return res.json({
+          success: true,
+          authenticated: true,
+          source: 'query_created',
+          sessionId: fallbackSession.sessionId,
+          user: {
+            id: fallbackSession.userId,
+            email: fallbackSession.email,
+            name: fallbackSession.name,
+            username: fallbackSession.username,
+            role: fallbackSession.role,
+            balance: wallet.balance
+          }
+        });
+      }
+
+      return res.json({
+        success: false,
+        authenticated: false,
+        user: null,
+        message: 'No active session'
+      });
+    }
+
+    // Refresh live wallet balance for this user
+    const wallet = findOrCreateWalletRecord(user.userId, user.email);
+    user.balance = wallet.balance;
+    sessionManager.updateSessionBalance(user.userId, wallet.balance);
+    sessionManager.setSessionCookie(res, user);
+
+    res.json({
+      success: true,
+      authenticated: true,
+      source,
+      sessionId: user.sessionId,
+      user: {
+        id: user.userId,
+        email: user.email,
+        name: user.name,
+        username: user.username,
+        role: user.role,
+        balance: wallet.balance
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, authenticated: false, error: err.message });
+  }
+});
+
+// 2. Login or Sync Client Auth State to Server & Secure Cookie
+app.post(['/api/auth/login-sync', '/api/session/sync'], (req: Request, res: Response) => {
+  try {
+    const { id, userId, email, name, username, role, balance } = req.body || {};
+    const cleanId = (id || userId || email || '').toString().trim();
+    if (!cleanId) {
+      return res.status(400).json({ success: false, error: 'User identifier is required' });
+    }
+
+    const cleanEmail = (email || (cleanId.includes('@') ? cleanId : `${cleanId}@kalam.shop`)).toString().trim();
+    const cleanName = (name || username || cleanId).toString().trim();
+    const wallet = findOrCreateWalletRecord(cleanId, cleanEmail, typeof balance === 'number' ? balance : undefined);
+
+    const resolvedRole: Role = (role as Role) || (cleanId.toLowerCase().includes('admin') || cleanEmail.toLowerCase().includes('admin') ? 'ADMIN' : 'USER');
+
+    const session = sessionManager.createSession({
+      id: cleanId,
+      email: cleanEmail,
+      name: cleanName,
+      username: username || (cleanId.startsWith('@') ? cleanId : undefined),
+      role: resolvedRole,
+      balance: wallet.balance
+    }, req);
+
+    sessionManager.setSessionCookie(res, session);
+
+    res.json({
+      success: true,
+      authenticated: true,
+      sessionId: session.sessionId,
+      user: {
+        id: session.userId,
+        email: session.email,
+        name: session.name,
+        username: session.username,
+        role: session.role,
+        balance: wallet.balance
+      },
+      message: 'Session synchronized and persistent cookie set'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Explicit Logout (Clears Server Session & Browser Cookies)
+app.post(['/api/auth/logout', '/api/session/logout'], (req: Request, res: Response) => {
+  try {
+    const cookies = sessionManager.parseCookies(req);
+    const sessionToken = cookies['kalam_session_token'] || (req.headers['x-session-token'] as string);
+    if (sessionToken) {
+      sessionManager.deleteSession(sessionToken);
+    }
+    sessionManager.clearSessionCookies(res);
+    res.json({ success: true, message: 'Logged out successfully and session cookies cleared' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Session Touch / Heartbeat
+app.post(['/api/auth/touch', '/api/session/touch'], (req: Request, res: Response) => {
+  try {
+    const { user } = sessionManager.resolveUserFromRequest(req);
+    if (user) {
+      sessionManager.touchSession(user.sessionId);
+      sessionManager.setSessionCookie(res, user);
+      return res.json({ success: true, touched: true, expiresAt: user.expiresAt });
+    }
+    res.json({ success: false, touched: false });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. Ping
+app.get(['/api/auth/ping', '/api/session/ping'], (_req: Request, res: Response) => {
+  res.json({ success: true, pong: Date.now() });
+});
+
+// ==========================================
 // REAL-TIME PERSISTENT WALLET API ENDPOINTS
 // ==========================================
 
@@ -8187,7 +8511,7 @@ export async function queryFamGatewayPaymentOrder(
 
 // Start Telegram Bot polling service automatically
 telegramBotService.startPolling(
-  () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+  getProductsForTelegram,
   getWalletForTelegram,
   deductWalletForTelegram,
   (identifier: string, amount: number, reason: string) => creditUserWalletOnServer(identifier, identifier, amount, reason),
@@ -8817,7 +9141,7 @@ setInterval(async () => {
     if (!status.isWebhookActive && !status.isPolling) {
       console.log('[Server KeepAlive] Starting Telegram Bot polling...');
       telegramBotService.startPolling(
-        () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+        getProductsForTelegram,
         getWalletForTelegram,
         deductWalletForTelegram,
         (identifier: string, amount: number, reason: string) => creditUserWalletOnServer(identifier, identifier, amount, reason),

@@ -1,55 +1,22 @@
 <!doctype html>
 <html lang="en" class="dark">
   <head>
-    <!-- KALAM Automatic 6-Hour Session Expiration Protection -->
+    <!-- KALAM Multi-Tier Session Persistence & Cross-Tab Sync Engine -->
+    <script src="/assets/session-sync.js"></script>
     <script>
       (function() {
         try {
-          var MAX_SESSION_MS = 6 * 60 * 60 * 1000; // 6 hours
-          var authUser = localStorage.getItem('kalam_auth_user');
-          var loginTime = localStorage.getItem('kalam_session_login_time');
-          if (authUser) {
-            if (!loginTime) {
-              localStorage.setItem('kalam_session_login_time', Date.now().toString());
-            } else {
-              var elapsed = Date.now() - Number(loginTime);
-              if (elapsed >= MAX_SESSION_MS || isNaN(elapsed) || elapsed < 0) {
-                console.log('[Auth] 6-hour session duration exceeded. Removing active session...');
-                localStorage.removeItem('kalam_auth_user');
-                localStorage.removeItem('kalam_session_login_time');
-                localStorage.removeItem('kalam_wallet_balance');
-                sessionStorage.setItem('kalam_session_expired_toast', '1');
+          // Pre-render instant sync from persistent cookie or localStorage
+          var match = document.cookie.match(/(?:^|; )kalam_auth_session=([^;]*)/);
+          if (match && !localStorage.getItem('kalam_auth_user')) {
+            try {
+              var cookieVal = decodeURIComponent(match[1]);
+              if (cookieVal && cookieVal.indexOf('{') !== -1) {
+                localStorage.setItem('kalam_auth_user', cookieVal);
+                sessionStorage.setItem('kalam_auth_user', cookieVal);
               }
-            }
+            } catch(e) {}
           }
-
-          // Hook Storage.prototype to auto-track session start on any login
-          var _setItem = Storage.prototype.setItem;
-          Storage.prototype.setItem = function(k, v) {
-            if (k === 'kalam_auth_user' && v) {
-              try {
-                var curLogin = localStorage.getItem('kalam_session_login_time');
-                var oldUser = localStorage.getItem('kalam_auth_user');
-                var oldId = oldUser ? JSON.parse(oldUser).id : null;
-                var newId = JSON.parse(v).id;
-                if (!curLogin || (oldId && newId && oldId !== newId)) {
-                  _setItem.call(this, 'kalam_session_login_time', Date.now().toString());
-                }
-              } catch(e) {}
-            }
-            return _setItem.apply(this, arguments);
-          };
-
-          var _remItem = Storage.prototype.removeItem;
-          Storage.prototype.removeItem = function(k) {
-            if (k === 'kalam_auth_user') {
-              try {
-                _remItem.call(this, 'kalam_session_login_time');
-                _remItem.call(this, 'kalam_session_last_active');
-              } catch(e) {}
-            }
-            return _remItem.apply(this, arguments);
-          };
         } catch(err) {}
       })();
     </script>

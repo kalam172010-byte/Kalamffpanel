@@ -19,7 +19,6 @@ const AuditLogLive = (props) => {
     r.jsx("p", { className: "text-gray-400 text-xs", children: "Fetching immutable activity and balance history." })
   ]});
 };
-const AuditIconLive = (props) => r.jsx("svg", { ...props, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", viewBox: "0 0 24 24", children: [r.jsx("path", { d: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" }), r.jsx("line", { x1: "12", y1: "8", x2: "12", y2: "12" }), r.jsx("line", { x1: "12", y1: "16", x2: "12.01", y2: "16" })] });
 const AdminUserManagementLive = (props) => {
   if (typeof window !== "undefined" && window.AdminUserManagement) {
     return q.createElement(window.AdminUserManagement, props);
@@ -8759,9 +8758,10 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
   const handleToggleMaintenance = async (prod, ev) => {
     if (ev) ev.stopPropagation();
     const curStatus = (prod.status || "ACTIVE").toUpperCase();
-    const nextStatus = curStatus === "MAINTENANCE" ? "ACTIVE" : "MAINTENANCE";
+    const isCurrentlyMaint = curStatus === "MAINTENANCE" || !!prod.isMaintenance;
+    const nextStatus = isCurrentlyMaint ? "ACTIVE" : "MAINTENANCE";
     const isMaint = nextStatus === "MAINTENANCE";
-    const updated = prodsList.map((p) => p.id === prod.id ? { ...p, status: nextStatus } : p);
+    const updated = prodsList.map((p) => p.id === prod.id || p.productId === prod.id ? { ...p, status: nextStatus, isMaintenance: isMaint } : p);
     setProdsList(updated);
     try {
       localStorage.setItem("kalam_products_db", JSON.stringify(updated));
@@ -8771,10 +8771,10 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
       toggleMaintCb(prod);
     }
     try {
-      await fetch("/api/admin/products/" + encodeURIComponent(prod.id) + "/maintenance", {
+      await fetch("/api/admin/products/" + encodeURIComponent(prod.id || prod.productId) + "/maintenance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maintenance: isMaint, status: nextStatus })
+        body: JSON.stringify({ isMaintenance: isMaint, maintenance: isMaint, status: nextStatus })
       });
     } catch (err) {
     }
@@ -8782,7 +8782,8 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
   };
   const handleSetStatus = async (prod, targetStatus, ev) => {
     if (ev) ev.stopPropagation();
-    const updated = prodsList.map((p) => p.id === prod.id ? { ...p, status: targetStatus } : p);
+    const isMaint = targetStatus === "MAINTENANCE";
+    const updated = prodsList.map((p) => p.id === prod.id || p.productId === prod.id ? { ...p, status: targetStatus, isMaintenance: isMaint } : p);
     setProdsList(updated);
     try {
       localStorage.setItem("kalam_products_db", JSON.stringify(updated));
@@ -8792,10 +8793,10 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
       toggleStatusCb(prod);
     }
     try {
-      await fetch("/api/admin/products/" + encodeURIComponent(prod.id) + "/status", {
+      await fetch("/api/admin/products/" + encodeURIComponent(prod.id || prod.productId) + "/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: targetStatus })
+        body: JSON.stringify({ status: targetStatus, isMaintenance: isMaint })
       });
     } catch (err) {
     }
@@ -8908,17 +8909,24 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
   };
   const totalProducts = prodsList.length;
   const totalKeys = prodsList.reduce((acc, p) => acc + (getProdKeys(p).length || 0), 0);
-  const maintenanceCount = prodsList.filter((p) => (p.status || "").toUpperCase() === "MAINTENANCE").length;
-  const outOfStockCount = prodsList.filter((p) => getProdKeys(p).length === 0 && !p.api1Restock?.remoteProductId && !p.api2Restock?.remoteProductId).length;
-  const activeCount = prodsList.filter((p) => (p.status || "ACTIVE").toUpperCase() === "ACTIVE" && (getProdKeys(p).length > 0 || p.api1Restock?.remoteProductId || p.api2Restock?.remoteProductId)).length;
+  const maintenanceCount = prodsList.filter((p) => (p.status || "").toUpperCase() === "MAINTENANCE" || !!p.isMaintenance).length;
+  const outOfStockCount = prodsList.filter((p) => {
+    const isM = (p.status || "").toUpperCase() === "MAINTENANCE" || !!p.isMaintenance;
+    return !isM && getProdKeys(p).length === 0 && !p.api1Restock?.remoteProductId && !p.api2Restock?.remoteProductId;
+  }).length;
+  const activeCount = prodsList.filter((p) => {
+    const isM = (p.status || "").toUpperCase() === "MAINTENANCE" || !!p.isMaintenance;
+    return !isM && (p.status || "ACTIVE").toUpperCase() === "ACTIVE" && (getProdKeys(p).length > 0 || p.api1Restock?.remoteProductId || p.api2Restock?.remoteProductId);
+  }).length;
   const filteredProds = prodsList.filter((p) => {
     const nameMatch = !searchTerm.trim() || p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.category && p.category.toLowerCase().includes(searchTerm.toLowerCase()) || p.id && p.id.toLowerCase().includes(searchTerm.toLowerCase());
     if (!nameMatch) return false;
     const pStatus = (p.status || "ACTIVE").toUpperCase();
+    const isM = pStatus === "MAINTENANCE" || !!p.isMaintenance;
     const kCount = getProdKeys(p).length;
-    if (statusFilter === "active") return pStatus === "ACTIVE";
-    if (statusFilter === "maintenance") return pStatus === "MAINTENANCE";
-    if (statusFilter === "out_of_stock") return kCount === 0 && pStatus !== "MAINTENANCE";
+    if (statusFilter === "active") return !isM && pStatus === "ACTIVE";
+    if (statusFilter === "maintenance") return isM;
+    if (statusFilter === "out_of_stock") return !isM && kCount === 0;
     return true;
   });
   const currentModalTarget = prodsList.find((p) => p.id === selectedProdId) || prodsList[0] || null;
@@ -8926,7 +8934,7 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
     /* @__PURE__ */ r.jsxs("div", { className: "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#161622]/90 border border-cyan-500/20 p-4 rounded-2xl shadow-[0_0_25px_rgba(0,229,255,0.08)]", children: [
       /* @__PURE__ */ r.jsxs("div", { className: "space-y-1", children: [
         /* @__PURE__ */ r.jsxs("h2", { className: "text-base sm:text-lg font-black text-white flex items-center gap-2", children: [
-          /* @__PURE__ */ r.jsx(nc,{ className: "w-5 h-5 text-cyan-400" }),
+          /* @__PURE__ */ r.jsx("nc", { className: "w-5 h-5 text-cyan-400" }),
           /* @__PURE__ */ r.jsx("span", { children: "\u{1F4E6} Inventory & Stock Management (\u0B87\u0BA9\u0BCD\u0BB5\u0BC6\u0BA9\u0BCD\u0B9F\u0BB0\u0BBF \u0BAE\u0BC7\u0BA9\u0BC7\u0B9C\u0BCD\u0BAE\u0BC6\u0BA9\u0BCD\u0B9F\u0BCD)" })
         ] }),
         /* @__PURE__ */ r.jsx("p", { className: "text-[11px] text-gray-300", children: "Manage stock keys, decrement counts, and toggle individual product Under Maintenance (\u0B85\u0BA3\u0BCD\u0B9F\u0BB0\u0BCD \u0BAE\u0BC8\u0BA9\u0BB8\u0BCD) mode separately." })
@@ -8951,7 +8959,7 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
     ] }),
     /* @__PURE__ */ r.jsxs("div", { className: "grid grid-cols-2 sm:grid-cols-4 gap-2.5", children: [
       /* @__PURE__ */ r.jsxs("div", { className: "p-3 bg-[#161622]/95 border border-cyan-500/30 rounded-2xl flex items-center gap-2.5", children: [
-        /* @__PURE__ */ r.jsx("div", { className: "w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0", children: /* @__PURE__ */ r.jsx(fi,{ className: "w-4 h-4" }) }),
+        /* @__PURE__ */ r.jsx("div", { className: "w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0", children: /* @__PURE__ */ r.jsx("fi", { className: "w-4 h-4" }) }),
         /* @__PURE__ */ r.jsxs("div", { children: [
           /* @__PURE__ */ r.jsx("span", { className: "text-[10px] text-gray-400 font-bold block uppercase tracking-wider", children: "Total Stored Keys" }),
           /* @__PURE__ */ r.jsxs("span", { className: "text-base font-black text-white font-mono", children: [
@@ -8971,7 +8979,7 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
         ] })
       ] }),
       /* @__PURE__ */ r.jsxs("div", { className: "p-3 bg-[#161622]/95 border border-yellow-500/40 rounded-2xl flex items-center gap-2.5", children: [
-        /* @__PURE__ */ r.jsx("div", { className: "w-8 h-8 rounded-xl bg-yellow-500/20 border border-yellow-500/50 flex items-center justify-center text-yellow-400 shrink-0", children: /* @__PURE__ */ r.jsx(vD,{ className: "w-4 h-4" }) }),
+        /* @__PURE__ */ r.jsx("div", { className: "w-8 h-8 rounded-xl bg-yellow-500/20 border border-yellow-500/50 flex items-center justify-center text-yellow-400 shrink-0", children: /* @__PURE__ */ r.jsx("vD", { className: "w-4 h-4" }) }),
         /* @__PURE__ */ r.jsxs("div", { children: [
           /* @__PURE__ */ r.jsx("span", { className: "text-[10px] text-gray-400 font-bold block uppercase tracking-wider", children: "Under Maintenance" }),
           /* @__PURE__ */ r.jsxs("span", { className: "text-base font-black text-yellow-400 font-mono", children: [
@@ -8981,7 +8989,7 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
         ] })
       ] }),
       /* @__PURE__ */ r.jsxs("div", { className: "p-3 bg-[#161622]/95 border border-rose-500/30 rounded-2xl flex items-center gap-2.5", children: [
-        /* @__PURE__ */ r.jsx("div", { className: "w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0", children: /* @__PURE__ */ r.jsx(iu,{ className: "w-4 h-4" }) }),
+        /* @__PURE__ */ r.jsx("div", { className: "w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0", children: /* @__PURE__ */ r.jsx("iu", { className: "w-4 h-4" }) }),
         /* @__PURE__ */ r.jsxs("div", { children: [
           /* @__PURE__ */ r.jsx("span", { className: "text-[10px] text-gray-400 font-bold block uppercase tracking-wider", children: "Out of Stock" }),
           /* @__PURE__ */ r.jsxs("span", { className: "text-base font-black text-rose-400 font-mono", children: [
@@ -8998,7 +9006,7 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
         animate: { opacity: 1, y: 0 },
         className: "p-3 rounded-xl bg-cyan-950/70 border border-cyan-400 text-cyan-200 text-xs font-semibold flex items-center gap-2 shadow-[0_0_20px_rgba(0,229,255,0.2)]",
         children: [
-          /* @__PURE__ */ r.jsx(qi,{ className: "w-4 h-4 text-cyan-400 shrink-0" }),
+          /* @__PURE__ */ r.jsx("qi", { className: "w-4 h-4 text-cyan-400 shrink-0" }),
           /* @__PURE__ */ r.jsx("span", { children: feedbackMsg })
         ]
       }
@@ -9078,8 +9086,8 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
       /* @__PURE__ */ r.jsx("p", { className: "text-[10px] text-gray-400", children: "Try changing your search term or status filter." })
     ] }) : filteredProds.map((prod, idx) => {
       const keys = getProdKeys(prod);
-      const isMaintenance = (prod.status || "").toUpperCase() === "MAINTENANCE";
-      const isOutOfStock = keys.length === 0 && !prod.api1Restock?.remoteProductId && !prod.api2Restock?.remoteProductId;
+      const isMaintenance = (prod.status || "").toUpperCase() === "MAINTENANCE" || !!prod.isMaintenance;
+      const isOutOfStock = !isMaintenance && keys.length === 0 && !prod.api1Restock?.remoteProductId && !prod.api2Restock?.remoteProductId;
       const isActive = (prod.status || "ACTIVE").toUpperCase() === "ACTIVE" && !isMaintenance;
       const isExpanded = expandedKeysProdId === prod.id;
       const hasApiRestock = !!(prod.api1Restock?.remoteProductId || prod.api2Restock?.remoteProductId);
@@ -9118,11 +9126,11 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
                   /* @__PURE__ */ r.jsx(Cr, { className: "w-3.5 h-3.5 text-purple-400" }),
                   /* @__PURE__ */ r.jsx("span", { children: "Live API Restock" })
                 ] }) : /* @__PURE__ */ r.jsxs(r.Fragment, { children: [
-                  /* @__PURE__ */ r.jsx(iu,{ className: "w-3.5 h-3.5 text-rose-400" }),
+                  /* @__PURE__ */ r.jsx("iu", { className: "w-3.5 h-3.5 text-rose-400" }),
                   /* @__PURE__ */ r.jsx("span", { children: "0 Keys (OUT OF STOCK)" })
                 ] }) }),
                 isMaintenance ? /* @__PURE__ */ r.jsxs("span", { className: "px-2.5 py-1 rounded-xl bg-yellow-500/25 border border-yellow-500/60 text-yellow-300 text-xs font-black flex items-center gap-1 shadow-[0_0_12px_rgba(234,179,8,0.3)]", children: [
-                  /* @__PURE__ */ r.jsx(vD,{ className: "w-3.5 h-3.5 text-yellow-400" }),
+                  /* @__PURE__ */ r.jsx("vD", { className: "w-3.5 h-3.5 text-yellow-400" }),
                   /* @__PURE__ */ r.jsx("span", { children: "\u{1F6E0}\uFE0F UNDER MAINTENANCE (\u0B85\u0BA3\u0BCD\u0B9F\u0BB0\u0BCD \u0BAE\u0BC8\u0BA9\u0BB8\u0BCD)" })
                 ] }) : isActive ? /* @__PURE__ */ r.jsxs("span", { className: "px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1", children: [
                   /* @__PURE__ */ r.jsx("span", { className: "w-2 h-2 rounded-full bg-emerald-400" }),
@@ -9139,7 +9147,7 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
                   className: "py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm " + (isMaintenance ? "bg-yellow-500/30 hover:bg-yellow-500/40 border-yellow-400 text-yellow-200 shadow-[0_0_15px_rgba(234,179,8,0.4)]" : "bg-yellow-950/40 hover:bg-yellow-950/60 border-yellow-600/50 text-yellow-300 hover:border-yellow-400"),
                   title: "Toggle Under Maintenance mode for this product only",
                   children: [
-                    /* @__PURE__ */ r.jsx(vD,{ className: "w-3.5 h-3.5 text-yellow-400 shrink-0" }),
+                    /* @__PURE__ */ r.jsx("vD", { className: "w-3.5 h-3.5 text-yellow-400 shrink-0" }),
                     /* @__PURE__ */ r.jsx("span", { className: "truncate", children: isMaintenance ? "\u{1F7E1} Deactivate Maint." : "\u{1F6E0}\uFE0F Under Maintenance (\u0B85\u0BA3\u0BCD\u0B9F\u0BB0\u0BCD \u0BAE\u0BC8\u0BA9\u0BB8\u0BCD)" })
                   ]
                 }
@@ -9190,7 +9198,7 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
                     onClick: () => setExpandedKeysProdId(isExpanded ? null : prod.id),
                     className: "flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-gray-200 hover:text-white text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1",
                     children: [
-                      /* @__PURE__ */ r.jsx(zr,{ className: "w-3.5 h-3.5 text-gray-400" }),
+                      /* @__PURE__ */ r.jsx("zr", { className: "w-3.5 h-3.5 text-gray-400" }),
                       /* @__PURE__ */ r.jsx("span", { className: "truncate", children: isExpanded ? "Hide Keys" : "Keys (" + keys.length + ")" })
                     ]
                   }
@@ -9236,7 +9244,7 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
                           onClick: (e) => handleCopyKey(kStr, e),
                           className: "p-1 rounded bg-white/5 hover:bg-white/15 text-gray-300",
                           title: "Copy Key",
-                          children: copiedKey === kStr ? /* @__PURE__ */ r.jsx(Sn, { className: "w-3.5 h-3.5 text-emerald-400" }) : /* @__PURE__ */ r.jsx(zr,{ className: "w-3.5 h-3.5" })
+                          children: copiedKey === kStr ? /* @__PURE__ */ r.jsx(Sn, { className: "w-3.5 h-3.5 text-emerald-400" }) : /* @__PURE__ */ r.jsx("zr", { className: "w-3.5 h-3.5" })
                         }
                       ),
                       /* @__PURE__ */ r.jsx(
@@ -9271,7 +9279,7 @@ wpMode==="reseller_api"&&r.jsxs(r.Fragment,{children:[r.jsxs("div",{className:"f
       /* @__PURE__ */ r.jsxs("div", { className: "relative z-50 w-full max-w-md bg-[#161622] border border-cyan-500/50 rounded-3xl p-5 shadow-[0_0_40px_rgba(0,229,255,0.25)] text-white space-y-4", children: [
         /* @__PURE__ */ r.jsxs("div", { className: "flex items-center justify-between pb-2 border-b border-white/10", children: [
           /* @__PURE__ */ r.jsxs("div", { className: "flex items-center gap-2", children: [
-            /* @__PURE__ */ r.jsx("div", { className: "w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400", children: /* @__PURE__ */ r.jsx(fi,{ className: "w-4 h-4" }) }),
+            /* @__PURE__ */ r.jsx("div", { className: "w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400", children: /* @__PURE__ */ r.jsx("fi", { className: "w-4 h-4" }) }),
             /* @__PURE__ */ r.jsxs("div", { children: [
               /* @__PURE__ */ r.jsx("h3", { className: "text-sm font-bold text-white", children: "Import Real Activation Keys" }),
               /* @__PURE__ */ r.jsxs("span", { className: "text-[10px] text-gray-400", children: [

@@ -8,8 +8,8 @@ const cleanWteJsx = `Wte=({product:n,isSelected:e=!1,onToggleSelect:t,onEdit:s,o
   if (!n) return null;
   const [u, d] = q.useState(false);
   const [h, p] = q.useState(false);
-  const g = n.status === "ACTIVE";
-  const b = n.status === "MAINTENANCE";
+  const b = (n.status || "").toUpperCase() === "MAINTENANCE" || !!n.isMaintenance;
+  const g = !b && (n.status || "").toUpperCase() === "ACTIVE";
   const x = n.imageUrl || (n.videoUrl && typeof l0 === "function" && l0(n.videoUrl) ? g1(n.videoUrl, "hq") : null);
   const w = !!(n.videoUrl && typeof l0 === "function" && l0(n.videoUrl));
   const S = n.videoUrl && typeof ry === "function" ? ry(n.videoUrl) : null;
@@ -77,7 +77,7 @@ const cleanWteJsx = `Wte=({product:n,isSelected:e=!1,onToggleSelect:t,onEdit:s,o
             <div className="flex items-center gap-2 justify-end">
               <span className="text-xs font-bold text-white font-mono">{Array.isArray(n.keys) ? n.keys.length : (n.stock || 0)} key(s)</span>
               {g && <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />ACTIVE</span>}
-              {n.status === "DISABLED" && <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />DISABLED</span>}
+              {n.status === "DISABLED" && !b && <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />DISABLED</span>}
               {b && <span className="flex items-center gap-1 text-[11px] font-bold text-yellow-300 bg-yellow-950/60 px-2 py-0.5 rounded border border-yellow-500/40"><span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-bounce" />MAINTENANCE</span>}
             </div>
           </div>
@@ -203,10 +203,11 @@ const cleanLneJsx = `lne=({products: initialProducts = [], apiConfigs = [], onUp
   const handleToggleMaintenance = async (prod, ev) => {
     if (ev) ev.stopPropagation();
     const curStatus = (prod.status || "ACTIVE").toUpperCase();
-    const nextStatus = curStatus === "MAINTENANCE" ? "ACTIVE" : "MAINTENANCE";
+    const isCurrentlyMaint = curStatus === "MAINTENANCE" || !!prod.isMaintenance;
+    const nextStatus = isCurrentlyMaint ? "ACTIVE" : "MAINTENANCE";
     const isMaint = nextStatus === "MAINTENANCE";
 
-    const updated = prodsList.map(p => p.id === prod.id ? { ...p, status: nextStatus } : p);
+    const updated = prodsList.map(p => (p.id === prod.id || p.productId === prod.id) ? { ...p, status: nextStatus, isMaintenance: isMaint } : p);
     setProdsList(updated);
     try { localStorage.setItem("kalam_products_db", JSON.stringify(updated)); } catch(err) {}
 
@@ -215,10 +216,10 @@ const cleanLneJsx = `lne=({products: initialProducts = [], apiConfigs = [], onUp
     }
 
     try {
-      await fetch("/api/admin/products/" + encodeURIComponent(prod.id) + "/maintenance", {
+      await fetch("/api/admin/products/" + encodeURIComponent(prod.id || prod.productId) + "/maintenance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maintenance: isMaint, status: nextStatus })
+        body: JSON.stringify({ isMaintenance: isMaint, maintenance: isMaint, status: nextStatus })
       });
     } catch(err) {}
 
@@ -227,7 +228,8 @@ const cleanLneJsx = `lne=({products: initialProducts = [], apiConfigs = [], onUp
 
   const handleSetStatus = async (prod, targetStatus, ev) => {
     if (ev) ev.stopPropagation();
-    const updated = prodsList.map(p => p.id === prod.id ? { ...p, status: targetStatus } : p);
+    const isMaint = targetStatus === "MAINTENANCE";
+    const updated = prodsList.map(p => (p.id === prod.id || p.productId === prod.id) ? { ...p, status: targetStatus, isMaintenance: isMaint } : p);
     setProdsList(updated);
     try { localStorage.setItem("kalam_products_db", JSON.stringify(updated)); } catch(err) {}
 
@@ -236,10 +238,10 @@ const cleanLneJsx = `lne=({products: initialProducts = [], apiConfigs = [], onUp
     }
 
     try {
-      await fetch("/api/admin/products/" + encodeURIComponent(prod.id) + "/status", {
+      await fetch("/api/admin/products/" + encodeURIComponent(prod.id || prod.productId) + "/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: targetStatus })
+        body: JSON.stringify({ status: targetStatus, isMaintenance: isMaint })
       });
     } catch(err) {}
 
@@ -362,9 +364,15 @@ const cleanLneJsx = `lne=({products: initialProducts = [], apiConfigs = [], onUp
 
   const totalProducts = prodsList.length;
   const totalKeys = prodsList.reduce((acc, p) => acc + (getProdKeys(p).length || 0), 0);
-  const maintenanceCount = prodsList.filter(p => (p.status || "").toUpperCase() === "MAINTENANCE").length;
-  const outOfStockCount = prodsList.filter(p => getProdKeys(p).length === 0 && !p.api1Restock?.remoteProductId && !p.api2Restock?.remoteProductId).length;
-  const activeCount = prodsList.filter(p => (p.status || "ACTIVE").toUpperCase() === "ACTIVE" && (getProdKeys(p).length > 0 || p.api1Restock?.remoteProductId || p.api2Restock?.remoteProductId)).length;
+  const maintenanceCount = prodsList.filter(p => (p.status || "").toUpperCase() === "MAINTENANCE" || !!p.isMaintenance).length;
+  const outOfStockCount = prodsList.filter(p => {
+    const isM = (p.status || "").toUpperCase() === "MAINTENANCE" || !!p.isMaintenance;
+    return !isM && getProdKeys(p).length === 0 && !p.api1Restock?.remoteProductId && !p.api2Restock?.remoteProductId;
+  }).length;
+  const activeCount = prodsList.filter(p => {
+    const isM = (p.status || "").toUpperCase() === "MAINTENANCE" || !!p.isMaintenance;
+    return !isM && (p.status || "ACTIVE").toUpperCase() === "ACTIVE" && (getProdKeys(p).length > 0 || p.api1Restock?.remoteProductId || p.api2Restock?.remoteProductId);
+  }).length;
 
   const filteredProds = prodsList.filter(p => {
     const nameMatch = !searchTerm.trim() || 
@@ -375,11 +383,12 @@ const cleanLneJsx = `lne=({products: initialProducts = [], apiConfigs = [], onUp
     if (!nameMatch) return false;
 
     const pStatus = (p.status || "ACTIVE").toUpperCase();
+    const isM = pStatus === "MAINTENANCE" || !!p.isMaintenance;
     const kCount = getProdKeys(p).length;
 
-    if (statusFilter === "active") return pStatus === "ACTIVE";
-    if (statusFilter === "maintenance") return pStatus === "MAINTENANCE";
-    if (statusFilter === "out_of_stock") return kCount === 0 && pStatus !== "MAINTENANCE";
+    if (statusFilter === "active") return !isM && pStatus === "ACTIVE";
+    if (statusFilter === "maintenance") return isM;
+    if (statusFilter === "out_of_stock") return !isM && kCount === 0;
     return true;
   });
 
@@ -520,8 +529,8 @@ const cleanLneJsx = `lne=({products: initialProducts = [], apiConfigs = [], onUp
         ) : (
           filteredProds.map((prod, idx) => {
             const keys = getProdKeys(prod);
-            const isMaintenance = (prod.status || "").toUpperCase() === "MAINTENANCE";
-            const isOutOfStock = keys.length === 0 && !prod.api1Restock?.remoteProductId && !prod.api2Restock?.remoteProductId;
+            const isMaintenance = (prod.status || "").toUpperCase() === "MAINTENANCE" || !!prod.isMaintenance;
+            const isOutOfStock = !isMaintenance && keys.length === 0 && !prod.api1Restock?.remoteProductId && !prod.api2Restock?.remoteProductId;
             const isActive = (prod.status || "ACTIVE").toUpperCase() === "ACTIVE" && !isMaintenance;
             const isExpanded = expandedKeysProdId === prod.id;
             const hasApiRestock = !!(prod.api1Restock?.remoteProductId || prod.api2Restock?.remoteProductId);
