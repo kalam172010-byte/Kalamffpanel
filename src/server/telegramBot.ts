@@ -308,9 +308,9 @@ export class TelegramBotService {
   private isWebhookActive = false;
   private activeWebhookUrl = '';
   private lastUpdateId = 0;
+  private pollingEpoch = 0;
   private pollTimer: NodeJS.Timeout | null = null;
   private watchdogTimer: NodeJS.Timeout | null = null;
-  private supervisorTimer: NodeJS.Timeout | null = null;
   private currentAbortController: AbortController | null = null;
   private botUsername = 'KALAMFFPANEL1_12_BOT';
   private numpadAmounts = new Map<number, string>();
@@ -368,6 +368,11 @@ export class TelegramBotService {
   private activityListeners = new Set<(event: TelegramActivityEvent) => void>();
   private lastActivitiesSavedAt = 0;
   private lastProcessedUpdateIdsSavedAt = 0;
+  private lastProductMaintenanceState = new Map<string, { status: string; isMaintenance: boolean; name: string; reason?: string }>();
+  private lastGlobalStoreMaintenanceState: boolean | null = null;
+  private maintenanceCheckTimer: NodeJS.Timeout | null = null;
+  private isMaintenanceMonitorInitialized = false;
+  private lastMainMenuSent = new Map<number, number>();
 
   private constructor() {
     this.recentActivities = this.loadActivitiesFromDisk();
@@ -375,8 +380,9 @@ export class TelegramBotService {
     this.processedKeys = this.loadProcessedKeys();
     this.processedUpdateIds = this.loadProcessedUpdateIds();
     this.confirmedDepositOrders = this.loadConfirmedOrders();
-    this.initSupervisor();
+    this.initWatchdog();
     this.initLowStockMonitor();
+    this.initMaintenanceStatusMonitor();
 
     this.recordActivity({
       type: 'BOT_LIFECYCLE',
@@ -1502,6 +1508,7 @@ export class TelegramBotService {
         this.saveProductsToDisk(products);
         console.log(`[TelegramBot] Synchronized ${products.length} products with Telegram Bot in real-time.`);
       }
+      this.auditAndAlertProductMaintenance('SERVER_PRODUCT_SYNC').catch(() => {});
     } catch (e) {
       console.warn('[TelegramBot] Error in syncProducts:', e);
     }
@@ -1911,6 +1918,7 @@ export class TelegramBotService {
     if (!storeData.storeSettings) storeData.storeSettings = {};
     storeData.storeSettings.maintenanceMode = isMaintenance;
     this.saveStoreDataToDisk(storeData);
+    this.auditAndAlertProductMaintenance('BOT_MAINTENANCE_TOGGLE').catch(() => {});
     return { success: true, isMaintenance };
   }
 
@@ -1930,6 +1938,7 @@ export class TelegramBotService {
 
     product.status = isMaintenance ? 'MAINTENANCE' : 'ACTIVE';
     this.saveProductsToDisk(products);
+    this.auditAndAlertProductMaintenance('BOT_PRODUCT_MAINTENANCE_COMMAND').catch(() => {});
     return { success: true, product, isMaintenance };
   }
 
@@ -1950,6 +1959,7 @@ export class TelegramBotService {
     const newMaintenance = currentStatus !== 'MAINTENANCE';
     product.status = newMaintenance ? 'MAINTENANCE' : 'ACTIVE';
     this.saveProductsToDisk(products);
+    this.auditAndAlertProductMaintenance('BOT_PRODUCT_MAINTENANCE_TOGGLE').catch(() => {});
     return { success: true, product, isMaintenance: newMaintenance };
   }
 
@@ -1960,6 +1970,7 @@ export class TelegramBotService {
       p.status = targetStatus;
     });
     this.saveProductsToDisk(products);
+    this.auditAndAlertProductMaintenance('BOT_BULK_MAINTENANCE_TOGGLE').catch(() => {});
     return { success: true, count: products.length, isMaintenance };
   }
 
@@ -2289,6 +2300,215 @@ export class TelegramBotService {
     }, 20 * 60 * 1000);
   }
 
+  public getAdminAlertTargets(): string[] {
+    const targets = new Set<string>();
+    const creds = this.getCredentials();
+    if (creds.defaultChatId && creds.defaultChatId.trim()) {
+      targets.add(creds.defaultChatId.trim());
+    }
+
+    try {
+      const notifFile = path.join(this.getDataDir(), 'telegram_notifications_config.json');
+      if (fs.existsSync(notifFile)) {
+        const parsed = JSON.parse(fs.readFileSync(notifFile, 'utf8'));
+        if (parsed.adminChatIdOverride && String(parsed.adminChatIdOverride).trim()) {
+          targets.add(String(parsed.adminChatIdOverride).trim());
+        }
+        if (parsed.alertChannelId && String(parsed.alertChannelId).trim()) {
+          targets.add(String(parsed.alertChannelId).trim());
+        }
+      }
+    } catch {}
+
+    if (targets.size === 0) {
+      targets.add('7768975239');
+    }
+    return Array.from(targets);
+  }
+
+  public initMaintenanceStatusMonitor() {
+    if (this.maintenanceCheckTimer) {
+      clearInterval(this.maintenanceCheckTimer);
+    }
+    // Periodically monitor product maintenance statuses from server every 10 seconds
+    this.maintenanceCheckTimer = setInterval(() => {
+      this.auditAndAlertProductMaintenance('PERIODIC_SERVER_MONITOR');
+    }, 10 * 1000);
+
+    // Initial baseline sync without false alert spam
+    setTimeout(() => {
+      this.auditAndAlertProductMaintenance('STARTUP_INITIALIZATION');
+    }, 1500);
+  }
+
+  public async auditAndAlertProductMaintenance(
+    triggerSource?: string,
+    options?: { targetChatId?: string | number; force?: boolean }
+  ): Promise<{ alertedCount: number; transitions: any[] }> {
+    const transitions: any[] = [];
+    try {
+      const products = this.loadProductsFromDisk();
+      const storeData = this.loadStoreDataFromDisk();
+      const isGlobalMaintenance = !!storeData.storeSettings?.maintenanceMode;
+      const targets = options?.targetChatId ? [String(options.targetChatId)] : this.getAdminAlertTargets();
+
+      const timeStr = new Date().toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        dateStyle: 'medium',
+        timeStyle: 'medium'
+      });
+
+      // 1. Check Global Store Maintenance Transition
+      if (this.lastGlobalStoreMaintenanceState !== null && this.lastGlobalStoreMaintenanceState !== isGlobalMaintenance) {
+        const isMaint = isGlobalMaintenance;
+        const title = isMaint
+          ? '🚨 <b>GLOBAL STORE MAINTENANCE MODE ENABLED</b> 🔴'
+          : '🟢 <b>GLOBAL STORE MAINTENANCE MODE DISABLED (ACTIVE)</b> ⚡';
+
+        const storeMsg =
+          `${title}\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `🏬 <b>Storefront Name:</b> <b>${storeData.storeSettings?.shopName || 'KALAM FF PANEL'}</b>\n` +
+          `📊 <b>Storefront Status:</b> ${isMaint ? '🔴 <b>UNDER FULL MAINTENANCE (ALL PURCHASES PAUSED)</b>' : '🟢 <b>LIVE & ACCEPTING ORDERS</b>'}\n` +
+          `🕒 <b>Time:</b> ${timeStr}\n` +
+          (triggerSource ? `📌 <b>Trigger Source:</b> <code>${triggerSource}</code>\n` : '') +
+          `━━━━━━━━━━━━━━━━━━━━\n\n` +
+          (isMaint 
+            ? `⚠️ <i>All products, storefront checkouts, and Telegram Bot orders have been temporarily paused.</i>`
+            : `✅ <i>The storefront and Telegram Bot catalog are now fully operational. Users can place orders.</i>`);
+
+        const quickButtons = [
+          [
+            { text: isMaint ? '🟢 Disable Maintenance' : '🔴 Enable Maintenance', callback_data: `admin_toggle_maint:${isMaint ? 'off' : 'on'}` },
+            { text: '🎛️ Admin Hub', callback_data: 'admin_panel' }
+          ]
+        ];
+
+        for (const target of targets) {
+          try {
+            await this.sendMessage(target, storeMsg, { inline_keyboard: quickButtons });
+          } catch {}
+        }
+
+        this.recordActivity({
+          type: 'ADMIN_ALERT',
+          category: 'system',
+          severity: isMaint ? 'warning' : 'success',
+          summary: isMaint ? '🛠️ Global Store Maintenance Activated' : '🟢 Global Store Restored to Active',
+          details: `Store maintenance transitioned to ${isMaint ? 'ON' : 'OFF'} via ${triggerSource || 'System'}.`,
+          action: 'GLOBAL_MAINTENANCE_TOGGLE'
+        });
+
+        transitions.push({ type: 'GLOBAL_STORE', isMaintenance: isMaint });
+      }
+      this.lastGlobalStoreMaintenanceState = isGlobalMaintenance;
+
+      // 2. Check Individual Product Maintenance Transitions
+      for (const p of products) {
+        if (!p) continue;
+        const pId = String(p.id || p.productId || p.name);
+        const pName = p.name || `Product #${pId}`;
+        const rawStatus = (p.status || 'ACTIVE').toUpperCase();
+        const isMaint = rawStatus === 'MAINTENANCE' || !!p.isMaintenance;
+        const reason = p.maintenanceReason || '';
+
+        const prev = this.lastProductMaintenanceState.get(pId);
+
+        if (!this.isMaintenanceMonitorInitialized && !options?.force) {
+          // Seed baseline map on startup
+          this.lastProductMaintenanceState.set(pId, {
+            status: rawStatus,
+            isMaintenance: isMaint,
+            name: pName,
+            reason
+          });
+          continue;
+        }
+
+        // Check if transition occurred or if explicitly forced
+        const hasChanged = !prev || prev.isMaintenance !== isMaint || (options?.force && isMaint);
+
+        if (hasChanged) {
+          this.lastProductMaintenanceState.set(pId, {
+            status: rawStatus,
+            isMaintenance: isMaint,
+            name: pName,
+            reason
+          });
+
+          const isEntering = isMaint;
+          const statusTitle = isEntering
+            ? '🛠️ <b>PANEL ENTERED MAINTENANCE MODE</b> 🔴'
+            : '🟢 <b>PANEL EXITED MAINTENANCE MODE (ACTIVE)</b> ✅';
+
+          const reasonSnippet = reason ? `\n📝 <b>Maintenance Reason:</b> <i>${reason}</i>` : '';
+          const sourceSnippet = triggerSource ? `\n📌 <b>Trigger Origin:</b> <code>${triggerSource}</code>` : '';
+
+          const alertMessage =
+            `${statusTitle}\n` +
+            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `📦 <b>Panel / Cheat:</b> <b>${pName}</b>\n` +
+            `🆔 <b>Product ID:</b> <code>${pId}</code>\n` +
+            (p.game ? `🎮 <b>Game:</b> ${p.game}\n` : '') +
+            (p.category ? `🏷️ <b>Category:</b> ${p.category}\n` : '') +
+            `⚠️ <b>Current Status:</b> ${isEntering ? '🔴 <b>UNDER MAINTENANCE</b>' : '🟢 <b>ACTIVE / LIVE</b>'}\n` +
+            `🔒 <b>Checkout State:</b> ${isEntering ? '<b>PAUSED</b> (Purchases blocked)' : '<b>READY</b> (Orders allowed)'}\n` +
+            `🕒 <b>Timestamp:</b> ${timeStr}` +
+            reasonSnippet +
+            sourceSnippet +
+            `\n━━━━━━━━━━━━━━━━━━━━\n\n` +
+            (isEntering
+              ? `⚡ <i>Customers attempting to purchase "${pName}" on Web or Telegram will receive an Under Maintenance notice.</i>`
+              : `⚡ <i>"${pName}" is now fully restored. Customers can view plans and purchase license keys instantly.</i>`);
+
+          const quickButtons = [
+            [
+              { text: isEntering ? '🟢 Set Active (Resume Orders)' : '🛠️ Put Under Maintenance', callback_data: `admin_toggle_prod_maint:${pId}` },
+              { text: '⚙️ Maintenance Hub', callback_data: 'admin_menu:maintenance' }
+            ],
+            [
+              { text: '🛒 View Bot Catalog', callback_data: 'catalog' },
+              { text: '🎛️ Admin Hub', callback_data: 'admin_panel' }
+            ]
+          ];
+
+          let deliveredAny = false;
+          for (const target of targets) {
+            try {
+              const ok = await this.sendMessage(target, alertMessage, { inline_keyboard: quickButtons });
+              if (ok) deliveredAny = true;
+            } catch (err: any) {
+              console.warn(`[MaintenanceMonitor] Delivery to admin chat ${target} failed:`, err.message);
+            }
+          }
+
+          this.recordActivity({
+            type: 'ADMIN_ALERT',
+            category: 'system',
+            severity: isEntering ? 'warning' : 'success',
+            summary: isEntering ? `🛠️ "${pName}" Maintenance Enabled` : `🟢 "${pName}" Restored to Active`,
+            details: `Product maintenance status changed to ${rawStatus} via ${triggerSource || 'Server'}. Notification delivered: ${deliveredAny ? 'Yes' : 'No'}.`,
+            action: isEntering ? 'PRODUCT_MAINTENANCE_ON' : 'PRODUCT_MAINTENANCE_OFF'
+          });
+
+          transitions.push({
+            productId: pId,
+            productName: pName,
+            status: rawStatus,
+            isMaintenance: isEntering,
+            delivered: deliveredAny
+          });
+        }
+      }
+
+      this.isMaintenanceMonitorInitialized = true;
+      return { alertedCount: transitions.length, transitions };
+    } catch (err: any) {
+      console.error('[MaintenanceMonitor] Error running maintenance status audit:', err.message);
+      return { alertedCount: 0, transitions: [] };
+    }
+  }
+
   public async showAdminLowStockMenu(chatId: number, messageId?: number) {
     if (!this.isAdmin(chatId)) return;
     const threshold = this.getLowStockThreshold();
@@ -2349,6 +2569,7 @@ export class TelegramBotService {
       if (data?.storeSettings?.telegramBotUsername) {
         this.botUsername = data.storeSettings.telegramBotUsername.replace('@', '');
       }
+      this.auditAndAlertProductMaintenance('SERVER_STORE_DATA_SYNC').catch(() => {});
       console.log('[TelegramBot] Real-time store settings synchronized successfully.');
     } catch {}
   }
@@ -3432,65 +3653,49 @@ export class TelegramBotService {
   private initWatchdog() {
     if (this.watchdogTimer) {
       clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
     }
+    // Single consolidated 24/7 watchdog ensures strictly 1 polling engine loop runs without overlaps or duplicates
     this.watchdogTimer = setInterval(() => {
-      if (!this.isPolling || this.isWebhookActive) return;
-      const now = Date.now();
-      const elapsed = now - this.lastSuccessfulPollTime;
-
-      // If no successful poll in the last 25 seconds or fetch has hung, auto-recover immediately
-      if (elapsed > 25000) {
-        console.warn(`[TelegramBot] Watchdog: Polling idle (${Math.round(elapsed / 1000)}s). Aborting stale sockets and auto-recovering...`);
-        this.abortCurrentPoll();
-        if (this.pollTimer) {
-          clearTimeout(this.pollTimer);
-          this.pollTimer = null;
-        }
-        this.isFetchInProgress = false;
-        this.lastSuccessfulPollTime = Date.now();
-        this.triggerNextPoll(100);
-      }
-    }, 8000);
-  }
-
-  private initSupervisor() {
-    if (this.supervisorTimer) {
-      clearInterval(this.supervisorTimer);
-    }
-    // 24/7 Supervisor ensures the bot never dies regardless of idle pauses or transient errors
-    this.supervisorTimer = setInterval(() => {
       const { botToken } = this.getCredentials();
       if (!botToken) return;
 
-      if (!this.isWebhookActive) {
-        // If polling was unexpectedly halted but callbacks are stored, auto-resurrect polling
-        if (!this.isPolling && this.storedCallbacks) {
-          console.log('[TelegramBot] Supervisor: Bot polling was inactive. Auto-recovering polling engine...');
-          this.startPolling(
-            this.storedCallbacks.getProducts,
-            this.storedCallbacks.getUserWallet,
-            this.storedCallbacks.deductWallet,
-            this.storedCallbacks.creditWallet,
-            this.storedCallbacks.deliverKey,
-            this.storedCallbacks.createFamOrder,
-            this.storedCallbacks.queryFamOrder
-          );
-        } else if (this.isPolling) {
-          const elapsed = Date.now() - this.lastSuccessfulPollTime;
-          if (elapsed > 30000) {
-            console.warn(`[TelegramBot] Supervisor: Tick lag detected (${Math.round(elapsed / 1000)}s). Forcing clean polling cycle...`);
-            this.abortCurrentPoll();
-            this.isFetchInProgress = false;
-            if (this.pollTimer) {
-              clearTimeout(this.pollTimer);
-              this.pollTimer = null;
-            }
-            this.lastSuccessfulPollTime = Date.now();
-            this.triggerNextPoll(100);
+      if (this.isWebhookActive) return;
+
+      // Case 1: If polling was halted or never started but callbacks exist, activate single polling loop
+      if (!this.isPolling && this.storedCallbacks) {
+        console.log('[TelegramBot] Watchdog: Bot polling was inactive. Starting clean single polling engine...');
+        this.startPolling(
+          this.storedCallbacks.getProducts,
+          this.storedCallbacks.getUserWallet,
+          this.storedCallbacks.deductWallet,
+          this.storedCallbacks.creditWallet,
+          this.storedCallbacks.deliverKey,
+          this.storedCallbacks.createFamOrder,
+          this.storedCallbacks.queryFamOrder
+        );
+        return;
+      }
+
+      // Case 2: Polling is marked active, check for hung connection / tick lag (>35s)
+      if (this.isPolling) {
+        const elapsed = Date.now() - this.lastSuccessfulPollTime;
+        if (elapsed > 35000) {
+          console.warn(`[TelegramBot] Watchdog: Poll tick lag detected (${Math.round(elapsed / 1000)}s). Recycling polling epoch safely...`);
+          // Increment epoch to immediately invalidate any lingering callbacks/fetches
+          const newEpoch = ++this.pollingEpoch;
+          this.abortCurrentPoll();
+          if (this.pollTimer) {
+            clearTimeout(this.pollTimer);
+            this.pollTimer = null;
           }
+          this.isFetchInProgress = false;
+          this.isPollCycleRunning = false;
+          this.lastSuccessfulPollTime = Date.now();
+          this.triggerNextPoll(200, newEpoch);
         }
       }
-    }, 15000);
+    }, 10000);
   }
 
   private stopWatchdog() {
@@ -3500,14 +3705,19 @@ export class TelegramBotService {
     }
   }
 
-  private triggerNextPoll(delayMs = 1000) {
-    if (!this.isPolling || this.isWebhookActive) return;
+  private triggerNextPoll(delayMs = 1000, epoch?: number) {
+    const currentEpoch = epoch ?? this.pollingEpoch;
+    if (!this.isPolling || this.isWebhookActive || currentEpoch !== this.pollingEpoch) return;
+
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
+      this.pollTimer = null;
     }
+
     this.pollTimer = setTimeout(() => {
-      this.executePollCycle();
-    }, Math.max(100, delayMs));
+      if (!this.isPolling || this.isWebhookActive || currentEpoch !== this.pollingEpoch) return;
+      this.executePollCycle(currentEpoch);
+    }, Math.max(50, delayMs));
   }
 
   public async processIncomingWebhookUpdate(update: any): Promise<{ ok: boolean; error?: string }> {
@@ -3554,16 +3764,18 @@ export class TelegramBotService {
       queryFamOrder,
     };
 
+    // If polling is ALREADY active, do not spawn a second polling loop!
     if (this.isPolling) {
       return;
     }
 
     this.isPolling = true;
     this.isWebhookActive = false;
+    const epoch = ++this.pollingEpoch;
     this.lastSuccessfulPollTime = Date.now();
     this.lastPollAttemptTime = Date.now();
     this.consecutiveErrors = 0;
-    console.log('[TelegramBot] Long polling engine activated with 24/7 supervisor & abort-controller watchdog!');
+    console.log(`[TelegramBot] Singleton long polling activated (Epoch #${epoch})!`);
 
     // Initialize watchdog timer
     this.initWatchdog();
@@ -3586,15 +3798,24 @@ export class TelegramBotService {
       this.registerBotCommands().catch(() => {});
     }
 
-    this.triggerNextPoll(100);
+    this.triggerNextPoll(100, epoch);
   }
 
-  private async executePollCycle() {
-    if (!this.isPolling || this.isWebhookActive || this.isFetchInProgress || this.isPollCycleRunning) return;
+  private async executePollCycle(epoch: number) {
+    // Strictly verify epoch, single-instance flags, and state before initiating any network fetch
+    if (
+      epoch !== this.pollingEpoch ||
+      !this.isPolling ||
+      this.isWebhookActive ||
+      this.isFetchInProgress ||
+      this.isPollCycleRunning
+    ) {
+      return;
+    }
 
     const { botToken: currentToken } = this.getCredentials();
     if (!currentToken) {
-      this.triggerNextPoll(5000);
+      this.triggerNextPoll(5000, epoch);
       return;
     }
 
@@ -3602,7 +3823,7 @@ export class TelegramBotService {
     this.isFetchInProgress = true;
     this.lastPollAttemptTime = Date.now();
     this.totalPollCycles++;
-    let nextDelay = 1000;
+    let nextDelay = 800;
 
     // Abort any prior hanging request before starting fresh cycle
     this.abortCurrentPoll();
@@ -3621,6 +3842,10 @@ export class TelegramBotService {
       });
       clearTimeout(timeoutHandle);
 
+      if (epoch !== this.pollingEpoch || !this.isPolling) {
+        return;
+      }
+
       const text = await res.text();
       let data: any = null;
       try {
@@ -3633,7 +3858,7 @@ export class TelegramBotService {
         this.consecutiveErrors = 0;
         this.lastSuccessfulPollTime = Date.now();
 
-        if (this.storedCallbacks && data.result.length > 0) {
+        if (this.storedCallbacks && data.result.length > 0 && epoch === this.pollingEpoch) {
           const { getProducts, getUserWallet, deductWallet, creditWallet, deliverKey, createFamOrder, queryFamOrder } = this.storedCallbacks;
           for (const update of data.result as TelegramUpdate[]) {
             if (update && update.update_id) {
@@ -3706,13 +3931,17 @@ export class TelegramBotService {
       this.currentAbortController = null;
       this.isFetchInProgress = false;
       this.isPollCycleRunning = false;
-      this.triggerNextPoll(nextDelay);
+      if (epoch === this.pollingEpoch && this.isPolling && !this.isWebhookActive) {
+        this.triggerNextPoll(nextDelay, epoch);
+      }
     }
   }
 
   public stopPolling() {
+    this.pollingEpoch++;
     this.isPolling = false;
     this.isFetchInProgress = false;
+    this.isPollCycleRunning = false;
     this.abortCurrentPoll();
     this.stopWatchdog();
     if (this.pollTimer) {
@@ -3871,65 +4100,124 @@ export class TelegramBotService {
   }
 
   public async registerBotCommands(): Promise<boolean> {
-    const { botToken } = this.getCredentials();
+    const { botToken, defaultChatId } = this.getCredentials();
     if (!botToken) return false;
 
-    const commands = [
-      { command: 'start', description: '🟢 🏠 Open Main Menu & Check Balance' },
-      { command: 'commands', description: '🟢 📜 View All Bot Commands Directory' },
-      { command: 'buy', description: '🟢 🛒 Browse & Purchase VIP License Keys' },
-      { command: 'deposit', description: '🟢 💸 Add Wallet Balance via UPI' },
-      { command: 'balance', description: '🟢 💰 View Your Current Wallet Balance' },
-      { command: 'profile', description: '🟢 👑 Profile, Wallet & Delivered Keys' },
-      { command: 'keys', description: '🟢 🔑 View All Delivered License Keys' },
-      { command: 'refer', description: '🟢 🔗 Refer & Earn (₹2/friend + 5% deposit)' },
-      { command: 'gift', description: '🟢 🎁 Daily Gift Free Lucky Spin (24h)' },
-      { command: 'apk', description: '🟢 📥 Download Latest Mod APK & Tutorial' },
-      { command: 'update', description: '🟢 📱 Check Panel Updates, APK & Video' },
-      { command: 'upgrade', description: '🟢 💎 Upgrade to VIP Reseller Account' },
-      { command: 'reseller', description: '🟢 💎 VIP Reseller Status & Wholesale Pricing' },
-      { command: 'language', description: '🟢 🌐 Change Language (தமிழ் / EN / HI)' },
-      { command: 'help', description: '🟢 ⁉️ How to Use Store Bot Tutorial' },
-      { command: 'support', description: '🟢 🚀 Customer Support & Admin Contact' },
+    // 1. User Customer Commands (Clean, modern, high-conversion)
+    const userCommands = [
+      { command: 'start', description: '🏠 Open Main Menu & Check Balance' },
+      { command: 'buy', description: '🛒 Browse & Purchase VIP License Keys' },
+      { command: 'deposit', description: '💸 Add Wallet Balance via UPI' },
+      { command: 'balance', description: '💰 View Wallet Balance & History' },
+      { command: 'profile', description: '👑 Profile, Purchased Keys & Orders' },
+      { command: 'keys', description: '🔑 View All Delivered License Keys' },
+      { command: 'refer', description: '🔗 Refer Friends (Earn ₹2 + 5% Bonus)' },
+      { command: 'gift', description: '🎁 Daily Free Lucky Spin (24h)' },
+      { command: 'apk', description: '📥 Download Latest Mod APK & OBB' },
+      { command: 'update', description: '🔄 Check Panel Updates & Video Guide' },
+      { command: 'upgrade', description: '💎 Upgrade to VIP Reseller Account' },
+      { command: 'language', description: '🌐 Change Language (தமிழ் / EN / HI)' },
+      { command: 'help', description: '⁉️ How to Use Store Bot Tutorial' },
+      { command: 'support', description: '🚀 Customer Support & Admin Contact' },
+      { command: 'community', description: '📢 Official Community & Proof Channels' },
+      { command: 'commands', description: '📜 Complete Commands Directory' },
+      { command: 'cancel', description: '❌ Cancel Active Action / Return' },
+    ];
+
+    // 2. Admin Commands (Store Management & Control)
+    const adminCommands = [
+      ...userCommands.slice(0, 10),
       { command: 'admin', description: '👑 🎛️ Master Admin Control Panel' },
-      { command: 'broadcast', description: '👑 📢 (Admin) Send Broadcast to All' },
-      { command: 'addbalance', description: '👑 ➕ (Admin) Credit User Balance' },
-      { command: 'users', description: '👑 👥 (Admin) View All Registered Users' },
-      { command: 'setapk', description: '👑 📥 (Admin) Set APK Download URL' },
-      { command: 'setresellerprice', description: '👑 💵 (Admin) Set Reseller Upgrade Fee' },
-      { command: 'makereseller', description: '👑 💎 (Admin) Grant VIP Reseller' },
-      { command: 'removereseller', description: '👑 👤 (Admin) Remove Reseller Status' },
+      { command: 'users', description: '👑 👥 View All Registered Users' },
+      { command: 'broadcast', description: '👑 📢 Send Broadcast Announcement' },
+      { command: 'addbalance', description: '👑 ➕ Credit User Balance' },
+      { command: 'setapk', description: '👑 📥 Set APK Download Link' },
+      { command: 'setresellerprice', description: '👑 💵 Set Reseller Upgrade Fee' },
+      { command: 'makereseller', description: '👑 💎 Grant VIP Reseller Status' },
+      { command: 'removereseller', description: '👑 👤 Remove VIP Reseller' },
+      { command: 'lowstock', description: '👑 📉 Check Low Stock Alerts' },
+      { command: 'stats', description: '👑 📊 View Store & Bot Analytics' },
     ];
 
     try {
-      // 1. Register for Default Scope
+      // Step A: Purge all old/stale commands across all scopes and language codes to ensure instant sync
+      const scopesToPurge = [
+        { type: 'default' },
+        { type: 'all_private_chats' },
+        { type: 'all_group_chats' },
+        { type: 'all_chat_administrators' },
+      ];
+      const langCodesToPurge = ['', 'en', 'ta', 'hi'];
+
+      for (const scope of scopesToPurge) {
+        for (const lang of langCodesToPurge) {
+          try {
+            const body: any = { scope };
+            if (lang) body.language_code = lang;
+            await fetch(`https://api.telegram.org/bot${botToken}/deleteMyCommands`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+          } catch {}
+        }
+      }
+
+      // Step B: Set fresh user commands for default and private chats
       await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commands, scope: { type: 'default' } }),
+        body: JSON.stringify({ commands: userCommands, scope: { type: 'default' } }),
       });
 
-      // 2. Register for Private Chats Scope (Ensures instant command popup on mobile)
-      const res = await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
+      await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commands, scope: { type: 'all_private_chats' } }),
+        body: JSON.stringify({ commands: userCommands, scope: { type: 'all_private_chats' } }),
       });
-      const data: any = await res.json();
 
-      // Reset Chat Menu Button to standard default commands menu (removes web_app button and bottom keyboard overlays)
+      await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commands: adminCommands, scope: { type: 'all_chat_administrators' } }),
+      });
+
+      // Step C: Set admin commands for master admin chat IDs
+      const adminChatIds = new Set<string>();
+      if (defaultChatId) adminChatIds.add(String(defaultChatId));
+      adminChatIds.add('7768975239');
+
+      for (const aId of adminChatIds) {
+        const numId = parseInt(aId, 10);
+        if (!isNaN(numId)) {
+          try {
+            await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                commands: adminCommands,
+                scope: { type: 'chat', chat_id: numId },
+              }),
+            });
+          } catch {}
+        }
+      }
+
+      // Step D: Set Chat Menu Button to commands menu
       await fetch(`https://api.telegram.org/bot${botToken}/setChatMenuButton`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           menu_button: {
-            type: 'commands'
-          }
-        })
+            type: 'commands',
+          },
+        }),
       }).catch(() => {});
 
-      return !!data.ok;
-    } catch {
+      console.log('[TelegramBot] Commands successfully synchronized across all scopes!');
+      return true;
+    } catch (err: any) {
+      console.warn('[TelegramBot] Command registration warning:', err.message);
       return false;
     }
   }
@@ -5874,6 +6162,30 @@ export class TelegramBotService {
       return;
     }
 
+    // 13b. 📢 Official Community & Proof Channels (/community, /channel, /proof)
+    if (
+      cleanCmd === '/community' ||
+      cleanCmd.startsWith('/community ') ||
+      cleanCmd === '/channel' ||
+      cleanCmd.startsWith('/channel ') ||
+      cleanCmd === '/proof' ||
+      cleanCmd.startsWith('/proof ') ||
+      cleanCmd === '/proofs' ||
+      cleanCmd.startsWith('/proofs ') ||
+      norm === 'community' ||
+      norm === 'channel' ||
+      norm === 'proof' ||
+      norm === 'proofs' ||
+      norm === 'proof channel' ||
+      norm === 'official channel' ||
+      norm === 'கம்யூனிட்டி' ||
+      norm === 'சேனல்' ||
+      norm === 'குழு'
+    ) {
+      await this.showCommunity(chatId);
+      return;
+    }
+
     // 14. 🗑️ Remove / Hide Keyboard Menu
     if (
       cleanCmd.startsWith('/removekeyboard') ||
@@ -6242,6 +6554,12 @@ export class TelegramBotService {
     // 7. 🚀 Support
     if (data === 'support') {
       await this.showSupport(chatId, msgId);
+      return;
+    }
+
+    // 7b. 📢 Community & Proof Channels
+    if (data === 'community' || data === 'proof_channel' || data === 'channels' || data === 'community_channel') {
+      await this.showCommunity(chatId, msgId);
       return;
     }
 
@@ -6890,9 +7208,6 @@ export class TelegramBotService {
 
   // Exact Main Menu Visual Layout from User Video & Model (8lvl id option removed)
   public async sendMainMenu(chatId: number, balance: number, _ensureReplyKeyboard: boolean = false, messageId?: number) {
-    const users = this.loadBotUsers();
-    const botUser = users.get(chatId);
-
     const text =
       `🛒 <b>Shop Store Now :</b> all key purchase & instantly delivery\n` +
       `👤 <b>My Profile :</b> check your account information\n` +
@@ -6900,7 +7215,8 @@ export class TelegramBotService {
       `📜 <b>All History :</b> check all key purchase history\n` +
       `🎁 <b>Referral :</b> invite friends & earn rewards\n` +
       `▶️ <b>Tutorial :</b> view tutorial and work this bot\n` +
-      `❓ <b>Support :</b> bot problem fixed for support admin`;
+      `❓ <b>Support :</b> bot problem fixed for support admin\n` +
+      `📢 <b>Community :</b> official updates & proof channel`;
 
     const inline_keyboard: any[] = [];
 
@@ -6915,18 +7231,20 @@ export class TelegramBotService {
         { text: '🛒 Shop Now', callback_data: 'catalog' }
       ],
       [
-        { text: '🔑 My Orders', callback_data: 'my_orders' },
-        { text: '👤 Profile', callback_data: 'profile_history' }
+        { text: '💰 Add Balance', callback_data: 'deposit_prompt' },
+        { text: '👤 My Profile', callback_data: 'profile_history' }
       ],
       [
+        { text: '🔑 My Orders', callback_data: 'my_orders' },
         { text: '💎 Upgrade to Reseller', callback_data: 'upgrade_reseller' }
       ],
       [
-        { text: '❓ How to Use', callback_data: 'how_to_use' },
-        { text: '🛠️ Support', callback_data: 'support' }
+        { text: '🎁 Refer & Earn', callback_data: 'refer_earn' },
+        { text: '▶️ How to Use', callback_data: 'how_to_use' }
       ],
       [
-        { text: '🎁 Refer & Earn', callback_data: 'refer_earn' }
+        { text: '🛠️ Support', callback_data: 'support' },
+        { text: '📢 Community', callback_data: 'community' }
       ]
     );
 
@@ -7112,12 +7430,13 @@ export class TelegramBotService {
 
   // 1. 🛒 Shop Now — All Products Catalog (Video model layout with 2-column buttons)
   private async showProductCatalog(chatId: number, rawProducts: any[], messageId?: number) {
-    const products = (rawProducts && rawProducts.length > 0) ? rawProducts : this.loadProductsFromDisk();
+    const products = Array.isArray(rawProducts) ? rawProducts : this.loadProductsFromDisk();
 
     if (!products || products.length === 0) {
       const emptyText =
         `<b>KALAM FF PANEL — SHOP</b>\n\n` +
-        `⚠️ <i>No products currently available in the catalog.</i>`;
+        `⚠️ <i>No products currently available in the catalog. All products are currently out of stock or being updated.</i>\n\n` +
+        `<i>Please check back soon or contact support for restock updates!</i>`;
 
       const emptyKeyboard = [
         [{ text: '🔄 Refresh Catalog', callback_data: 'catalog' }],
@@ -7169,7 +7488,7 @@ export class TelegramBotService {
 
   private async showProductsForDevice(chatId: number, deviceType: string, rawProducts: any[], messageId?: number) {
     // Always guarantee freshest products list from disk / memory
-    const products = (rawProducts && rawProducts.length > 0) ? rawProducts : this.loadProductsFromDisk();
+    const products = Array.isArray(rawProducts) ? rawProducts : this.loadProductsFromDisk();
 
     if (!products || products.length === 0) {
       await this.editOrSendMessage(
@@ -7342,7 +7661,7 @@ export class TelegramBotService {
   }
 
   private async showProductPlans(chatId: number, productId: string, rawProducts: any[], messageId?: number) {
-    const products = (rawProducts && rawProducts.length > 0) ? rawProducts : this.loadProductsFromDisk();
+    const products = Array.isArray(rawProducts) ? rawProducts : this.loadProductsFromDisk();
     const product = products.find((p: any) => 
       p.id === productId || 
       p.productId === productId || 
@@ -7437,7 +7756,7 @@ export class TelegramBotService {
     userId: string,
     messageId?: number
   ) {
-    const pList = (products && products.length > 0) ? products : this.loadProductsFromDisk();
+    const pList = Array.isArray(products) ? products : this.loadProductsFromDisk();
     const product = pList.find((p: any) => 
       p.id === productId || 
       p.productId === productId || 
@@ -7446,7 +7765,18 @@ export class TelegramBotService {
       String(p.productId) === String(productId) ||
       String(p.pid) === String(productId)
     );
-    if (!product) return;
+    if (!product) {
+      await this.editOrSendMessage(chatId, '⚠️ Product not found or removed.', {
+        inline_keyboard: [[{ text: '🔙 Back to Products', callback_data: 'catalog' }]]
+      }, messageId);
+      return;
+    }
+
+    const isMaint = (product.status || '').toUpperCase() === 'MAINTENANCE' || !!product.isMaintenance;
+    if (isMaint) {
+      await this.showProductPlans(chatId, productId, pList, messageId);
+      return;
+    }
 
     let plans = Array.isArray(product.plans) && product.plans.length > 0 ? product.plans : [
       { id: '1day', duration: '1 Day', price: product.price || 30, resellerPrice: product.resellerPrice || 20 },
@@ -7534,7 +7864,15 @@ export class TelegramBotService {
     this.inFlightPurchases.add(`buy_user_${chatId}`);
 
     try {
-      const product = products.find((p: any) => p.id === productId || p.productId === productId);
+      const pList = Array.isArray(products) ? products : this.loadProductsFromDisk();
+      const product = pList.find((p: any) => 
+        p.id === productId || 
+        p.productId === productId || 
+        p.pid === productId ||
+        String(p.id) === String(productId) ||
+        String(p.productId) === String(productId) ||
+        String(p.pid) === String(productId)
+      );
       if (!product) {
         await this.editOrSendMessage(chatId, '⚠️ Error: Product no longer available.', {
           inline_keyboard: [[{ text: '🔙 Back', callback_data: 'catalog' }]]
@@ -7542,7 +7880,8 @@ export class TelegramBotService {
         return;
       }
 
-      if (product.status === 'MAINTENANCE' || product.status === 'maintenance') {
+      const isMaint = (product.status || '').toUpperCase() === 'MAINTENANCE' || !!product.isMaintenance;
+      if (isMaint) {
         await this.editOrSendMessage(chatId, `⚠️ <b>${product.name || 'Product'} is currently under maintenance.</b>\n\nPurchases are temporarily paused while maintenance is in progress. Please choose another product or check back shortly.`, {
           inline_keyboard: [[{ text: '🔙 Back to Products', callback_data: 'catalog' }]]
         }, messageId);
@@ -8104,6 +8443,40 @@ export class TelegramBotService {
 
     const inline_keyboard = [
       [{ text: '📥 Open Download Channel', url: liveApkUrl }],
+      [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
+    ];
+
+    await this.editOrSendMessage(chatId, text, { inline_keyboard }, messageId);
+  }
+
+  // 11. 📢 Official Community & Proof Channels
+  public async showCommunity(chatId: number, messageId?: number) {
+    const { proofChannelLink, apkDownloadUrl } = this.getCredentials();
+    let channelLink = (proofChannelLink || 'https://t.me/c/4325449752').trim();
+    let updateLink = (apkDownloadUrl || 'https://t.me/kalamffpanel').trim();
+
+    if (channelLink.startsWith('@')) channelLink = `https://t.me/${channelLink.replace('@', '')}`;
+    if (channelLink.startsWith('t.me/')) channelLink = `https://${channelLink}`;
+    if (!channelLink.startsWith('http://') && !channelLink.startsWith('https://')) channelLink = `https://${channelLink}`;
+
+    if (updateLink.startsWith('@')) updateLink = `https://t.me/${updateLink.replace('@', '')}`;
+    if (updateLink.startsWith('t.me/')) updateLink = `https://${updateLink}`;
+    if (!updateLink.startsWith('http://') && !updateLink.startsWith('https://')) updateLink = `https://${updateLink}`;
+
+    const text =
+      `<b>KALAM FF PANEL — OFFICIAL COMMUNITY</b>\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `Join our official Telegram community channels & groups for:\n\n` +
+      `📢 <b>Payment & Key Proofs:</b> 100% Real-time customer delivery proofs\n` +
+      `🔥 <b>Panel Updates & Files:</b> Daily bypass files & mod APKs\n` +
+      `🎁 <b>Giveaways & Promos:</b> Exclusive discounts & free wallet codes\n` +
+      `💬 <b>Support & Help:</b> Fast customer guidance & tutorials\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `<i>Tap below to join our official channels:</i>`;
+
+    const inline_keyboard = [
+      [{ text: '📢 Payment Proof Channel', url: channelLink }],
+      [{ text: '🔥 Updates & Mod Channel', url: updateLink }],
       [{ text: '🔙 Back to Menu', callback_data: 'main_menu' }]
     ];
 

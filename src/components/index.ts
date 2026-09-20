@@ -6,5 +6,6 @@ export { UpstreamPerformanceDashboard } from './UpstreamPerformanceDashboard';
 export { TelegramNotificationSettingsCard } from './TelegramNotificationSettings';
 export { AdminUserManagement } from './AdminUserManagement';
 export { AuditLogDashboard } from './AuditLogDashboard';
+export { TelegramModeControl } from './TelegramModeControl';
 
 

@@ -71,7 +71,7 @@ async function buildAndInjectProductMaintenance() {
     const tabButtonCode = `r.jsxs("button",{onClick:()=>s("product_maintenance"),className:\`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap \${t==="product_maintenance"?"bg-gradient-to-r from-yellow-500/25 to-amber-500/25 text-yellow-300 border border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.25)]":"text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"}\`,children:[r.jsx(MaintIconLive,{className:"w-3.5 h-3.5"}),r.jsx("span",{children:"🛠️ Maintenance Control"})]}),`;
 
     // Ensure MaintIconLive is available
-    if (!code.includes('MaintIconLive')) {
+    if (!code.includes('const MaintIconLive =')) {
       code = 'const MaintIconLive = (props) => r.jsx("svg", { ...props, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", viewBox: "0 0 24 24", children: [r.jsx("path", { d: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" })] });\n' + code;
     }
 

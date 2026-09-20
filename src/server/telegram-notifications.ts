@@ -162,6 +162,16 @@ export const NOTIFICATION_TYPE_DEFINITIONS: TelegramNotificationTypeMeta[] = [
     defaultEnabled: false,
     samplePayload: 'Admin added 50 keys to "FF ESP HACK (1 Day)".'
   },
+  {
+    id: 'productMaintenanceAlert',
+    key: 'productMaintenanceAlert',
+    title: 'Product / Store Maintenance Status Changed',
+    description: 'Automated alert sent to admin channels whenever any cheat panel enters or exits maintenance mode.',
+    category: 'inventory',
+    icon: '🛠️',
+    defaultEnabled: true,
+    samplePayload: '🛠️ "FF VIP PRO MAX" is now UNDER MAINTENANCE. Purchases temporarily paused across Storefront & Telegram Bot.'
+  },
 
   // System & Upstream
   {
@@ -227,6 +237,7 @@ export const DEFAULT_TELEGRAM_NOTIFICATION_SETTINGS: TelegramNotificationSetting
     outOfStockAlert: true,
     supplierAutoRestock: true,
     manualStockAddition: false,
+    productMaintenanceAlert: true,
     upstreamApiError: true,
     botLifecycleStatus: true,
     broadcastCompleted: true,

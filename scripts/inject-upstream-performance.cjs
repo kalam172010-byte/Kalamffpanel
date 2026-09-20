@@ -71,8 +71,8 @@ async function buildAndInjectUpstreamDashboard() {
     const tabButtonCode = `r.jsxs("button",{onClick:()=>s("upstream_perf"),className:\`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap \${t==="upstream_perf"?"bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]":"text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"}\`,children:[r.jsx(ActivityIconLive,{className:"w-3.5 h-3.5"}),r.jsx("span",{children:"📡 Reseller API Performance"})]}),`;
 
     // Ensure ActivityIconLive is available
-    if (!code.includes('ActivityIconLive')) {
-      code = 'const ActivityIconLive = (props) => r.jsx("svg", { ...props, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", viewBox: "0 0 24 24", children: r.jsx("polyline", { points: "22 12 18 12 15 21 9 3 6 12 2 12" }) });\n' + code;
+    if (!code.includes('const ActivityIconLive =')) {
+      code = 'const ActivityIconLive = (props) => r.jsx("svg", { ...props, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", viewBox: "0 0 24 24", children: [r.jsx("polyline", { points: "22 12 18 12 15 21 9 3 6 12 2 12" })] });\n' + code;
     }
 
     // Ensure UpstreamPerformanceDashboardLive wrapper is available

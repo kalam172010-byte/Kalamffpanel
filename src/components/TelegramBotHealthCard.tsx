@@ -25,7 +25,8 @@ import {
   DownloadCloud,
   UploadCloud,
   FileJson,
-  Shield
+  Shield,
+  ListOrdered
 } from 'lucide-react';
 import type { TelegramBotHealthStatus, TelegramDiagnosticResult } from '../types';
 import { TelegramActivityFeed } from './TelegramActivityFeed';
@@ -346,6 +347,31 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
     }
   };
 
+  const [isSyncingCommands, setIsSyncingCommands] = useState<boolean>(false);
+  const [syncCommandsMessage, setSyncCommandsMessage] = useState<string | null>(null);
+
+  const handleSyncCommands = async () => {
+    setIsSyncingCommands(true);
+    setSyncCommandsMessage(null);
+    try {
+      const res = await fetch('/api/telegram/sync-commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSyncCommandsMessage('✅ Bot Commands Purged & Re-synchronized with Telegram API!');
+      } else {
+        setSyncCommandsMessage(`❌ ${data.message || 'Failed to sync commands'}`);
+      }
+      setTimeout(() => setSyncCommandsMessage(null), 6000);
+    } catch (err: any) {
+      setSyncCommandsMessage(`❌ Error: ${err.message}`);
+    } finally {
+      setIsSyncingCommands(false);
+    }
+  };
+
   const handleCopyRaw = () => {
     const payload = JSON.stringify({ status, lastPingResult }, null, 2);
     navigator.clipboard.writeText(payload);
@@ -570,6 +596,18 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
             <span>{isRecycling ? 'Recycling...' : 'Recycle Socket'}</span>
           </button>
 
+          {/* Sync Commands Menu */}
+          <button
+            id="telegram-sync-commands-btn"
+            onClick={handleSyncCommands}
+            disabled={isSyncingCommands}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-xs font-semibold text-purple-300 transition-all hover:bg-purple-500/20 active:scale-95 disabled:opacity-50"
+            title="Purge old cached commands and sync latest commands menu across all Telegram clients"
+          >
+            <ListOrdered className={`h-3 w-3 ${isSyncingCommands ? 'animate-spin text-purple-400' : ''}`} />
+            <span>{isSyncingCommands ? 'Syncing...' : 'Sync Bot Commands'}</span>
+          </button>
+
           {/* Open Bot */}
           {status?.botUsername && (
             <a
@@ -597,6 +635,23 @@ export const TelegramBotHealthCard: React.FC<TelegramBotHealthCardProps> = ({
           </label>
         </div>
       </div>
+
+      {/* Sync Commands Result Banner */}
+      {syncCommandsMessage && (
+        <div
+          id="telegram-sync-commands-result-banner"
+          className="relative z-10 mt-3 rounded-xl border border-purple-500/40 bg-purple-950/30 p-3 text-xs font-semibold text-purple-200 flex items-center justify-between"
+        >
+          <span>{syncCommandsMessage}</span>
+          <button
+            type="button"
+            onClick={() => setSyncCommandsMessage(null)}
+            className="text-purple-400 hover:text-white text-xs px-1.5 py-0.5"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Connectivity Alert Test Result Banner */}
       {connectivityResult && (

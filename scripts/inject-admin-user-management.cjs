@@ -71,7 +71,7 @@ async function buildAndInjectAdminUserManagement() {
     const tabButtonCode = `r.jsxs("button",{onClick:()=>s("bot_users_management"),className:\`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap \${t==="bot_users_management"?"bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]":"text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"}\`,children:[r.jsx(UsersIconLive,{className:"w-3.5 h-3.5"}),r.jsx("span",{children:"👥 Bot Users & Resellers"})]}),`;
 
     // Ensure UsersIconLive is available
-    if (!code.includes('UsersIconLive')) {
+    if (!code.includes('const UsersIconLive =')) {
       code = 'const UsersIconLive = (props) => r.jsx("svg", { ...props, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", viewBox: "0 0 24 24", children: [r.jsx("path", { d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" }), r.jsx("circle", { cx: "9", cy: "7", r: "4" }), r.jsx("path", { d: "M22 21v-2a4 4 0 0 0-3-3.87" }), r.jsx("path", { d: "M16 3.13a4 4 0 0 1 0 7.75" })] });\n' + code;
     }
 

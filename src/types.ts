@@ -411,6 +411,7 @@ export interface TelegramNotificationSettings {
     outOfStockAlert: boolean;
     supplierAutoRestock: boolean;
     manualStockAddition: boolean;
+    productMaintenanceAlert: boolean;
 
     // System & Upstream
     upstreamApiError: boolean;

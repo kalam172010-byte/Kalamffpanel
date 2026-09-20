@@ -71,7 +71,7 @@ async function buildAndInjectNotificationSettings() {
     const tabButtonCode = `r.jsxs("button",{onClick:()=>s("notification_settings"),className:\`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap \${t==="notification_settings"?"bg-gradient-to-r from-amber-500/20 to-cyan-500/20 text-amber-300 border border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.25)]":"text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"}\`,children:[r.jsx(BellIconLive,{className:"w-3.5 h-3.5"}),r.jsx("span",{children:"🔔 Telegram Notifications"})]}),`;
 
     // Ensure BellIconLive is available
-    if (!code.includes('BellIconLive')) {
+    if (!code.includes('const BellIconLive =')) {
       code = 'const BellIconLive = (props) => r.jsx("svg", { ...props, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", viewBox: "0 0 24 24", children: [r.jsx("path", { d: "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" }), r.jsx("path", { d: "M13.73 21a2 2 0 0 1-3.46 0" })] });\n' + code;
     }
 

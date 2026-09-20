@@ -382,5 +382,245 @@
     ],
     "sourceUrl": "https://bantibhaiya.to/api/reseller_v1.php",
     "error": "Could not retrieve products from external API endpoints (https://bantibhaiya.to/api/reseller_v1.php, https://bantibhaiya.to/api/reseller_v1.php?action=get_products, https://bantibhaiya.to/api/reseller_v1.php?action=products): Invalid response format"
+  },
+  {
+    "timestamp": "2026-09-20T13:07:19.177Z",
+    "timestampMs": 1789909639177,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 63,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T13:10:54.070Z",
+    "timestampMs": 1789909854070,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 24,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T13:13:00.793Z",
+    "timestampMs": 1789909980793,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 24,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T13:16:01.904Z",
+    "timestampMs": 1789910161904,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 23,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T13:26:09.850Z",
+    "timestampMs": 1789910769850,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 27,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T13:27:12.556Z",
+    "timestampMs": 1789910832556,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 22,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T13:40:49.294Z",
+    "timestampMs": 1789911649294,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 75,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T13:41:20.660Z",
+    "timestampMs": 1789911680660,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 23,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T13:48:54.842Z",
+    "timestampMs": 1789912134842,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 26,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T13:52:30.510Z",
+    "timestampMs": 1789912350510,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 24,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T14:04:50.023Z",
+    "timestampMs": 1789913090023,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 30,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T14:09:34.735Z",
+    "timestampMs": 1789913374735,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 32,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T14:15:43.476Z",
+    "timestampMs": 1789913743476,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 36,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T14:16:10.176Z",
+    "timestampMs": 1789913770176,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 26,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+  },
+  {
+    "timestamp": "2026-09-20T14:43:08.116Z",
+    "timestampMs": 1789915388116,
+    "trigger": "STARTUP",
+    "status": "FAILED",
+    "productsUpdated": 0,
+    "keysSynced": 0,
+    "pricesUpdated": 0,
+    "durationMs": 22,
+    "details": [
+      "Connecting to external Admin API: https://adminpanels.shop/api/reseller_v1.php (Source: SYNC_CONFIG)",
+      "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
+    ],
+    "sourceUrl": "https://adminpanels.shop/api/reseller_v1.php",
+    "error": "Could not retrieve products from external API endpoints (https://adminpanels.shop/api/reseller_v1.php, https://adminpanels.shop/api/reseller_v1.php?action=get_products, https://adminpanels.shop/api/reseller_v1.php?action=products): fetch failed"
   }
 ]

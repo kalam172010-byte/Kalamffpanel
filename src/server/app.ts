@@ -434,7 +434,7 @@ function saveProductsToDisk(products: any[]) {
 }
 
 function getProductsForTelegram(): any[] {
-  return loadProductsFromDisk();
+  return Array.isArray(globalProductsCache) ? globalProductsCache : loadProductsFromDisk();
 }
 
 // Security Headers & Hardening Middleware
@@ -1213,7 +1213,7 @@ app.use('/api/admin/website-api', productApiAdminRouter);
 app.all('/api/admin/stats', (req: Request, res: Response) => {
   try {
     // 1. Calculate Active Products count
-    const products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    const products = Array.isArray(globalProductsCache) ? globalProductsCache : loadProductsFromDisk();
     const activeProducts = products.filter((p: any) => p && (p.status === 'ACTIVE' || p.status === 'active')).length;
 
     // 2. Calculate Successful API Orders & Revenue from api_orders.json
@@ -1390,7 +1390,7 @@ app.post('/api/admin/inventory/low-stock/threshold', (req: Request, res: Respons
 app.get('/api/products', (req: Request, res: Response) => {
   // Always load freshest data from disk
   const diskProducts = loadProductsFromDisk();
-  const products = diskProducts.length > 0 ? diskProducts : globalProductsCache;
+  const products = Array.isArray(diskProducts) ? diskProducts : (Array.isArray(globalProductsCache) ? globalProductsCache : []);
   globalProductsCache = products;
 
   // Ensure pid, duration, price, stock, and features are fully attached
@@ -1509,7 +1509,7 @@ app.post(['/api/admin/products', '/api/admin/products/save', '/api/admin/save-pr
     const p = req.body;
     if (!p) return res.status(400).json({ success: false, error: 'Product data required' });
 
-    let products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    let products = Array.isArray(globalProductsCache) ? globalProductsCache : loadProductsFromDisk();
     const pid = p.id || p.productId || p.pid || `prod-${Date.now()}`;
     const existingIndex = products.findIndex((item: any) => item.id === pid || item.productId === pid);
 
@@ -1550,7 +1550,7 @@ app.put('/api/admin/products/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    let products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    let products = Array.isArray(globalProductsCache) ? globalProductsCache : loadProductsFromDisk();
     const idx = products.findIndex((p: any) => p.id === id || p.productId === id);
 
     if (idx < 0) {
@@ -1572,21 +1572,38 @@ app.put('/api/admin/products/:id', (req: Request, res: Response) => {
 });
 
 // Delete Product by ID endpoints
-app.delete(['/api/admin/products/:id', '/api/products/:id'], (req: Request, res: Response) => {
+app.delete(['/api/admin/products/:id', '/api/products/:id', '/api/admin/products', '/api/products'], (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    let products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    const rawId = req.params.id || req.body?.id || req.body?.productId || (req.query?.id as string) || (req.query?.productId as string);
+    if (!rawId) {
+      return res.status(400).json({ success: false, error: 'Product ID required' });
+    }
+    const id = decodeURIComponent(String(rawId)).trim();
+    const cleanId = id.toLowerCase();
+
+    let products = Array.isArray(globalProductsCache) ? globalProductsCache : loadProductsFromDisk();
     const initialLen = products.length;
-    products = products.filter((p: any) => p.id !== id && p.productId !== id && String(p.id) !== String(id));
+
+    products = products.filter((p: any) => {
+      if (!p) return false;
+      const pId = String(p.id || '').trim().toLowerCase();
+      const pPid = String(p.pid || '').trim().toLowerCase();
+      const pProductId = String(p.productId || '').trim().toLowerCase();
+      const pName = String(p.name || '').trim().toLowerCase();
+      return pId !== cleanId && pPid !== cleanId && pProductId !== cleanId && pName !== cleanId;
+    });
 
     globalProductsCache = products;
     saveProductsToDisk(products);
+
+    console.log(`[Server] Deleted product "${id}". Previous count: ${initialLen}, New count: ${products.length}`);
 
     return res.json({
       success: true,
       message: `Product ${id} deleted successfully`,
       deleted: initialLen > products.length,
-      remainingCount: products.length
+      remainingCount: products.length,
+      products
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -1594,24 +1611,38 @@ app.delete(['/api/admin/products/:id', '/api/products/:id'], (req: Request, res:
 });
 
 // POST-based Delete Product endpoints
-app.post(['/api/admin/products/:id/delete', '/api/admin/products/delete', '/api/products/delete'], (req: Request, res: Response) => {
+app.post(['/api/admin/products/:id/delete', '/api/admin/products/delete', '/api/products/:id/delete', '/api/products/delete'], (req: Request, res: Response) => {
   try {
-    const id = req.params.id || req.body?.id || req.body?.productId;
-    if (!id) {
+    const rawId = req.params.id || req.body?.id || req.body?.productId || req.body?.pid || (req.query?.id as string) || (req.query?.productId as string);
+    if (!rawId) {
       return res.status(400).json({ success: false, error: 'Product ID required' });
     }
-    let products = globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk();
+    const id = decodeURIComponent(String(rawId)).trim();
+    const cleanId = id.toLowerCase();
+
+    let products = Array.isArray(globalProductsCache) ? globalProductsCache : loadProductsFromDisk();
     const initialLen = products.length;
-    products = products.filter((p: any) => p.id !== id && p.productId !== id && String(p.id) !== String(id));
+
+    products = products.filter((p: any) => {
+      if (!p) return false;
+      const pId = String(p.id || '').trim().toLowerCase();
+      const pPid = String(p.pid || '').trim().toLowerCase();
+      const pProductId = String(p.productId || '').trim().toLowerCase();
+      const pName = String(p.name || '').trim().toLowerCase();
+      return pId !== cleanId && pPid !== cleanId && pProductId !== cleanId && pName !== cleanId;
+    });
 
     globalProductsCache = products;
     saveProductsToDisk(products);
+
+    console.log(`[Server] (POST) Deleted product "${id}". Previous count: ${initialLen}, New count: ${products.length}`);
 
     return res.json({
       success: true,
       message: `Product ${id} deleted successfully`,
       deleted: initialLen > products.length,
-      remainingCount: products.length
+      remainingCount: products.length,
+      products
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
@@ -1885,6 +1916,69 @@ app.post(['/api/admin/products/bulk-maintenance', '/api/products/bulk-maintenanc
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4.1 Trigger On-Demand Product Maintenance Status Audit & Automated Alert Check
+app.post(['/api/admin/maintenance/audit-alert', '/api/maintenance/audit-alert'], async (req: Request, res: Response) => {
+  try {
+    const { force, targetChatId } = req.body || {};
+    const result = await telegramBotService.auditAndAlertProductMaintenance('MANUAL_API_TRIGGER', {
+      force: !!force,
+      targetChatId: targetChatId || undefined
+    });
+    return res.json({
+      success: true,
+      message: 'Product maintenance status audit completed.',
+      result
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4.2 Get Maintenance Status Overview for All Panels
+app.get(['/api/admin/maintenance/status', '/api/maintenance/status'], (req: Request, res: Response) => {
+  try {
+    const products = loadProductsFromDisk();
+    const storeData = loadStoreDataFromDisk();
+    const isGlobalMaintenance = !!storeData.storeSettings?.maintenanceMode;
+
+    const maintenanceProducts = products.filter((p: any) => {
+      const st = (p.status || 'ACTIVE').toUpperCase();
+      return st === 'MAINTENANCE' || !!p.isMaintenance;
+    });
+
+    const activeProducts = products.filter((p: any) => {
+      const st = (p.status || 'ACTIVE').toUpperCase();
+      return st !== 'MAINTENANCE' && !p.isMaintenance;
+    });
+
+    return res.json({
+      success: true,
+      isGlobalMaintenance,
+      storeName: storeData.storeSettings?.shopName || 'KALAM FF PANEL',
+      totalProducts: products.length,
+      maintenanceCount: maintenanceProducts.length,
+      activeCount: activeProducts.length,
+      maintenanceProducts: maintenanceProducts.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        game: p.game,
+        category: p.category,
+        status: p.status || 'MAINTENANCE',
+        maintenanceReason: p.maintenanceReason || null
+      })),
+      activeProducts: activeProducts.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        game: p.game,
+        category: p.category,
+        status: p.status || 'ACTIVE'
+      }))
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -3870,6 +3964,21 @@ app.post('/api/telegram/restart', async (req: Request, res: Response) => {
   }
 });
 
+// Force Synchronize Telegram Bot Commands Endpoint
+app.post(['/api/telegram/sync-commands', '/api/admin/telegram/sync-commands'], async (req: Request, res: Response) => {
+  try {
+    const success = await telegramBotService.registerBotCommands();
+    res.json({
+      success,
+      message: success
+        ? 'Telegram Bot commands successfully purged, re-registered, and synchronized across all scopes and languages!'
+        : 'Failed to synchronize commands. Check Bot Token in Settings.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Telegram Webhook Handler (Allows bot to receive updates via Webhook as well as Polling)
 const handleTelegramWebhook = async (req: Request, res: Response) => {
   try {
@@ -4014,6 +4123,91 @@ app.post('/api/telegram/delete-webhook', async (req: Request, res: Response) => 
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// Unified Telegram Mode Query Endpoint (Long Polling vs Webhook)
+app.get(['/api/telegram/mode', '/api/admin/telegram/mode'], (req: Request, res: Response) => {
+  try {
+    const status = telegramBotService.getBotStatus();
+    const host = req.get('x-forwarded-host') || req.get('host') || 'localhost:3000';
+    const protocol = req.get('x-forwarded-proto') || req.protocol || 'https';
+    const defaultWebhookUrl = `${protocol}://${host}/api/telegram/webhook`;
+
+    res.json({
+      success: true,
+      mode: status.isWebhookActive ? 'WEBHOOK' : 'LONG_POLLING',
+      isPolling: status.isPolling,
+      isWebhookActive: status.isWebhookActive,
+      activeWebhookUrl: status.activeWebhookUrl || '',
+      defaultWebhookUrl,
+      botUsername: status.botUsername,
+      isHealthy: status.isHealthy,
+      msSinceLastPoll: status.msSinceLastPoll,
+      totalPollCycles: status.totalPollCycles,
+      consecutiveErrors: status.consecutiveErrors,
+      lastSuccessfulPoll: status.lastSuccessfulPoll,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Unified Telegram Mode Switcher / Toggle Endpoint
+app.post(['/api/telegram/set-mode', '/api/admin/telegram/set-mode', '/api/telegram/toggle-mode', '/api/admin/telegram/toggle-mode'], async (req: Request, res: Response) => {
+  try {
+    const currentStatus = telegramBotService.getBotStatus();
+    let requestedMode = req.body.mode; // 'LONG_POLLING' | 'WEBHOOK' | 'TOGGLE'
+    if (!requestedMode || requestedMode === 'TOGGLE') {
+      requestedMode = currentStatus.isWebhookActive ? 'LONG_POLLING' : 'WEBHOOK';
+    }
+
+    const host = req.get('x-forwarded-host') || req.get('host') || 'localhost:3000';
+    const protocol = req.get('x-forwarded-proto') || req.protocol || 'https';
+    const defaultWebhookUrl = `${protocol}://${host}/api/telegram/webhook`;
+    const targetWebhookUrl = (req.body.webhookUrl && req.body.webhookUrl.trim()) || defaultWebhookUrl;
+
+    if (requestedMode === 'WEBHOOK') {
+      const webhookRes = await telegramBotService.setWebhook(targetWebhookUrl);
+      if (webhookRes.success) {
+        return res.json({
+          success: true,
+          mode: 'WEBHOOK',
+          activeWebhookUrl: targetWebhookUrl,
+          message: `Switched to Webhook mode successfully (${targetWebhookUrl})!`,
+          status: telegramBotService.getBotStatus(),
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: webhookRes.description || 'Failed to activate Webhook on Telegram API',
+          status: telegramBotService.getBotStatus(),
+        });
+      }
+    } else {
+      // Switch to LONG_POLLING
+      await telegramBotService.deleteWebhookIfActive();
+      telegramBotService.startPolling(
+        () => (globalProductsCache.length > 0 ? globalProductsCache : loadProductsFromDisk()),
+        getWalletForTelegram,
+        deductWalletForTelegram,
+        (identifier: string, amount: number, reason: string) => creditUserWalletOnServer(identifier, identifier, amount, reason),
+        deliverKeyForTelegram,
+        createFamGatewayPaymentOrder,
+        queryFamGatewayPaymentOrder
+      );
+
+      return res.json({
+        success: true,
+        mode: 'LONG_POLLING',
+        message: 'Switched to Long Polling mode successfully. Live continuous engine active!',
+        status: telegramBotService.getBotStatus(),
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 // Create Order API Endpoint (Translates and proxies AdityaHost, ZapUPI & FreePanel requests)
 app.post('/api/create-order', async (req: Request, res: Response) => {
